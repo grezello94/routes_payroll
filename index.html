@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111111" />
+    <title>Routes Payroll</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section id="authView" class="auth-view">
+        <div class="brand">
+          <p class="eyebrow">PWA Payroll Platform</p>
+          <h1>Routes Payroll</h1>
+          <p class="subtitle">Secure backend login, SQLite database, and smart payslip operations.</p>
+        </div>
+
+        <div class="auth-card">
+          <form id="setupForm" class="panel hidden" autocomplete="off">
+            <h2>Create Admin Account</h2>
+            <p>Set credentials for your secured payroll server.</p>
+            <label>
+              Username
+              <input id="setupUsername" type="text" required minlength="3" maxlength="40" />
+            </label>
+            <label>
+              Password
+              <input id="setupPassword" type="password" required minlength="6" maxlength="80" />
+            </label>
+            <label>
+              Confirm Password
+              <input id="setupConfirm" type="password" required minlength="6" maxlength="80" />
+            </label>
+            <button type="submit">Create Credentials</button>
+          </form>
+
+          <form id="loginForm" class="panel hidden" autocomplete="off">
+            <h2>Login</h2>
+            <p>Enter your admin credentials to open payroll operations.</p>
+            <label>
+              Username
+              <input id="loginUsername" type="text" required />
+            </label>
+            <label>
+              Password
+              <input id="loginPassword" type="password" required />
+            </label>
+            <button type="submit">Sign In</button>
+          </form>
+
+          <p id="authMessage" class="status-msg"></p>
+        </div>
+      </section>
+
+      <section id="appView" class="app-view hidden">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Professional Payroll System</p>
+            <h1>Routes Payroll</h1>
+            <p class="subtitle">White/black dashboard with color-coded payroll indicators.</p>
+          </div>
+          <div class="toolbar">
+            <label class="inline-field">
+              <span>Year-Month</span>
+              <input id="monthPicker" type="month" />
+            </label>
+            <button id="installBtn" class="ghost hidden">Install App</button>
+            <button id="addEmployeeBtn">Add Employee</button>
+            <button id="exportCsvBtn" class="ghost">Export CSV</button>
+            <button id="backupBtn" class="ghost">Backup DB JSON</button>
+            <label class="ghost upload-label">
+              Restore DB JSON
+              <input id="restoreInput" type="file" accept="application/json" />
+            </label>
+            <button id="logoutBtn" class="danger">Logout</button>
+          </div>
+        </header>
+
+        <section class="metrics">
+          <article>
+            <p>Total Employees</p>
+            <strong id="metricEmployees">0</strong>
+          </article>
+          <article>
+            <p>Gross Payroll</p>
+            <strong id="metricGross">₹0.00</strong>
+          </article>
+          <article>
+            <p>Net Payout</p>
+            <strong id="metricNet">₹0.00</strong>
+          </article>
+          <article>
+            <p>Advance Remained</p>
+            <strong id="metricAdvance">₹0.00</strong>
+          </article>
+        </section>
+
+        <section class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Employee ID</th>
+                <th>Employee Names</th>
+                <th>Designation</th>
+                <th class="th-salary">Present Salary (₹)</th>
+                <th class="th-increment">Increment (₹)</th>
+                <th class="th-gross">Gross Salary (₹)</th>
+                <th class="th-advance">Old Advance Taken (₹)</th>
+                <th class="th-advance">Extra Advance Added (₹)</th>
+                <th class="th-advance">Total Advance (₹)</th>
+                <th class="th-deduction">Deduction Entered (₹)</th>
+                <th class="th-absent">Days Absent (out of 30)</th>
+                <th class="th-deduction">Prorated Absence Deduction (₹)</th>
+                <th class="th-deduction">Deduction Applied (Advance only)</th>
+                <th class="th-advance">Advance Remained (₹)</th>
+                <th class="th-net">Salary In Hand (Net Salary ₹)</th>
+                <th>Comment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="payrollBody"></tbody>
+          </table>
+        </section>
+
+        <p id="saveStatus" class="status-msg"></p>
+        <p id="appMessage" class="status-msg"></p>
+      </section>
+    </main>
+
+    <dialog id="payslipDialog">
+      <div class="dialog-content">
+        <div class="dialog-head">
+          <h2>Payslip Preview</h2>
+          <button id="closePayslipBtn" class="ghost">Close</button>
+        </div>
+        <div id="payslipPreview" class="payslip-preview"></div>
+        <div class="dialog-actions">
+          <button id="printPayslipBtn">Print / Save PDF</button>
+          <button id="downloadPayslipBtn" class="ghost">Download TXT</button>
+          <button id="shareWebBtn" class="ghost">Share</button>
+          <button id="shareWhatsappBtn" class="ghost">WhatsApp</button>
+          <button id="shareMessengerBtn" class="ghost">Messenger</button>
+          <button id="copyPayslipBtn" class="ghost">Copy Text</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>

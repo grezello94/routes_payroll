@@ -1,0 +1,468 @@
+:root {
+  --bg: #f4f4f4;
+  --panel: #ffffff;
+  --panel-soft: #fafafa;
+  --text: #121212;
+  --muted: #5f5f5f;
+  --line: #d9d9d9;
+  --line-strong: #bdbdbd;
+  --black: #121212;
+  --white: #ffffff;
+  --salary: #2d9cdb;
+  --increment: #2f80ed;
+  --gross: #0c8f62;
+  --advance: #8a6f14;
+  --deduction: #b44a4a;
+  --absent: #a35a00;
+  --net: #007a4d;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: "Segoe UI", "Trebuchet MS", Tahoma, sans-serif;
+  color: var(--text);
+  background: linear-gradient(180deg, #ffffff, #f1f1f1 35%, #ebebeb);
+}
+
+.shell {
+  width: min(1580px, 96vw);
+  margin: 24px auto 40px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.auth-view {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.brand,
+.auth-card,
+.topbar,
+.metrics article,
+.table-wrap,
+#payslipDialog .dialog-content {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.05);
+}
+
+.brand {
+  padding: 28px;
+  border-top: 5px solid var(--black);
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.75rem;
+  color: #313131;
+}
+
+.brand h1,
+.topbar h1 {
+  margin: 6px 0 6px;
+  font-weight: 800;
+  letter-spacing: 0.1px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.auth-card {
+  padding: 18px;
+}
+
+.panel h2 {
+  margin: 4px 0;
+}
+
+.panel p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+label {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #2b2b2b;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: #ffffff;
+  color: var(--text);
+  outline: none;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #3a3a3a;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.12);
+}
+
+button {
+  border: 1px solid var(--black);
+  border-radius: 10px;
+  padding: 9px 14px;
+  background: var(--black);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.94;
+}
+
+.ghost {
+  background: #ffffff;
+  color: #181818;
+  border: 1px solid var(--line-strong);
+}
+
+.danger {
+  border-color: #842f2f;
+  background: #b54646;
+  color: #ffffff;
+}
+
+.status-msg {
+  min-height: 22px;
+  margin: 8px 0 0;
+  color: #4d4d4d;
+  font-size: 0.9rem;
+}
+
+.app-view {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.topbar {
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.inline-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.inline-field span {
+  white-space: nowrap;
+  font-size: 0.84rem;
+  color: #2e2e2e;
+}
+
+.inline-field input {
+  margin-top: 0;
+  min-width: 150px;
+}
+
+.upload-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.upload-label input {
+  display: none;
+}
+
+.metrics {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.metrics article {
+  background: var(--panel-soft);
+  padding: 14px;
+}
+
+.metrics p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.metrics strong {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(1.05rem, 2.2vw, 1.35rem);
+  color: #141414;
+}
+
+.table-wrap {
+  margin-top: 12px;
+  padding: 8px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  min-width: 1680px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 8px 7px;
+  text-align: left;
+  border-bottom: 1px solid #ececec;
+  vertical-align: top;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #111111;
+  color: #f3f3f3;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.th-salary {
+  color: #99d9ff;
+}
+
+.th-increment {
+  color: #b0c7ff;
+}
+
+.th-gross {
+  color: #a9f4cd;
+}
+
+.th-advance {
+  color: #ffe9a0;
+}
+
+.th-deduction {
+  color: #ffb4b4;
+}
+
+.th-absent {
+  color: #ffd2a3;
+}
+
+.th-net {
+  color: #bcffd8;
+}
+
+td.read {
+  font-weight: 700;
+}
+
+.money-gross {
+  color: var(--gross);
+}
+
+.money-advance {
+  color: var(--advance);
+}
+
+.money-deduction {
+  color: var(--deduction);
+}
+
+.money-net {
+  color: var(--net);
+}
+
+.field-salary {
+  border-left: 3px solid var(--salary);
+}
+
+.field-increment {
+  border-left: 3px solid var(--increment);
+}
+
+.field-advance {
+  border-left: 3px solid var(--advance);
+}
+
+.field-deduction {
+  border-left: 3px solid var(--deduction);
+}
+
+.field-absent {
+  border-left: 3px solid var(--absent);
+}
+
+.empty {
+  text-align: center;
+  padding: 22px;
+  color: #4d4d4d;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mini {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+#payslipDialog {
+  width: min(920px, 95vw);
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+#payslipDialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+#payslipDialog .dialog-content {
+  padding: 18px;
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dialog-head h2 {
+  margin: 0;
+}
+
+.payslip-preview {
+  margin-top: 10px;
+}
+
+.payslip-card {
+  border: 1px solid #dbdbdb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.payslip-card h3 {
+  margin: 5px 0 4px;
+}
+
+.payslip-card dl {
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px 12px;
+}
+
+.payslip-card dl div {
+  border-bottom: 1px dashed #dfdfdf;
+  padding-bottom: 6px;
+}
+
+.payslip-card dt {
+  font-size: 0.8rem;
+  color: #4f4f4f;
+}
+
+.payslip-card dd {
+  margin: 3px 0 0;
+  font-weight: 600;
+}
+
+.dialog-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .auth-view {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-direction: column;
+  }
+
+  .toolbar {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .payslip-card dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 660px) {
+  .shell {
+    width: min(96vw, 600px);
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-field {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
