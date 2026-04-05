@@ -1,35 +1,63 @@
-# Routes Payroll (Full Backend + Database)
+# Routes Payroll
 
-Routes Payroll is now upgraded to a full-stack PWA:
-- Frontend: HTML/CSS/JS
-- Backend API: Node.js + Express
-- Database: SQLite (`data/payroll.db`)
+Professional multi-company payroll PWA with backend auth, SQLite storage, branded payslips, and export tools.
+
+## Stack
+
+- Frontend: HTML/CSS/JS (PWA-capable)
+- Backend: Node.js + Express
+- Database: SQLite (`data/payroll.db`) or Firebase Firestore
 - Auth: JWT-based admin login
-- PWA: installable with offline static asset caching
 
-## Features
+## Key Features
 
-- Secure admin setup/login (server-side credentials)
-- Year-month payroll management stored in SQLite
-- Full payroll fields + formulas
-- Payslip preview + print/save PDF + TXT export
-- Share via WhatsApp / Messenger / Web Share
-- CSV export
-- Full DB backup/restore as JSON
-- White/black professional UI with color-coded payroll fields
+- Secure admin setup/login
+- Multi-company payroll workspace
+  - Create company with `name` + `logo`
+  - Switch active company from the top toolbar
+  - Data is isolated per company + month
+- Month-wise payroll register with auto-save
+- Payslip preview with company branding
+  - Company name + logo rendered in payslip
+  - Print/Save PDF
+  - TXT download
+  - Share: WhatsApp, Messenger, Web Share, copy text
+- Exports
+  - CSV (monthly)
+  - Excel `.xls` (monthly, highlighted professional format)
+- Backup/restore (JSON)
+  - Supports new multi-company payload format
+  - Backward-compatible with legacy month-only payloads
+- Installable app (service worker + manifest)
 
 ## Run
 
-From `C:\Users\Grezello\Desktop\PAYROLL`:
-
-```powershell
+```bash
 npm install
 npm start
 ```
 
-Open:
+Open: `http://127.0.0.1:5501`
 
-`http://127.0.0.1:5501`
+## Quick Start (Do This)
+
+```bash
+cd /Users/grezello/Desktop/routes_payroll
+npm install
+npm start
+```
+
+Then open:
+
+- Main app: `http://127.0.0.1:5501`
+- HRM mockup interface: `http://127.0.0.1:5501/hrm_interface_mockup.html`
+
+## How Multi-Company Works
+
+1. Use `New Company` to create a company with logo.
+2. Select company from the `Company` dropdown.
+3. All month reads/writes are scoped by selected company.
+4. Payslip and exports reflect the selected company branding.
 
 ## API Endpoints
 
@@ -38,10 +66,27 @@ Open:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
-- `GET /api/payroll/:month`
-- `PUT /api/payroll/:month`
+
+### Company APIs
+
+- `GET /api/companies`
+- `POST /api/companies`
+  - Body:
+    - `name: string`
+    - `logoDataUrl: string` (optional, image data URL)
+
+### Payroll APIs
+
+- `GET /api/payroll/:month?companyId=<id>`
+- `PUT /api/payroll/:month?companyId=<id>`
+  - Body: `{ records: [...] }`
 - `GET /api/payroll/all`
+  - Returns multi-company backup shape:
+    - `{ companies: [...], entries: [...] }`
 - `POST /api/payroll/restore`
+  - Accepts:
+    - New format: `{ companies: [...], entries: [...] }`
+    - Legacy format: `{ months: { "YYYY-MM": [...] } }`
 
 ## Payroll Formulas
 
@@ -52,16 +97,35 @@ Open:
 - `Advance Remained = Total Advance − Deduction Applied`
 - `Net Salary = Gross Salary − Deduction Applied − Prorated Absence Deduction`
 
-## Data
+## Data Notes
 
-- SQLite file path: `data/payroll.db`
-- Auth token: browser `localStorage`
+- SQLite DB file: `data/payroll.db`
+- JWT token is stored in browser `localStorage`
+- Company logos are stored as image data URLs in SQLite
+
+## Firebase Database (Optional)
+
+You can switch backend storage from SQLite to Firebase Firestore.
+
+Set environment variables and run:
+
+```bash
+DB_PROVIDER=firebase \
+FIREBASE_PROJECT_ID="your-project-id" \
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account", ...}' \
+npm start
+```
+
+Notes:
+
+- `DB_PROVIDER=firebase` enables Firebase mode.
+- `FIREBASE_SERVICE_ACCOUNT_JSON` should be a full service account JSON string.
+- You can use `GOOGLE_APPLICATION_CREDENTIALS` instead of `FIREBASE_SERVICE_ACCOUNT_JSON` if preferred.
 
 ## Optional Security Hardening
 
-Set a custom JWT secret before starting:
+Set custom JWT secret before start:
 
-```powershell
-$env:JWT_SECRET = "replace-with-a-strong-random-secret"
-npm start
+```bash
+JWT_SECRET="replace-with-a-strong-random-secret" npm start
 ```

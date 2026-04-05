@@ -1,9 +1,9 @@
-const CACHE_NAME = "routes-payroll-v1";
+const CACHE_NAME = "routes-payroll-v2";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=20260318b",
+  "./app.js?v=20260318b",
   "./manifest.webmanifest",
   "./icons/icon-192.svg",
   "./icons/icon-512.svg",
@@ -29,16 +29,40 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
+  const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+  const isCriticalAsset =
+    event.request.mode === "navigate"
+    || event.request.destination === "document"
+    || event.request.destination === "script"
+    || event.request.destination === "style";
+
+  // Prefer fresh content for HTML/CSS/JS so design updates appear immediately.
+  if (isSameOrigin && isCriticalAsset) {
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           return response;
         })
-        .catch(() => caches.match("./index.html"));
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          return caches.match("./index.html");
+        })
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        return response;
+      });
     })
   );
 });

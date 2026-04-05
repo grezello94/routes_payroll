@@ -10,9 +10,18 @@ const SELECTORS = {
   authMessage: document.getElementById("authMessage"),
   appMessage: document.getElementById("appMessage"),
   saveStatus: document.getElementById("saveStatus"),
+  companyPicker: document.getElementById("companyPicker"),
+  addCompanyBtn: document.getElementById("addCompanyBtn"),
+  companyDialog: document.getElementById("companyDialog"),
+  closeCompanyBtn: document.getElementById("closeCompanyBtn"),
+  companyForm: document.getElementById("companyForm"),
+  companyNameInput: document.getElementById("companyNameInput"),
+  companyLogoInput: document.getElementById("companyLogoInput"),
+  companyMessage: document.getElementById("companyMessage"),
   monthPicker: document.getElementById("monthPicker"),
   payrollBody: document.getElementById("payrollBody"),
   addEmployeeBtn: document.getElementById("addEmployeeBtn"),
+  exportExcelBtn: document.getElementById("exportExcelBtn"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
   backupBtn: document.getElementById("backupBtn"),
   restoreInput: document.getElementById("restoreInput"),
@@ -22,6 +31,11 @@ const SELECTORS = {
   metricNet: document.getElementById("metricNet"),
   metricAdvance: document.getElementById("metricAdvance"),
   installBtn: document.getElementById("installBtn"),
+  actionMenu: document.getElementById("actionMenu"),
+  railButtons: Array.from(document.querySelectorAll("[data-rail-action]")),
+  dashboardSection: document.getElementById("dashboardSection"),
+  metricsSection: document.getElementById("metricsSection"),
+  payrollSection: document.getElementById("payrollSection"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
   closePayslipBtn: document.getElementById("closePayslipBtn"),
@@ -37,6 +51,8 @@ let pendingInstallPrompt = null;
 let authToken = localStorage.getItem(STORAGE_KEYS.authToken) || "";
 let activePayslip = null;
 let currentRecords = [];
+let companies = [];
+let activeCompanyId = null;
 let pendingSaveTimer = null;
 let saveInFlight = false;
 let saveQueued = false;
@@ -55,9 +71,15 @@ async function init() {
 function wireAuth() {
   SELECTORS.setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const companyName = document.getElementById("setupCompanyName").value.trim();
     const username = document.getElementById("setupUsername").value.trim();
     const password = document.getElementById("setupPassword").value;
     const confirm = document.getElementById("setupConfirm").value;
+
+    if (companyName.length < 2) {
+      showAuthMessage("Company name is too short.");
+      return;
+    }
 
     if (password !== confirm) {
       showAuthMessage("Passwords do not match.");
@@ -67,7 +89,7 @@ function wireAuth() {
     try {
       const response = await apiRequest("/api/auth/register", {
         method: "POST",
-        body: { username, password },
+        body: { companyName, username, password },
       }, false);
 
       setToken(response.token);
@@ -101,6 +123,9 @@ function wireAuth() {
 }
 
 function wireAppActions() {
+  wireRailActions();
+  wireCompanyActions();
+
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
     await loadMonthRecords();
@@ -121,6 +146,18 @@ function wireAppActions() {
       `payroll-${month}.csv`
     );
     showAppMessage("CSV exported.");
+    closeActionMenu();
+  });
+
+  SELECTORS.exportExcelBtn.addEventListener("click", () => {
+    const month = getSelectedMonth();
+    const excelXml = makeExcelSpreadsheet(currentRecords, month);
+    downloadBlob(
+      new Blob([excelXml], { type: "application/vnd.ms-excel;charset=utf-8" }),
+      `payroll-${month}.xls`
+    );
+    showAppMessage("Excel exported.");
+    closeActionMenu();
   });
 
   SELECTORS.backupBtn.addEventListener("click", async () => {
@@ -132,6 +169,7 @@ function wireAppActions() {
         `payroll-backup-${new Date().toISOString().slice(0, 10)}.json`
       );
       showAppMessage("Database backup downloaded.");
+      closeActionMenu();
     } catch (error) {
       showAppMessage(error.message);
     }
@@ -147,8 +185,10 @@ function wireAppActions() {
         method: "POST",
         body: parsed,
       });
+      await loadCompanies();
       await loadMonthRecords();
       showAppMessage("Database backup restored.");
+      closeActionMenu();
     } catch (error) {
       showAppMessage(`Restore failed: ${error.message}`);
     } finally {
@@ -226,6 +266,104 @@ function wireAppActions() {
   SELECTORS.copyPayslipBtn.addEventListener("click", copyCurrentPayslip);
 }
 
+function wireCompanyActions() {
+  SELECTORS.companyPicker.addEventListener("change", async () => {
+    await flushPendingSave();
+    activeCompanyId = Number(SELECTORS.companyPicker.value) || null;
+    await loadMonthRecords();
+  });
+
+  SELECTORS.addCompanyBtn.addEventListener("click", () => {
+    SELECTORS.companyForm.reset();
+    SELECTORS.companyMessage.textContent = "";
+    SELECTORS.companyDialog.showModal();
+  });
+
+  SELECTORS.closeCompanyBtn.addEventListener("click", () => {
+    SELECTORS.companyDialog.close();
+  });
+
+  SELECTORS.companyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = SELECTORS.companyNameInput.value.trim();
+    const file = SELECTORS.companyLogoInput.files?.[0];
+    let logoDataUrl = "";
+
+    if (file) {
+      if (file.size > 700 * 1024) {
+        SELECTORS.companyMessage.textContent = "Logo too large. Keep it under 700KB.";
+        return;
+      }
+      logoDataUrl = await fileToDataUrl(file);
+    }
+
+    try {
+      const response = await apiRequest("/api/companies", {
+        method: "POST",
+        body: { name, logoDataUrl },
+      });
+      activeCompanyId = response.company?.id || activeCompanyId;
+      await loadCompanies();
+      await loadMonthRecords();
+      SELECTORS.companyDialog.close();
+      showAppMessage("Company created.");
+    } catch (error) {
+      SELECTORS.companyMessage.textContent = error.message;
+    }
+  });
+}
+
+function wireRailActions() {
+  SELECTORS.railButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.railAction;
+      SELECTORS.railButtons.forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+
+      if (action === "dashboard") {
+        SELECTORS.dashboardSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+
+      if (action === "employees") {
+        if (currentRecords.length === 0) {
+          SELECTORS.addEmployeeBtn.click();
+        }
+        SELECTORS.payrollSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => {
+          const firstNameField = SELECTORS.payrollBody.querySelector('input[data-field="employeeName"]');
+          firstNameField?.focus();
+        }, 260);
+        return;
+      }
+
+      if (action === "payroll") {
+        SELECTORS.payrollSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => {
+          const salaryField = SELECTORS.payrollBody.querySelector('input[data-field="presentSalary"]');
+          salaryField?.focus();
+        }, 240);
+        return;
+      }
+
+      if (action === "reports") {
+        SELECTORS.actionMenu?.setAttribute("open", "");
+        SELECTORS.actionMenu?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      if (action === "settings") {
+        SELECTORS.monthPicker?.focus();
+        SELECTORS.metricsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  });
+}
+
+function closeActionMenu() {
+  SELECTORS.actionMenu?.removeAttribute("open");
+}
+
 async function updateAuthView() {
   if (authToken) {
     const valid = await validateToken();
@@ -270,6 +408,7 @@ async function validateToken() {
 async function switchToApp() {
   SELECTORS.authView.classList.add("hidden");
   SELECTORS.appView.classList.remove("hidden");
+  await loadCompanies();
   await loadMonthRecords();
 }
 
@@ -283,10 +422,70 @@ function getSelectedMonth() {
   return SELECTORS.monthPicker.value || new Date().toISOString().slice(0, 7);
 }
 
+function getSelectedCompanyId() {
+  if (activeCompanyId) return activeCompanyId;
+  const parsed = Number(SELECTORS.companyPicker.value);
+  if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  return companies[0]?.id || 1;
+}
+
+function displayCompanyName(company) {
+  const raw = String(company?.name ?? "").trim();
+  if (raw.length >= 2) return raw;
+  const id = Number(company?.id) || 0;
+  return id > 0 ? `Company ${id}` : "Company";
+}
+
+function getActiveCompany() {
+  const companyId = getSelectedCompanyId();
+  return companies.find((company) => company.id === companyId) || {
+    id: 1,
+    name: "Routes Payroll",
+    logoDataUrl: "",
+  };
+}
+
+function payrollMonthUrl(month) {
+  const companyId = getSelectedCompanyId();
+  return `/api/payroll/${month}?companyId=${companyId}`;
+}
+
+async function loadCompanies() {
+  const previousCompanyId = activeCompanyId;
+  const response = await apiRequest("/api/companies");
+  const incomingCompanies = Array.isArray(response.companies) ? response.companies : [];
+  companies = incomingCompanies
+    .map((company) => {
+      const id = Number(company?.id);
+      if (!Number.isInteger(id) || id <= 0) return null;
+      return {
+        id,
+        name: String(company?.name ?? ""),
+        logoDataUrl: String(company?.logoDataUrl || ""),
+      };
+    })
+    .filter(Boolean);
+
+  if (companies.length === 0) {
+    companies = [{ id: 1, name: "Routes Payroll", logoDataUrl: "" }];
+  }
+
+  if (previousCompanyId && companies.some((company) => company.id === previousCompanyId)) {
+    activeCompanyId = previousCompanyId;
+  } else {
+    activeCompanyId = companies[0].id;
+  }
+
+  SELECTORS.companyPicker.innerHTML = companies
+    .map((company) => `<option value="${company.id}">${escapeHtml(displayCompanyName(company))}</option>`)
+    .join("");
+  SELECTORS.companyPicker.value = String(activeCompanyId);
+}
+
 async function loadMonthRecords() {
   const month = getSelectedMonth();
   try {
-    const response = await apiRequest(`/api/payroll/${month}`);
+    const response = await apiRequest(payrollMonthUrl(month));
     currentRecords = Array.isArray(response.records) ? response.records : [];
     renderPayrollTable();
     setSaveStatus("All changes saved.");
@@ -456,7 +655,7 @@ async function persistRecords() {
   const month = getSelectedMonth();
 
   try {
-    await apiRequest(`/api/payroll/${month}`, {
+    await apiRequest(payrollMonthUrl(month), {
       method: "PUT",
       body: { records: currentRecords },
     });
@@ -475,20 +674,28 @@ async function persistRecords() {
 
 function openPayslip(record, month) {
   const calc = computePayroll(record);
-  activePayslip = { record, calc, month };
-  SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month);
+  const company = getActiveCompany();
+  activePayslip = { record, calc, month, company };
+  SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month, company);
   SELECTORS.payslipDialog.showModal();
 }
 
-function renderPayslipCard(record, calc, month) {
+function renderPayslipCard(record, calc, month, company) {
   return `
     <article class="payslip-card">
-      <header>
-        <p class="eyebrow">Routes Payroll Payslip</p>
+      <header class="payslip-brand">
+        <div class="payslip-brand-row">
+          ${company.logoDataUrl ? `<img src="${company.logoDataUrl}" alt="${escapeHtml(company.name)} logo" class="payslip-logo" />` : ""}
+          <div>
+            <p class="eyebrow">Routes Payroll Payslip</p>
+            <h4>${escapeHtml(company.name || "Company")}</h4>
+          </div>
+        </div>
         <h3>${escapeHtml(record.employeeName || "Employee Name")}</h3>
         <p>${escapeHtml(record.designation || "Designation")}</p>
       </header>
       <dl>
+        <div><dt>Company</dt><dd>${escapeHtml(company.name || "-")}</dd></div>
         <div><dt>Year-Month</dt><dd>${escapeHtml(formatMonth(month))}</dd></div>
         <div><dt>Employee ID</dt><dd>${escapeHtml(record.employeeId || "-")}</dd></div>
         <div><dt>Present Salary</dt><dd>${formatCurrency(calc.presentSalary)}</dd></div>
@@ -518,9 +725,10 @@ function ensureActivePayslip() {
 }
 
 function getPayslipText(data) {
-  const { record, calc, month } = data;
+  const { record, calc, month, company } = data;
   return [
     "Routes Payroll Payslip",
+    `Company: ${company?.name || "-"}`,
     `Year-Month: ${formatMonth(month)}`,
     `Employee ID: ${record.employeeId || "-"}`,
     `Employee Name: ${record.employeeName || "-"}`,
@@ -561,6 +769,7 @@ function printCurrentPayslip() {
       </head>
       <body>
         <h1>Routes Payroll Payslip</h1>
+        <p>${escapeHtml(activePayslip.company?.name || "Company")}</p>
         <p>${escapeHtml(formatMonth(activePayslip.month))}</p>
         <table>
           ${buildPrintRows(activePayslip)}
@@ -581,8 +790,9 @@ function printCurrentPayslip() {
 }
 
 function buildPrintRows(data) {
-  const { record, calc } = data;
+  const { record, calc, company } = data;
   const rows = [
+    ["Company", escapeHtml(company?.name || "-")],
     ["Employee ID", escapeHtml(record.employeeId || "-")],
     ["Employee Name", escapeHtml(record.employeeName || "-")],
     ["Designation", escapeHtml(record.designation || "-")],
@@ -655,7 +865,9 @@ async function copyCurrentPayslip() {
 }
 
 function makeCsv(records, month) {
+  const company = getActiveCompany();
   const headers = [
+    "Company",
     "Year-Month",
     "Employee ID",
     "Employee Names",
@@ -678,6 +890,7 @@ function makeCsv(records, month) {
   const rows = records.map((record) => {
     const calc = computePayroll(record);
     return [
+      company.name || "",
       month,
       record.employeeId || "",
       record.employeeName || "",
@@ -699,6 +912,218 @@ function makeCsv(records, month) {
   });
 
   return [headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
+}
+
+function makeExcelSpreadsheet(records, month) {
+  const company = getActiveCompany();
+  const computed = records.map((record) => ({ record, calc: computePayroll(record) }));
+  const totals = computed.reduce((acc, item) => {
+    acc.gross += item.calc.grossSalary;
+    acc.net += item.calc.netSalary;
+    acc.advance += item.calc.advanceRemained;
+    return acc;
+  }, { gross: 0, net: 0, advance: 0 });
+
+  const title = `${company.name || "Company"} - Monthly Payroll Report`;
+  const monthLabel = formatMonth(month);
+  const generatedAt = new Date().toLocaleString("en-IN");
+
+  const columns = [
+    90, 150, 130, 110, 95, 110, 120, 120, 110, 120, 100, 140, 140, 120, 140, 180, 120,
+  ];
+
+  const headerCells = [
+    ["Employee ID", "sHeader"],
+    ["Employee Name", "sHeader"],
+    ["Designation", "sHeader"],
+    ["Present Salary (INR)", "sHeaderSalary"],
+    ["Increment (INR)", "sHeaderIncrement"],
+    ["Gross Salary (INR)", "sHeaderGross"],
+    ["Old Advance Taken (INR)", "sHeaderAdvance"],
+    ["Extra Advance Added (INR)", "sHeaderAdvance"],
+    ["Total Advance (INR)", "sHeaderAdvance"],
+    ["Deduction Entered (INR)", "sHeaderDeduction"],
+    ["Days Absent", "sHeaderAbsent"],
+    ["Prorated Absence Deduction (INR)", "sHeaderDeduction"],
+    ["Deduction Applied (INR)", "sHeaderDeduction"],
+    ["Advance Remained (INR)", "sHeaderAdvance"],
+    ["Salary In Hand (INR)", "sHeaderNet"],
+    ["Comment", "sHeader"],
+    ["Updated Month", "sHeader"],
+  ];
+
+  const headerRow = `<Row ss:Height="34">${headerCells.map(([text, style]) => xmlCellString(text, style)).join("")}</Row>`;
+
+  const dataRows = computed.map((item, idx) => {
+    const rowStyle = idx % 2 === 0 ? "sCell" : "sCellAlt";
+    return `<Row>
+      ${xmlCellString(item.record.employeeId || "", rowStyle)}
+      ${xmlCellString(item.record.employeeName || "", rowStyle)}
+      ${xmlCellString(item.record.designation || "", rowStyle)}
+      ${xmlCellNumber(item.calc.presentSalary, "sMoneySalary")}
+      ${xmlCellNumber(item.calc.increment, "sMoneyIncrement")}
+      ${xmlCellNumber(item.calc.grossSalary, "sMoneyGross")}
+      ${xmlCellNumber(item.calc.oldAdvanceTaken, "sMoneyAdvance")}
+      ${xmlCellNumber(item.calc.extraAdvanceAdded, "sMoneyAdvance")}
+      ${xmlCellNumber(item.calc.totalAdvance, "sMoneyAdvanceStrong")}
+      ${xmlCellNumber(item.calc.deductionEntered, "sMoneyDeduction")}
+      ${xmlCellNumber(item.calc.daysAbsent, "sNum")}
+      ${xmlCellNumber(item.calc.proratedAbsenceDeduction, "sMoneyDeduction")}
+      ${xmlCellNumber(item.calc.deductionApplied, "sMoneyDeductionStrong")}
+      ${xmlCellNumber(item.calc.advanceRemained, "sMoneyAdvanceStrong")}
+      ${xmlCellNumber(item.calc.netSalary, "sMoneyNet")}
+      ${xmlCellString(item.record.comment || "", rowStyle)}
+      ${xmlCellString(month, rowStyle)}
+    </Row>`;
+  }).join("");
+
+  const worksheetRows = `
+    <Row ss:Height="30">
+      <Cell ss:StyleID="sTitle" ss:MergeAcross="16"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>
+    </Row>
+    <Row>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Month</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXml(monthLabel)}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Company</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXml(company.name || "")}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Generated</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="String">${escapeXml(generatedAt)}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Employees</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="Number">${computed.length}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Gross</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="Number">${toFixedNumber(totals.gross)}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Net</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="Number">${toFixedNumber(totals.net)}</Data></Cell>
+      <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Advance Remained</Data></Cell>
+      <Cell ss:StyleID="sMetaValue"><Data ss:Type="Number">${toFixedNumber(totals.advance)}</Data></Cell>
+    </Row>
+    <Row ss:Height="8"></Row>
+    ${headerRow}
+    ${dataRows || `<Row><Cell ss:StyleID="sEmpty" ss:MergeAcross="16"><Data ss:Type="String">No records for ${escapeXml(monthLabel)}</Data></Cell></Row>`}
+  `;
+
+  return `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Author>Routes Payroll</Author>
+    <Created>${new Date().toISOString()}</Created>
+  </DocumentProperties>
+  <ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
+    <WindowHeight>12000</WindowHeight>
+    <WindowWidth>24000</WindowWidth>
+    <ProtectStructure>False</ProtectStructure>
+    <ProtectWindows>False</ProtectWindows>
+  </ExcelWorkbook>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Center"/>
+      <Borders/>
+      <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#0F1728"/>
+      <Interior/>
+      <NumberFormat/>
+      <Protection/>
+    </Style>
+    <Style ss:ID="sTitle">
+      <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#0F294D"/>
+      <Interior ss:Color="#E9F2FF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+    </Style>
+    <Style ss:ID="sMetaLabel">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#2C3E57"/>
+      <Interior ss:Color="#F3F7FC" ss:Pattern="Solid"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D5E0ED"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="sMetaValue">
+      <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#10243D"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <NumberFormat ss:Format="#,##0.00"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E1E8F1"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="sHeader">
+      <Font ss:Bold="1" ss:Color="#10243D"/>
+      <Interior ss:Color="#EEF4FB" ss:Pattern="Solid"/>
+      <Alignment ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="sHeaderSalary"><Font ss:Bold="1" ss:Color="#0F67C6"/><Interior ss:Color="#EAF3FF" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderIncrement"><Font ss:Bold="1" ss:Color="#6246C7"/><Interior ss:Color="#EFEAFF" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderGross"><Font ss:Bold="1" ss:Color="#157347"/><Interior ss:Color="#E9F8F0" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderAdvance"><Font ss:Bold="1" ss:Color="#8B6B10"/><Interior ss:Color="#FBF5E8" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderDeduction"><Font ss:Bold="1" ss:Color="#B91C2D"/><Interior ss:Color="#FDEEEF" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderAbsent"><Font ss:Bold="1" ss:Color="#9A4F07"/><Interior ss:Color="#FFF4E8" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sHeaderNet"><Font ss:Bold="1" ss:Color="#0F7A55"/><Interior ss:Color="#EAF8F2" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C9D7E8"/></Borders></Style>
+    <Style ss:ID="sCell"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sCellAlt"><Interior ss:Color="#FAFCFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sNum"><NumberFormat ss:Format="0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneySalary"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#0F67C6"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyIncrement"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#6246C7"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyGross"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#157347"/><Interior ss:Color="#F1FBF5" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyAdvance"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#8B6B10"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyAdvanceStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8B6B10"/><Interior ss:Color="#FFF7E8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyDeduction"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#B91C2D"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyDeductionStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#B91C2D"/><Interior ss:Color="#FFF1F3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sMoneyNet"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F7A55"/><Interior ss:Color="#ECFAF3" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E4EAF2"/></Borders></Style>
+    <Style ss:ID="sEmpty">
+      <Font ss:Bold="1" ss:Color="#526680"/>
+      <Interior ss:Color="#F7FAFF" ss:Pattern="Solid"/>
+      <Alignment ss:Horizontal="Center"/>
+    </Style>
+  </Styles>
+  <Worksheet ss:Name="${escapeXml(`Payroll ${month}`)}">
+    <Table>
+      ${columns.map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`).join("")}
+      ${worksheetRows}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <FreezePanes/>
+      <FrozenNoSplit/>
+      <SplitHorizontal>4</SplitHorizontal>
+      <TopRowBottomPane>4</TopRowBottomPane>
+      <ActivePane>2</ActivePane>
+      <Panes>
+        <Pane>
+          <Number>3</Number>
+        </Pane>
+      </Panes>
+      <ProtectObjects>False</ProtectObjects>
+      <ProtectScenarios>False</ProtectScenarios>
+    </WorksheetOptions>
+  </Worksheet>
+</Workbook>`;
+}
+
+function xmlCellString(value, styleId) {
+  const style = styleId ? ` ss:StyleID="${styleId}"` : "";
+  return `<Cell${style}><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
+}
+
+function xmlCellNumber(value, styleId) {
+  const style = styleId ? ` ss:StyleID="${styleId}"` : "";
+  return `<Cell${style}><Data ss:Type="Number">${toFixedNumber(value)}</Data></Cell>`;
+}
+
+function toFixedNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read logo file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function escapeCsv(value) {
@@ -751,6 +1176,7 @@ function setToken(token) {
 }
 
 function setSaveStatus(message) {
+  applyStatusTone(SELECTORS.saveStatus, message);
   SELECTORS.saveStatus.textContent = message;
 }
 
@@ -809,11 +1235,22 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function escapeXml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function showAuthMessage(message) {
+  applyStatusTone(SELECTORS.authMessage, message);
   SELECTORS.authMessage.textContent = message;
 }
 
 function showAppMessage(message) {
+  applyStatusTone(SELECTORS.appMessage, message);
   SELECTORS.appMessage.textContent = message;
   if (message) {
     setTimeout(() => {
@@ -822,6 +1259,22 @@ function showAppMessage(message) {
       }
     }, 3200);
   }
+}
+
+function applyStatusTone(element, message) {
+  element.classList.remove("status-info", "status-success", "status-error");
+  if (!message) return;
+
+  const text = String(message).toLowerCase();
+  if (text.includes("failed") || text.includes("error") || text.includes("invalid")) {
+    element.classList.add("status-error");
+    return;
+  }
+  if (text.includes("saved") || text.includes("restored") || text.includes("exported") || text.includes("downloaded") || text.includes("added") || text.includes("removed") || text.includes("copied")) {
+    element.classList.add("status-success");
+    return;
+  }
+  element.classList.add("status-info");
 }
 
 function registerServiceWorker() {

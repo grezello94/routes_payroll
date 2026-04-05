@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Routes Payroll - HRM Interface Mockup</title>
+    <style>
+      :root {
+        --bg: #f4f6fa;
+        --surface: #ffffff;
+        --surface-soft: #f8fafd;
+        --line: #dbe3ef;
+        --text: #121a28;
+        --muted: #5f6f86;
+        --green: #0f8f63;
+        --green-soft: #e9f8f2;
+        --red: #bd2332;
+        --red-soft: #ffeff1;
+        --blue: #2559c8;
+        --blue-soft: #eaf1ff;
+        --shadow: 0 10px 24px rgba(15, 23, 40, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI Variable", "Segoe UI", Inter, Arial, sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, #f8f9fc, var(--bg));
+      }
+
+      .page-wrap {
+        display: grid;
+        grid-template-columns: 230px 1fr;
+        min-height: 100vh;
+      }
+
+      .side-nav {
+        background: #0e1a31;
+        color: #d4def0;
+        padding: 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .logo {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.02em;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 10px;
+        padding: 11px 12px;
+        color: #d4def0;
+        font-weight: 600;
+        background: transparent;
+      }
+
+      .nav-item.active {
+        background: rgba(73, 129, 210, 0.28);
+        color: #ffffff;
+      }
+
+      .main {
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .topbar {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        padding: 14px 16px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .title-block h1 {
+        margin: 0;
+        font-size: 2rem;
+        letter-spacing: 0.02em;
+        font-weight: 400;
+        text-transform: uppercase;
+      }
+
+      .title-block p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .control, .btn {
+        min-height: 44px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: #1f314b;
+        font: inherit;
+        font-weight: 700;
+        padding: 0 12px;
+      }
+
+      .btn-primary { background: #344b69; color: #fff; border-color: #2d425e; }
+      .btn-danger { background: var(--red); color: #fff; border-color: #a81e2b; }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 10px;
+      }
+
+      .card {
+        border-radius: 14px;
+        border: 1px solid #274a72;
+        background:
+          radial-gradient(300px 130px at 80% 10%, rgba(86, 172, 146, 0.24), transparent 70%),
+          linear-gradient(130deg, #17335a, #112748 56%, #0f213d);
+        color: #fff;
+        padding: 14px 16px;
+        position: relative;
+      }
+
+      .card .k { margin: 0; color: #d3e4fb; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+      .card .v { margin: 6px 0 0; font-size: 2rem; font-weight: 800; }
+      .card .t { margin: 6px 0 0; color: #6add98; font-weight: 700; font-size: 0.86rem; }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .panel-head {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, #fff, #f7faff);
+      }
+
+      .panel-head h2 { margin: 0; font-size: 2rem; font-size: 1.1rem; }
+      .panel-head p { margin: 4px 0 0; color: var(--muted); font-weight: 600; }
+
+      .tab-row {
+        display: flex;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #f4f8fc;
+      }
+
+      .tab {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        padding: 7px 12px;
+        font-weight: 700;
+      }
+
+      .tab.active {
+        background: #10a56f;
+        color: #fff;
+        border-color: #10a56f;
+      }
+
+      .logic-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+        gap: 10px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #f9fbff;
+      }
+
+      .logic-card {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px;
+      }
+
+      .logic-card h3 { margin: 0 0 6px; font-size: 0.92rem; }
+      .logic-card p { margin: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
+
+      .table-wrap { overflow: auto; }
+      table {
+        width: 100%;
+        min-width: 1650px;
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+      th, td {
+        padding: 9px 8px;
+        text-align: left;
+        border-bottom: 1px solid #e3eaf4;
+        vertical-align: top;
+      }
+      thead tr.group th {
+        background: #dfe7f1;
+        color: #395070;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        font-size: 0.74rem;
+        font-weight: 800;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+      }
+      thead tr.head th {
+        background: #ebf1f8;
+        color: #202d41;
+        font-weight: 800;
+        position: sticky;
+        top: 33px;
+        z-index: 2;
+      }
+      tbody tr:nth-child(even) { background: #f7fbff; }
+      td.read { font-weight: 800; background: #f2f7fd; white-space: nowrap; }
+
+      .c-green { color: var(--green); }
+      .c-red { color: var(--red); }
+      .c-blue { color: var(--blue); }
+      .c-gold { color: #8b6b10; }
+      .c-violet { color: #6246c7; }
+
+      .chip {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+      .chip-active { background: #def7ea; color: #166a46; }
+      .chip-leave { background: #fff2cc; color: #8a6208; }
+      .chip-left { background: #ffe5ea; color: #9b1d2a; }
+
+      .pay-ok { color: var(--green); font-weight: 800; }
+      .pay-low { color: var(--red); font-weight: 800; }
+
+      .foot {
+        padding: 12px 16px;
+        color: #5f728d;
+        font-weight: 600;
+      }
+
+      @media (max-width: 1200px) {
+        .page-wrap { grid-template-columns: 1fr; }
+        .side-nav { flex-direction: row; align-items: center; overflow: auto; }
+        .cards { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+      }
+
+      @media (max-width: 760px) {
+        .cards { grid-template-columns: 1fr; }
+        .logic-strip { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrap">
+      <aside class="side-nav">
+        <div class="logo">HRM • Routes</div>
+        <div class="nav-item active">Dashboard</div>
+        <div class="nav-item">Employees</div>
+        <div class="nav-item">Payroll</div>
+        <div class="nav-item">Reports</div>
+        <div class="nav-item">Settings</div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="title-block">
+            <p>Professional Payroll System</p>
+            <h1>Routes Payroll</h1>
+          </div>
+          <div class="controls">
+            <select class="control"><option>Company: Red Lantern Restaurant</option></select>
+            <button class="btn">New Company</button>
+            <select class="control"><option>Year-Month: March 2026</option></select>
+            <button class="btn">Install App</button>
+            <button class="btn btn-primary">Add Employee</button>
+            <button class="btn">Actions</button>
+            <button class="btn btn-danger">Logout</button>
+          </div>
+        </header>
+
+        <section class="cards">
+          <article class="card">
+            <p class="k">Total Employees</p>
+            <p class="v">128</p>
+            <p class="t">↗ +2.1% vs last month</p>
+          </article>
+          <article class="card">
+            <p class="k">Gross Payroll</p>
+            <p class="v">₹18,74,500</p>
+            <p class="t">↗ +0.8% vs last month</p>
+          </article>
+          <article class="card">
+            <p class="k">Net Payout</p>
+            <p class="v">₹16,92,340</p>
+            <p class="t">↗ +1.3% vs last month</p>
+          </article>
+          <article class="card">
+            <p class="k">Advance Remained</p>
+            <p class="v">₹2,14,600</p>
+            <p class="t">↗ +0.4% vs last month</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Employee Management + Payroll Register</h2>
+            <p>Unified HRM flow: define employee contract once, process monthly variables in payroll.</p>
+          </div>
+
+          <div class="tab-row">
+            <span class="tab active">Employee Management</span>
+            <span class="tab">Payroll Register</span>
+          </div>
+
+          <div class="logic-strip">
+            <div class="logic-card">
+              <h3>Employee Master Setup</h3>
+              <p>ID, Name, Designation, Date of Joining, Base Salary, Increment history, Advance balance, auto-deduct preference, and employee status.</p>
+            </div>
+            <div class="logic-card">
+              <h3>Monthly Payroll Rules</h3>
+              <p>If DOJ is within selected month, payable days are prorated by days worked. If status is Left, employee is excluded from next month payroll.</p>
+            </div>
+            <div class="logic-card">
+              <h3>Final Computation</h3>
+              <p>Net Salary = Gross Salary − Absence Deduction − Advance Deduction. All deductions are clearly marked in red and earnings in green.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr class="group">
+                  <th colspan="4">Employee Management</th>
+                  <th colspan="3">Contract & Attendance</th>
+                  <th colspan="3">Advance Management</th>
+                  <th colspan="4">Deductions</th>
+                  <th colspan="2">Final Payout</th>
+                  <th colspan="1">Status</th>
+                </tr>
+                <tr class="head">
+                  <th>Employee ID</th>
+                  <th>Employee Name</th>
+                  <th>Designation</th>
+                  <th>Date of Joining</th>
+                  <th class="c-blue">Base Salary (₹)</th>
+                  <th class="c-violet">Increment (₹)</th>
+                  <th class="c-green">Gross Salary (₹)</th>
+                  <th class="c-gold">Old Advance (₹)</th>
+                  <th class="c-gold">New Advance (₹)</th>
+                  <th class="c-gold">Total Advance (₹)</th>
+                  <th class="c-red">Days Absent</th>
+                  <th class="c-red">Absence Deduction (₹)</th>
+                  <th class="c-red">Advance Deducted (₹)</th>
+                  <th class="c-red">Total Deductions (₹)</th>
+                  <th class="c-green">Net Salary (₹)</th>
+                  <th>Payroll Action</th>
+                  <th>Employee Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>EMP001</td>
+                  <td>Riyad Ahmed</td>
+                  <td>Chef</td>
+                  <td>2026-03-10</td>
+                  <td>35,000</td>
+                  <td>2,000</td>
+                  <td class="read c-green">37,000</td>
+                  <td>12,000</td>
+                  <td>0</td>
+                  <td class="read c-gold">12,000</td>
+                  <td>2</td>
+                  <td class="read c-red">2,466.67</td>
+                  <td class="read c-red">5,000</td>
+                  <td class="read c-red">7,466.67</td>
+                  <td class="read pay-ok">29,533.33</td>
+                  <td>Generate Payslip</td>
+                  <td><span class="chip chip-active">Active</span></td>
+                </tr>
+                <tr>
+                  <td>EMP002</td>
+                  <td>Parvej Reza</td>
+                  <td>Floor Manager</td>
+                  <td>2024-02-01</td>
+                  <td>58,000</td>
+                  <td>0</td>
+                  <td class="read c-green">58,000</td>
+                  <td>0</td>
+                  <td>0</td>
+                  <td class="read c-gold">0</td>
+                  <td>4</td>
+                  <td class="read c-red">7,733.33</td>
+                  <td class="read c-red">0</td>
+                  <td class="read c-red">7,733.33</td>
+                  <td class="read pay-ok">50,266.67</td>
+                  <td>Generate Payslip</td>
+                  <td><span class="chip chip-leave">On-Leave</span></td>
+                </tr>
+                <tr>
+                  <td>EMP003</td>
+                  <td>Mike D</td>
+                  <td>Steward</td>
+                  <td>2026-03-19</td>
+                  <td>22,000</td>
+                  <td>0</td>
+                  <td class="read c-green">22,000</td>
+                  <td>4,500</td>
+                  <td>0</td>
+                  <td class="read c-gold">4,500</td>
+                  <td>11</td>
+                  <td class="read c-red">8,066.67</td>
+                  <td class="read c-red">2,000</td>
+                  <td class="read c-red">10,066.67</td>
+                  <td class="read pay-low">11,933.33</td>
+                  <td>Generate Payslip</td>
+                  <td><span class="chip chip-left">Left</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="foot">
+            HRM payroll logic note: Employee joining within the month is prorated by payable days, and employees marked as Left are excluded from next month payroll automatically.
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

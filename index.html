@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260318b" />
   </head>
   <body>
     <main class="shell">
@@ -21,7 +21,11 @@
         <div class="auth-card">
           <form id="setupForm" class="panel hidden" autocomplete="off">
             <h2>Create Admin Account</h2>
-            <p>Set credentials for your secured payroll server.</p>
+            <p>Set your company and admin credentials for this payroll server.</p>
+            <label>
+              Company Name
+              <input id="setupCompanyName" type="text" required minlength="2" maxlength="120" placeholder="e.g. Routes Hospitality" />
+            </label>
             <label>
               Username
               <input id="setupUsername" type="text" required minlength="3" maxlength="40" />
@@ -56,77 +60,111 @@
       </section>
 
       <section id="appView" class="app-view hidden">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Professional Payroll System</p>
-            <h1>Routes Payroll</h1>
-            <p class="subtitle">White/black dashboard with color-coded payroll indicators.</p>
-          </div>
-          <div class="toolbar">
-            <label class="inline-field">
-              <span>Year-Month</span>
-              <input id="monthPicker" type="month" />
-            </label>
-            <button id="installBtn" class="ghost hidden">Install App</button>
-            <button id="addEmployeeBtn">Add Employee</button>
-            <button id="exportCsvBtn" class="ghost">Export CSV</button>
-            <button id="backupBtn" class="ghost">Backup DB JSON</button>
-            <label class="ghost upload-label">
-              Restore DB JSON
-              <input id="restoreInput" type="file" accept="application/json" />
-            </label>
-            <button id="logoutBtn" class="danger">Logout</button>
-          </div>
-        </header>
+        <aside class="side-rail" aria-label="Quick Navigation">
+          <button class="rail-btn active" type="button" aria-label="Dashboard" data-rail-action="dashboard">▣</button>
+          <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees">◎</button>
+          <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll">◫</button>
+          <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports">◧</button>
+          <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings">⚙</button>
+        </aside>
 
-        <section class="metrics">
-          <article>
-            <p>Total Employees</p>
-            <strong id="metricEmployees">0</strong>
-          </article>
-          <article>
-            <p>Gross Payroll</p>
-            <strong id="metricGross">₹0.00</strong>
-          </article>
-          <article>
-            <p>Net Payout</p>
-            <strong id="metricNet">₹0.00</strong>
-          </article>
-          <article>
-            <p>Advance Remained</p>
-            <strong id="metricAdvance">₹0.00</strong>
-          </article>
-        </section>
+        <div class="app-main">
+          <header id="dashboardSection" class="topbar">
+            <div>
+              <p class="eyebrow">Professional Payroll System</p>
+              <h1>ROUTES PAYROLL</h1>
+              <p class="subtitle">Enterprise payroll workspace with secure records and instant month-wise operations.</p>
+            </div>
+            <div class="toolbar">
+              <label class="inline-field">
+                <span>Company</span>
+                <select id="companyPicker"></select>
+              </label>
+              <button id="addCompanyBtn" class="ghost">New Company</button>
+              <label class="inline-field">
+                <span>Year-Month</span>
+                <input id="monthPicker" type="month" />
+              </label>
+              <button id="installBtn" class="ghost hidden">Install App</button>
+              <button id="addEmployeeBtn">+ Add New Entry</button>
+              <details id="actionMenu" class="action-menu">
+                <summary class="ghost">Actions</summary>
+                <div class="menu-sheet">
+                  <button id="exportExcelBtn" class="ghost" type="button">Export Excel</button>
+                  <button id="exportCsvBtn" class="ghost" type="button">Export CSV</button>
+                  <button id="backupBtn" class="ghost" type="button">Backup DB JSON</button>
+                  <label class="ghost upload-label">
+                    Restore DB JSON
+                    <input id="restoreInput" type="file" accept="application/json" />
+                  </label>
+                </div>
+              </details>
+              <button id="logoutBtn" class="danger">Logout</button>
+            </div>
+          </header>
 
-        <section class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Employee ID</th>
-                <th>Employee Names</th>
-                <th>Designation</th>
-                <th class="th-salary">Present Salary (₹)</th>
-                <th class="th-increment">Increment (₹)</th>
-                <th class="th-gross">Gross Salary (₹)</th>
-                <th class="th-advance">Old Advance Taken (₹)</th>
-                <th class="th-advance">Extra Advance Added (₹)</th>
-                <th class="th-advance">Total Advance (₹)</th>
-                <th class="th-deduction">Deduction Entered (₹)</th>
-                <th class="th-absent">Days Absent (out of 30)</th>
-                <th class="th-deduction">Prorated Absence Deduction (₹)</th>
-                <th class="th-deduction">Deduction Applied (Advance only)</th>
-                <th class="th-advance">Advance Remained (₹)</th>
-                <th class="th-net">Salary In Hand (Net Salary ₹)</th>
-                <th>Comment</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="payrollBody"></tbody>
-          </table>
-        </section>
+          <section id="metricsSection" class="metrics">
+            <article>
+              <p>Total Employees</p>
+              <strong id="metricEmployees">0</strong>
+            </article>
+            <article>
+              <p>Gross Payroll</p>
+              <strong id="metricGross">₹0.00</strong>
+            </article>
+            <article>
+              <p>Net Payout</p>
+              <strong id="metricNet">₹0.00</strong>
+            </article>
+            <article>
+              <p>Advance Remained</p>
+              <strong id="metricAdvance">₹0.00</strong>
+            </article>
+          </section>
 
-        <p id="saveStatus" class="status-msg"></p>
-        <p id="appMessage" class="status-msg"></p>
+          <section id="payrollSection" class="table-wrap">
+            <div class="table-head">
+              <h2>Employee Payroll Register</h2>
+              <p>Color indicators: Salary, Increment, Gross, Advance, Deductions, Net Payout.</p>
+            </div>
+            <table>
+              <thead>
+                <tr class="group-row">
+                  <th colspan="3">Employee Info</th>
+                  <th colspan="3">Core Salary</th>
+                  <th colspan="3">Advance Management</th>
+                  <th colspan="4">Deductions & Attendance</th>
+                  <th colspan="2">Final Settlement</th>
+                  <th colspan="1">Notes</th>
+                  <th colspan="1">Actions</th>
+                </tr>
+                <tr class="detail-row">
+                  <th>Employee ID</th>
+                  <th>Employee Names</th>
+                  <th>Designation</th>
+                  <th class="th-salary">Present Salary (₹)</th>
+                  <th class="th-increment">Increment (₹)</th>
+                  <th class="th-gross">Gross Salary (₹)</th>
+                  <th class="th-advance">Old Advance Taken (₹)</th>
+                  <th class="th-advance">Extra Advance Added (₹)</th>
+                  <th class="th-advance">Total Advance (₹)</th>
+                  <th class="th-deduction">Deduction Entered (₹)</th>
+                  <th class="th-absent">Days Absent (out of 30)</th>
+                  <th class="th-deduction">Prorated Absence Deduction (₹)</th>
+                  <th class="th-deduction">Deduction Applied (Advance only)</th>
+                  <th class="th-advance">Advance Remained (₹)</th>
+                  <th class="th-net">Salary In Hand (Net Salary ₹)</th>
+                  <th>Comment</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="payrollBody"></tbody>
+            </table>
+          </section>
+
+          <p id="saveStatus" class="status-msg"></p>
+          <p id="appMessage" class="status-msg"></p>
+        </div>
       </section>
     </main>
 
@@ -148,6 +186,27 @@
       </div>
     </dialog>
 
-    <script src="app.js"></script>
+    <dialog id="companyDialog">
+      <div class="dialog-content company-dialog-content">
+        <div class="dialog-head">
+          <h2>Create Company</h2>
+          <button id="closeCompanyBtn" class="ghost">Close</button>
+        </div>
+        <form id="companyForm" class="panel" autocomplete="off">
+          <label>
+            Company Name
+            <input id="companyNameInput" type="text" required minlength="2" maxlength="120" placeholder="e.g. Red Lantern Restaurant" />
+          </label>
+          <label>
+            Company Logo
+            <input id="companyLogoInput" type="file" accept="image/*" />
+          </label>
+          <p id="companyMessage" class="status-msg"></p>
+          <button type="submit">Create Company</button>
+        </form>
+      </div>
+    </dialog>
+
+    <script src="app.js?v=20260318b"></script>
   </body>
 </html>
