@@ -7,7 +7,16 @@ const SELECTORS = {
   appView: document.getElementById("appView"),
   setupForm: document.getElementById("setupForm"),
   loginForm: document.getElementById("loginForm"),
+  showRegisterBtn: document.getElementById("showRegisterBtn"),
+  showLoginBtn: document.getElementById("showLoginBtn"),
+  setupEmail: document.getElementById("setupEmail"),
   authMessage: document.getElementById("authMessage"),
+  recoverForm: document.getElementById("recoverForm"),
+  recoverUsernameCompanyName: document.getElementById("recoverUsernameCompanyName"),
+  recoverUsernameEmail: document.getElementById("recoverUsernameEmail"),
+  recoverIdentifier: document.getElementById("recoverIdentifier"),
+  recoverUsernameBtn: document.getElementById("recoverUsernameBtn"),
+  recoverBtn: document.getElementById("recoverBtn"),
   appMessage: document.getElementById("appMessage"),
   saveStatus: document.getElementById("saveStatus"),
   companyPicker: document.getElementById("companyPicker"),
@@ -56,6 +65,7 @@ let activeCompanyId = null;
 let pendingSaveTimer = null;
 let saveInFlight = false;
 let saveQueued = false;
+let needsSetupFlow = false;
 
 init();
 
@@ -69,15 +79,28 @@ async function init() {
 }
 
 function wireAuth() {
+  SELECTORS.showRegisterBtn?.addEventListener("click", () => {
+    setAuthMode("register");
+  });
+
+  SELECTORS.showLoginBtn?.addEventListener("click", () => {
+    setAuthMode("login");
+  });
+
   SELECTORS.setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const companyName = document.getElementById("setupCompanyName").value.trim();
+    const email = SELECTORS.setupEmail.value.trim().toLowerCase();
     const username = document.getElementById("setupUsername").value.trim();
     const password = document.getElementById("setupPassword").value;
     const confirm = document.getElementById("setupConfirm").value;
 
     if (companyName.length < 2) {
       showAuthMessage("Company name is too short.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showAuthMessage("Enter a valid recovery email.");
       return;
     }
 
@@ -89,10 +112,11 @@ function wireAuth() {
     try {
       const response = await apiRequest("/api/auth/register", {
         method: "POST",
-        body: { companyName, username, password },
+        body: { companyName, email, username, password },
       }, false);
 
       setToken(response.token);
+      needsSetupFlow = false;
       SELECTORS.setupForm.reset();
       showAuthMessage("");
       await switchToApp();
@@ -103,6 +127,11 @@ function wireAuth() {
 
   SELECTORS.loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (needsSetupFlow) {
+      setAuthMode("register");
+      showAuthMessage("Please register company and admin first, then use Sign In.");
+      return;
+    }
     const username = document.getElementById("loginUsername").value.trim();
     const password = document.getElementById("loginPassword").value;
 
@@ -120,6 +149,52 @@ function wireAuth() {
       showAuthMessage(error.message);
     }
   });
+
+  SELECTORS.recoverUsernameBtn?.addEventListener("click", async () => {
+    const companyName = SELECTORS.recoverUsernameCompanyName?.value.trim() || "";
+    const email = SELECTORS.recoverUsernameEmail?.value.trim().toLowerCase() || "";
+
+    if (companyName.length < 2) {
+      showAuthMessage("Enter your registered company name.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showAuthMessage("Enter your registered email.");
+      return;
+    }
+
+    try {
+      await apiRequest("/api/auth/recover-email", {
+        method: "POST",
+        body: { companyName, email },
+      }, false);
+      showAuthMessage("If account exists, username reminder has been sent.");
+    } catch (error) {
+      showAuthMessage(error.message);
+    }
+  });
+
+  SELECTORS.recoverBtn?.addEventListener("click", async () => {
+    const identifier = SELECTORS.recoverIdentifier?.value.trim() || "";
+    if (!identifier) {
+      showAuthMessage("Enter username or email.");
+      return;
+    }
+
+    try {
+      await apiRequest("/api/auth/request-password-reset", {
+        method: "POST",
+        body: { identifier },
+      }, false);
+      showAuthMessage("If account exists, password reset link has been sent to registered email.");
+    } catch (error) {
+      showAuthMessage(error.message);
+    }
+  });
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ""));
 }
 
 function wireAppActions() {
@@ -378,18 +453,30 @@ async function updateAuthView() {
 
   try {
     const bootstrap = await apiRequest("/api/auth/bootstrap", {}, false);
+    needsSetupFlow = Boolean(bootstrap.needsSetup);
+    SELECTORS.showRegisterBtn?.classList.remove("hidden");
+    SELECTORS.showLoginBtn?.classList.remove("hidden");
+
     if (bootstrap.needsSetup) {
-      SELECTORS.setupForm.classList.remove("hidden");
-      SELECTORS.loginForm.classList.add("hidden");
+      setAuthMode("register");
+      showAuthMessage("First-time setup: register company + admin email + username + password.");
     } else {
-      SELECTORS.setupForm.classList.add("hidden");
-      SELECTORS.loginForm.classList.remove("hidden");
+      setAuthMode("login");
+      showAuthMessage("Company is already registered. Sign in with username or email.");
     }
   } catch {
     SELECTORS.setupForm.classList.add("hidden");
     SELECTORS.loginForm.classList.add("hidden");
     showAuthMessage("Server is not reachable. Start backend with: node server.js");
   }
+}
+
+function setAuthMode(mode) {
+  const showRegister = mode === "register";
+  SELECTORS.setupForm.classList.toggle("hidden", !showRegister);
+  SELECTORS.loginForm.classList.toggle("hidden", showRegister);
+  SELECTORS.showRegisterBtn?.classList.toggle("active", showRegister);
+  SELECTORS.showLoginBtn?.classList.toggle("active", !showRegister);
 }
 
 async function validateToken() {

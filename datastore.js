@@ -64,7 +64,12 @@ function createSqliteStore(baseDir) {
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           username TEXT NOT NULL UNIQUE,
+          username_lc TEXT NOT NULL DEFAULT '',
+          email TEXT NOT NULL DEFAULT '',
+          email_lc TEXT NOT NULL DEFAULT '',
           password_hash TEXT NOT NULL,
+          reset_code_hash TEXT NOT NULL DEFAULT '',
+          reset_code_expires_at TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -110,6 +115,53 @@ function createSqliteStore(baseDir) {
         }
       }
 
+      try {
+        await run("ALTER TABLE users ADD COLUMN username_lc TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN email_lc TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN reset_code_hash TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      await run("UPDATE users SET username_lc = lower(username) WHERE username_lc = ''");
+      await run("UPDATE users SET email_lc = lower(email) WHERE email_lc = ''");
+      await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lc_unique ON users(username_lc)");
+      await run(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lc_unique ON users(email_lc) WHERE email_lc <> ''"
+      );
+
       await run("CREATE INDEX IF NOT EXISTS idx_payroll_month ON payroll_entries(month)");
       await run(
         "CREATE INDEX IF NOT EXISTS idx_payroll_month_position ON payroll_entries(month, position_index)"
@@ -124,16 +176,69 @@ function createSqliteStore(baseDir) {
       return Number(row?.count || 0);
     },
 
-    async findUserByUsername(username) {
-      return get("SELECT id, username, password_hash FROM users WHERE username = ?", [username]);
+    async findUserByIdentifier(identifier) {
+      const normalized = String(identifier || "").trim().toLowerCase();
+      return get(
+        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+         FROM users
+         WHERE username_lc = ? OR email_lc = ?
+         LIMIT 1`,
+        [normalized, normalized]
+      );
     },
 
-    async createUser(username, passwordHash) {
-      const result = await run("INSERT INTO users (username, password_hash) VALUES (?, ?)", [
-        username,
-        passwordHash,
-      ]);
+    async findUserByEmail(email) {
+      const normalized = String(email || "").trim().toLowerCase();
+      return get(
+        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+         FROM users
+         WHERE email_lc = ?
+         LIMIT 1`,
+        [normalized]
+      );
+    },
+
+    async createUser(username, email, passwordHash) {
+      const result = await run(
+        "INSERT INTO users (username, username_lc, email, email_lc, password_hash) VALUES (?, ?, ?, ?, ?)",
+        [username, String(username).toLowerCase(), email, String(email).toLowerCase(), passwordHash]
+      );
       return { id: result.lastID };
+    },
+
+    async updateUserPasswordByEmail(email, passwordHash) {
+      await run("UPDATE users SET password_hash = ? WHERE email_lc = ?", [
+        passwordHash,
+        String(email || "").trim().toLowerCase(),
+      ]);
+    },
+
+    async updateUserPasswordById(userId, passwordHash) {
+      await run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
+    },
+
+    async setUserResetCodeById(userId, resetCodeHash, expiresAtIso) {
+      await run(
+        "UPDATE users SET reset_code_hash = ?, reset_code_expires_at = ? WHERE id = ?",
+        [resetCodeHash, expiresAtIso, userId]
+      );
+    },
+
+    async clearUserResetCodeById(userId) {
+      await run(
+        "UPDATE users SET reset_code_hash = '', reset_code_expires_at = '' WHERE id = ?",
+        [userId]
+      );
+    },
+
+    async findUserByResetCodeHash(resetCodeHash) {
+      return get(
+        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+         FROM users
+         WHERE reset_code_hash = ?
+         LIMIT 1`,
+        [String(resetCodeHash || "")]
+      );
     },
 
     async updateCompanyName(id, name, logoDataUrl = "") {
@@ -158,6 +263,15 @@ function createSqliteStore(baseDir) {
         `SELECT id, name, logo_data_url
          FROM companies
          ORDER BY id`
+      );
+    },
+
+    async getCompanyById(id) {
+      return get(
+        `SELECT id, name, logo_data_url
+         FROM companies
+         WHERE id = ?`,
+        [id]
       );
     },
 
@@ -345,16 +459,30 @@ function createFirebaseStore() {
       return Number(snapshot.data()?.count || 0);
     },
 
-    async findUserByUsername(username) {
-      const user = await findByField("users", "username_lc", String(username || "").toLowerCase());
+    async findUserByIdentifier(identifier) {
+      const normalized = String(identifier || "").trim().toLowerCase();
+      const user = await findByField("users", "username_lc", normalized);
+      if (user) return user;
+      return findByField("users", "email_lc", normalized);
+    },
+
+    async findUserByEmail(email) {
+      const user = await findByField("users", "email_lc", String(email || "").toLowerCase());
       return user || null;
     },
 
-    async createUser(username, passwordHash) {
+    async createUser(username, email, passwordHash) {
       const usernameLc = String(username || "").toLowerCase();
+      const emailLc = String(email || "").toLowerCase();
       const existing = await findByField("users", "username_lc", usernameLc);
       if (existing) {
         const conflict = new Error("Username already exists.");
+        conflict.code = "unique";
+        throw conflict;
+      }
+      const existingEmail = await findByField("users", "email_lc", emailLc);
+      if (existingEmail) {
+        const conflict = new Error("Email already exists.");
         conflict.code = "unique";
         throw conflict;
       }
@@ -364,10 +492,57 @@ function createFirebaseStore() {
         id,
         username,
         username_lc: usernameLc,
+        email,
+        email_lc: emailLc,
         password_hash: passwordHash,
         created_at: nowIso(),
       });
       return { id };
+    },
+
+    async updateUserPasswordByEmail(email, passwordHash) {
+      const user = await findByField("users", "email_lc", String(email || "").toLowerCase());
+      if (!user || !user.id) return;
+      await col("users").doc(String(user.id)).set(
+        {
+          password_hash: passwordHash,
+        },
+        { merge: true }
+      );
+    },
+
+    async updateUserPasswordById(userId, passwordHash) {
+      await col("users").doc(String(userId)).set(
+        {
+          password_hash: passwordHash,
+        },
+        { merge: true }
+      );
+    },
+
+    async setUserResetCodeById(userId, resetCodeHash, expiresAtIso) {
+      await col("users").doc(String(userId)).set(
+        {
+          reset_code_hash: resetCodeHash,
+          reset_code_expires_at: expiresAtIso,
+        },
+        { merge: true }
+      );
+    },
+
+    async clearUserResetCodeById(userId) {
+      await col("users").doc(String(userId)).set(
+        {
+          reset_code_hash: "",
+          reset_code_expires_at: "",
+        },
+        { merge: true }
+      );
+    },
+
+    async findUserByResetCodeHash(resetCodeHash) {
+      const user = await findByField("users", "reset_code_hash", String(resetCodeHash || ""));
+      return user || null;
     },
 
     async updateCompanyName(id, name, logoDataUrl = "") {
@@ -403,6 +578,11 @@ function createFirebaseStore() {
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
         .sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    },
+
+    async getCompanyById(id) {
+      const snapshot = await col("companies").doc(String(id)).get();
+      return snapshot.exists ? (snapshot.data() || null) : null;
     },
 
     async createCompany(name, logoDataUrl) {

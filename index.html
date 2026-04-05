@@ -15,16 +15,26 @@
         <div class="brand">
           <p class="eyebrow">PWA Payroll Platform</p>
           <h1>Routes Payroll</h1>
+          <img class="brand-logo" src="icons/routes-logo.png" alt="Routes Logo" />
           <p class="subtitle">Secure backend login, SQLite database, and smart payslip operations.</p>
         </div>
 
         <div class="auth-card">
+          <div class="auth-switch" role="tablist" aria-label="Authentication options">
+            <button id="showRegisterBtn" class="ghost" type="button">Register</button>
+            <button id="showLoginBtn" class="ghost" type="button">Sign In</button>
+          </div>
+
           <form id="setupForm" class="panel hidden" autocomplete="off">
             <h2>Create Admin Account</h2>
-            <p>Set your company and admin credentials for this payroll server.</p>
+            <p>Step 1: Register company and admin credentials. Step 2: Use Sign In from next time.</p>
             <label>
               Company Name
               <input id="setupCompanyName" type="text" required minlength="2" maxlength="120" placeholder="e.g. Routes Hospitality" />
+            </label>
+            <label>
+              Recovery Email
+              <input id="setupEmail" type="email" required maxlength="120" placeholder="e.g. admin@company.com" />
             </label>
             <label>
               Username
@@ -45,7 +55,7 @@
             <h2>Login</h2>
             <p>Enter your admin credentials to open payroll operations.</p>
             <label>
-              Username
+              Username or Email
               <input id="loginUsername" type="text" required />
             </label>
             <label>
@@ -53,6 +63,34 @@
               <input id="loginPassword" type="password" required />
             </label>
             <button type="submit">Sign In</button>
+
+            <details class="recover-box">
+              <summary>Account Recovery</summary>
+              <p>Use one of the recovery options below.</p>
+              <div id="recoverForm" class="recover-form">
+                <div class="recover-section">
+                  <h3>Forgot Username</h3>
+                  <label>
+                    Registered Company Name
+                    <input id="recoverUsernameCompanyName" type="text" required minlength="2" maxlength="120" />
+                  </label>
+                  <label>
+                    Registered Email
+                    <input id="recoverUsernameEmail" type="email" required maxlength="120" />
+                  </label>
+                  <button id="recoverUsernameBtn" type="button" class="ghost">Send Username Reminder</button>
+                </div>
+
+                <div class="recover-section">
+                  <h3>Forgot Password</h3>
+                  <label>
+                    Username or Email
+                    <input id="recoverIdentifier" type="text" maxlength="120" />
+                  </label>
+                  <button id="recoverBtn" type="button" class="ghost">Send Password Reset Link</button>
+                </div>
+              </div>
+            </details>
           </form>
 
           <p id="authMessage" class="status-msg"></p>
