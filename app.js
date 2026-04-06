@@ -19,6 +19,25 @@ const SELECTORS = {
   recoverBtn: document.getElementById("recoverBtn"),
   appMessage: document.getElementById("appMessage"),
   saveStatus: document.getElementById("saveStatus"),
+  employeesSection: document.getElementById("employeesSection"),
+  employeeForm: document.getElementById("employeeForm"),
+  employeeFormId: document.getElementById("employeeFormId"),
+  employeeNameInput: document.getElementById("employeeNameInput"),
+  employeeJoiningDateInput: document.getElementById("employeeJoiningDateInput"),
+  employeeBirthDateInput: document.getElementById("employeeBirthDateInput"),
+  employeeSalaryInput: document.getElementById("employeeSalaryInput"),
+  employeeOpeningAdvanceInput: document.getElementById("employeeOpeningAdvanceInput"),
+  employeeDesignationInput: document.getElementById("employeeDesignationInput"),
+  employeeMobileInput: document.getElementById("employeeMobileInput"),
+  employeeStatusFields: document.getElementById("employeeStatusFields"),
+  employeeStatusInput: document.getElementById("employeeStatusInput"),
+  employeeLeaveFromInput: document.getElementById("employeeLeaveFromInput"),
+  employeeLeaveToInput: document.getElementById("employeeLeaveToInput"),
+  employeeTerminatedOnInput: document.getElementById("employeeTerminatedOnInput"),
+  employeeSaveBtn: document.getElementById("employeeSaveBtn"),
+  employeeCancelBtn: document.getElementById("employeeCancelBtn"),
+  employeeMessage: document.getElementById("employeeMessage"),
+  employeesBody: document.getElementById("employeesBody"),
   companyPicker: document.getElementById("companyPicker"),
   addCompanyBtn: document.getElementById("addCompanyBtn"),
   companyDialog: document.getElementById("companyDialog"),
@@ -45,6 +64,14 @@ const SELECTORS = {
   dashboardSection: document.getElementById("dashboardSection"),
   metricsSection: document.getElementById("metricsSection"),
   payrollSection: document.getElementById("payrollSection"),
+  settingsSection: document.getElementById("settingsSection"),
+  designationPresetInput: document.getElementById("designationPresetInput"),
+  addDesignationBtn: document.getElementById("addDesignationBtn"),
+  designationList: document.getElementById("designationList"),
+  settingsLogoInput: document.getElementById("settingsLogoInput"),
+  settingsLogoPreview: document.getElementById("settingsLogoPreview"),
+  saveLogoBtn: document.getElementById("saveLogoBtn"),
+  settingsMessage: document.getElementById("settingsMessage"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
   closePayslipBtn: document.getElementById("closePayslipBtn"),
@@ -60,18 +87,25 @@ let pendingInstallPrompt = null;
 let authToken = localStorage.getItem(STORAGE_KEYS.authToken) || "";
 let activePayslip = null;
 let currentRecords = [];
+let employeeMaster = [];
+let activePayrollEmployeeId = "";
 let companies = [];
 let activeCompanyId = null;
 let pendingSaveTimer = null;
 let saveInFlight = false;
 let saveQueued = false;
 let needsSetupFlow = false;
+let designationPresets = [];
+let pendingSettingsLogoDataUrl = "";
 
 init();
 
 async function init() {
   wireAuth();
+  wirePasswordToggles();
+  wireEmployeeManagement();
   wireAppActions();
+  wireSettingsActions();
   setDefaultMonth();
   registerServiceWorker();
   wireInstallPrompt();
@@ -89,6 +123,7 @@ function wireAuth() {
 
   SELECTORS.setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitBtn = SELECTORS.setupForm.querySelector('button[type="submit"]');
     const companyName = document.getElementById("setupCompanyName").value.trim();
     const email = SELECTORS.setupEmail.value.trim().toLowerCase();
     const username = document.getElementById("setupUsername").value.trim();
@@ -110,6 +145,8 @@ function wireAuth() {
     }
 
     try {
+      if (submitBtn) submitBtn.disabled = true;
+      showAuthMessage("Creating account...");
       const response = await apiRequest("/api/auth/register", {
         method: "POST",
         body: { companyName, email, username, password },
@@ -122,11 +159,14 @@ function wireAuth() {
       await switchToApp();
     } catch (error) {
       showAuthMessage(error.message);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 
   SELECTORS.loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitBtn = SELECTORS.loginForm.querySelector('button[type="submit"]');
     if (needsSetupFlow) {
       setAuthMode("register");
       showAuthMessage("Please register company and admin first, then use Sign In.");
@@ -136,6 +176,8 @@ function wireAuth() {
     const password = document.getElementById("loginPassword").value;
 
     try {
+      if (submitBtn) submitBtn.disabled = true;
+      showAuthMessage("Signing in...");
       const response = await apiRequest("/api/auth/login", {
         method: "POST",
         body: { username, password },
@@ -147,6 +189,8 @@ function wireAuth() {
       await switchToApp();
     } catch (error) {
       showAuthMessage(error.message);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 
@@ -193,8 +237,325 @@ function wireAuth() {
   });
 }
 
+function wirePasswordToggles() {
+  const toggleButtons = Array.from(document.querySelectorAll(".password-toggle"));
+  for (const button of toggleButtons) {
+    button.addEventListener("click", () => {
+      const targetId = button.getAttribute("data-password-target") || "";
+      const input = document.getElementById(targetId);
+      if (!input) return;
+
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      button.setAttribute("aria-pressed", showing ? "false" : "true");
+      button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+      button.textContent = "👁";
+    });
+  }
+}
+
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ""));
+}
+
+function wireEmployeeManagement() {
+  SELECTORS.employeeStatusInput?.addEventListener("change", () => {
+    syncEmployeeStatusFields();
+  });
+
+  SELECTORS.employeeForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const editingId = Number(SELECTORS.employeeForm.dataset.editingId || 0);
+    const isEditMode = editingId > 0;
+    const statusValue = isEditMode ? (SELECTORS.employeeStatusInput.value || "working") : "working";
+    const payload = {
+      companyId: getSelectedCompanyId(),
+      employeeId: SELECTORS.employeeFormId.value.trim() || undefined,
+      employeeName: SELECTORS.employeeNameInput.value.trim(),
+      joiningDate: SELECTORS.employeeJoiningDateInput.value || "",
+      birthDate: SELECTORS.employeeBirthDateInput.value || "",
+      baseSalary: Number(SELECTORS.employeeSalaryInput.value || 0),
+      openingAdvance: Math.max(0, Number(SELECTORS.employeeOpeningAdvanceInput.value || 0)),
+      designation: SELECTORS.employeeDesignationInput.value.trim(),
+      mobileNumber: SELECTORS.employeeMobileInput.value.trim(),
+      status: statusValue,
+      leaveFrom: isEditMode ? (SELECTORS.employeeLeaveFromInput.value || "") : "",
+      leaveTo: isEditMode ? (SELECTORS.employeeLeaveToInput.value || "") : "",
+      terminatedOn: isEditMode ? (SELECTORS.employeeTerminatedOnInput.value || "") : "",
+      notes: "",
+    };
+
+    if (payload.employeeName.length < 2) {
+      setEmployeeMessage("Employee name is too short.");
+      return;
+    }
+    if (!payload.joiningDate) {
+      setEmployeeMessage("Joining date is required.");
+      return;
+    }
+    if (payload.designation.length < 2) {
+      setEmployeeMessage("Designation is required.");
+      return;
+    }
+    if (isEditMode && payload.status === "leave" && !payload.leaveFrom && !payload.leaveTo) {
+      setEmployeeMessage("For leave status, set leave dates (from/to).");
+      return;
+    }
+    if (isEditMode && payload.status === "terminated" && !payload.terminatedOn) {
+      setEmployeeMessage("For terminated status, terminated date is required.");
+      return;
+    }
+
+    try {
+      if (editingId > 0) {
+        await apiRequest(`/api/employees/${editingId}`, {
+          method: "PUT",
+          body: payload,
+        });
+        showAppMessage("Employee updated.");
+      } else {
+        payload.employeeId = nextEmployeeCode(employeeMaster);
+        await apiRequest("/api/employees", {
+          method: "POST",
+          body: payload,
+        });
+        showAppMessage("Employee added.");
+      }
+
+      await loadEmployees();
+      await loadMonthRecords();
+      resetEmployeeForm();
+      setEmployeeMessage("");
+    } catch (error) {
+      setEmployeeMessage(employeeApiErrorMessage(error));
+    }
+  });
+
+  SELECTORS.employeeCancelBtn?.addEventListener("click", () => {
+    resetEmployeeForm();
+    setEmployeeMessage("");
+  });
+
+  SELECTORS.employeesBody?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button");
+    if (!button) return;
+    const row = button.closest("tr");
+    if (!row) return;
+    const id = Number(row.dataset.id);
+    if (!id) return;
+
+    if (button.dataset.action === "edit") {
+      const employee = employeeMaster.find((item) => Number(item.id) === id);
+      if (!employee) return;
+      fillEmployeeForm(employee);
+      SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (button.dataset.action === "delete") {
+      if (!window.confirm("Delete this employee from management list?")) return;
+      try {
+        await apiRequest(`/api/employees/${id}?companyId=${getSelectedCompanyId()}`, {
+          method: "DELETE",
+        });
+        await loadEmployees();
+        await loadMonthRecords();
+        showAppMessage("Employee deleted.");
+      } catch (error) {
+        setEmployeeMessage(employeeApiErrorMessage(error));
+      }
+    }
+  });
+
+  resetEmployeeForm();
+}
+
+function syncEmployeeStatusFields() {
+  const status = SELECTORS.employeeStatusInput?.value || "working";
+  const leaveMode = status === "leave";
+  const terminatedMode = status === "terminated";
+
+  SELECTORS.employeeLeaveFromInput.disabled = !leaveMode;
+  SELECTORS.employeeLeaveToInput.disabled = !leaveMode;
+  SELECTORS.employeeTerminatedOnInput.disabled = !terminatedMode;
+
+  if (!leaveMode) {
+    SELECTORS.employeeLeaveFromInput.value = "";
+    SELECTORS.employeeLeaveToInput.value = "";
+  }
+  if (!terminatedMode) {
+    SELECTORS.employeeTerminatedOnInput.value = "";
+  }
+}
+
+function resetEmployeeForm() {
+  SELECTORS.employeeForm?.reset();
+  SELECTORS.employeeForm.dataset.editingId = "";
+  SELECTORS.employeeFormId.value = "";
+  SELECTORS.employeeSaveBtn.textContent = "Save Employee";
+  SELECTORS.employeeCancelBtn.classList.add("hidden");
+  SELECTORS.employeeStatusFields?.classList.add("hidden");
+  SELECTORS.employeeStatusInput.value = "working";
+  if (SELECTORS.employeeDesignationInput) {
+    SELECTORS.employeeDesignationInput.value = "";
+  }
+  syncEmployeeStatusFields();
+}
+
+function fillEmployeeForm(employee) {
+  SELECTORS.employeeForm.dataset.editingId = String(employee.id);
+  SELECTORS.employeeFormId.value = employee.employeeId || "";
+  SELECTORS.employeeNameInput.value = employee.employeeName || "";
+  SELECTORS.employeeJoiningDateInput.value = employee.joiningDate || "";
+  SELECTORS.employeeBirthDateInput.value = employee.birthDate || "";
+  SELECTORS.employeeSalaryInput.value = Number(employee.baseSalary || 0);
+  SELECTORS.employeeOpeningAdvanceInput.value = Number(employee.openingAdvance || 0);
+  const designationValue = String(employee.designation || "");
+  if (designationValue) {
+    const exists = Array.from(SELECTORS.employeeDesignationInput.options || [])
+      .some((option) => option.value === designationValue);
+    if (!exists) {
+      const option = document.createElement("option");
+      option.value = designationValue;
+      option.textContent = designationValue;
+      SELECTORS.employeeDesignationInput.append(option);
+    }
+    SELECTORS.employeeDesignationInput.value = designationValue;
+  } else {
+    SELECTORS.employeeDesignationInput.value = "";
+  }
+  SELECTORS.employeeMobileInput.value = employee.mobileNumber || "";
+  SELECTORS.employeeStatusInput.value = employee.status || "working";
+  SELECTORS.employeeLeaveFromInput.value = employee.leaveFrom || "";
+  SELECTORS.employeeLeaveToInput.value = employee.leaveTo || "";
+  SELECTORS.employeeTerminatedOnInput.value = employee.terminatedOn || "";
+  SELECTORS.employeeSaveBtn.textContent = "Update Employee";
+  SELECTORS.employeeCancelBtn.classList.remove("hidden");
+  SELECTORS.employeeStatusFields?.classList.remove("hidden");
+  syncEmployeeStatusFields();
+}
+
+function nextEmployeeCode(employees) {
+  let maxId = 0;
+  for (const item of employees || []) {
+    const match = String(item.employeeId || "").match(/(\d+)/);
+    if (match) maxId = Math.max(maxId, Number(match[1]));
+  }
+  return `EMP${String(maxId + 1).padStart(3, "0")}`;
+}
+
+async function loadEmployees() {
+  try {
+    const companyId = getSelectedCompanyId();
+    const response = await apiRequest(`/api/employees?companyId=${companyId}`);
+    employeeMaster = Array.isArray(response.employees) ? response.employees : [];
+    renderEmployeeTable();
+    renderDesignationSuggestions();
+  } catch (error) {
+    employeeMaster = [];
+    renderEmployeeTable();
+    renderDesignationSuggestions();
+    setEmployeeMessage(employeeApiErrorMessage(error));
+  }
+}
+
+function renderEmployeeTable() {
+  if (!SELECTORS.employeesBody) return;
+  if (employeeMaster.length === 0) {
+    SELECTORS.employeesBody.innerHTML = `
+      <tr><td colspan="6" class="empty">No employees yet. Add employee details above.</td></tr>
+    `;
+    return;
+  }
+
+  SELECTORS.employeesBody.innerHTML = employeeMaster
+    .map((employee) => {
+      const statusLabel = employee.status === "leave"
+        ? "On Leave"
+        : employee.status === "terminated"
+          ? "Terminated"
+          : "Working";
+      const statusClass = employee.status === "leave"
+        ? "status-pill leave"
+        : employee.status === "terminated"
+          ? "status-pill terminated"
+          : "status-pill working";
+      const statusDates = employee.status === "leave"
+        ? `${employee.leaveFrom || "-"} to ${employee.leaveTo || "-"}`
+        : employee.status === "terminated"
+          ? (employee.terminatedOn || "-")
+          : "-";
+
+      return `
+        <tr data-id="${employee.id}">
+          <td>${escapeHtml(employee.employeeId || "-")}</td>
+          <td>
+            <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
+            <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
+          </td>
+          <td>${formatCurrency(Number(employee.baseSalary || 0))}</td>
+          <td>${formatCurrency(Number(employee.openingAdvance || 0))}</td>
+          <td><span class="${statusClass}">${statusLabel}</span></td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="mini ghost" data-action="edit">Edit</button>
+              <button type="button" class="mini danger" data-action="delete">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function setEmployeeMessage(message) {
+  applyStatusTone(SELECTORS.employeeMessage, message);
+  SELECTORS.employeeMessage.textContent = message || "";
+}
+
+function renderDesignationSuggestions() {
+  if (!SELECTORS.employeeDesignationInput) return;
+
+  const values = new Map();
+  for (const preset of designationPresets) {
+    const name = String(preset?.name || "").trim();
+    const key = name.toLowerCase();
+    if (name && !values.has(key)) {
+      values.set(key, name);
+    }
+  }
+
+  const currentValue = String(SELECTORS.employeeDesignationInput.value || "").trim();
+  const sortedValues = Array.from(values.values()).sort((a, b) => a.localeCompare(b));
+
+  SELECTORS.employeeDesignationInput.innerHTML = [
+    '<option value="">Select designation</option>',
+    ...sortedValues.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+
+  if (currentValue && sortedValues.includes(currentValue)) {
+    SELECTORS.employeeDesignationInput.value = currentValue;
+  } else {
+    SELECTORS.employeeDesignationInput.value = "";
+  }
+}
+
+function employeeApiErrorMessage(error) {
+  const raw = String(error?.message || "");
+  if (raw.toLowerCase() === "not found") {
+    return "Employees API not available on current backend process (old server on port 5501). Stop it and run latest backend: cd /Users/grezello/Desktop/routes_payroll && node server.js";
+  }
+  return raw || "Employee request failed.";
+}
+
+function settingsApiErrorMessage(error) {
+  const raw = String(error?.message || "");
+  if (raw.toLowerCase() === "not found") {
+    return "Settings API not available on current backend process (old server on port 5501). Stop it and run latest backend: cd /Users/grezello/Desktop/routes_payroll && node server.js";
+  }
+  return raw || "Settings request failed.";
 }
 
 function wireAppActions() {
@@ -207,10 +568,10 @@ function wireAppActions() {
   });
 
   SELECTORS.addEmployeeBtn.addEventListener("click", async () => {
-    currentRecords.push(createEmptyEmployee(currentRecords));
-    renderPayrollTable();
-    scheduleSave(true);
-    showAppMessage("Employee row added.");
+    setWorkspace("employees");
+    SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "employees"));
+    SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => SELECTORS.employeeNameInput?.focus(), 240);
   });
 
   SELECTORS.exportCsvBtn.addEventListener("click", () => {
@@ -261,7 +622,9 @@ function wireAppActions() {
         body: parsed,
       });
       await loadCompanies();
+      await loadEmployees();
       await loadMonthRecords();
+      await loadDesignationPresets();
       showAppMessage("Database backup restored.");
       closeActionMenu();
     } catch (error) {
@@ -274,6 +637,14 @@ function wireAppActions() {
   SELECTORS.logoutBtn.addEventListener("click", async () => {
     setToken("");
     currentRecords = [];
+    employeeMaster = [];
+    designationPresets = [];
+    pendingSettingsLogoDataUrl = "";
+    renderEmployeeTable();
+    renderDesignationPresets();
+    renderDesignationSuggestions();
+    hydrateSettingsLogoPreview("");
+    setSettingsMessage("");
     renderPayrollTable();
     await updateAuthView();
     showAuthMessage("Logged out.");
@@ -285,7 +656,7 @@ function wireAppActions() {
       return;
     }
 
-    const row = target.closest("tr");
+    const row = target.closest("[data-index]");
     if (!row) return;
     const index = Number(row.dataset.index);
     const field = target.dataset.field;
@@ -298,12 +669,19 @@ function wireAppActions() {
   SELECTORS.payrollBody.addEventListener("change", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
-      return;
+      if (!(target instanceof HTMLSelectElement)) return;
     }
-    const row = target.closest("tr");
+    const row = target.closest("[data-index]");
     if (!row) return;
     const index = Number(row.dataset.index);
     if (Number.isNaN(index) || !currentRecords[index]) return;
+
+    if (target instanceof HTMLSelectElement && target.dataset.action === "pick-record") {
+      activePayrollEmployeeId = target.value || "";
+      renderPayrollTable();
+      return;
+    }
+
     renderPayrollTable();
     scheduleSave(true);
   });
@@ -313,14 +691,18 @@ function wireAppActions() {
     if (!(target instanceof HTMLElement)) return;
     const button = target.closest("button");
     if (!button) return;
-    const row = button.closest("tr");
+    const row = button.closest("[data-index]");
     if (!row) return;
     const index = Number(row.dataset.index);
     if (Number.isNaN(index) || !currentRecords[index]) return;
 
     const action = button.dataset.action;
     if (action === "delete") {
+      const removedId = currentRecords[index]?.employeeId || "";
       currentRecords.splice(index, 1);
+      if (String(activePayrollEmployeeId) === String(removedId)) {
+        activePayrollEmployeeId = "";
+      }
       renderPayrollTable();
       scheduleSave(true);
       showAppMessage("Employee removed.");
@@ -341,11 +723,217 @@ function wireAppActions() {
   SELECTORS.copyPayslipBtn.addEventListener("click", copyCurrentPayslip);
 }
 
+function wireSettingsActions() {
+  SELECTORS.addDesignationBtn?.addEventListener("click", async () => {
+    const name = SELECTORS.designationPresetInput?.value.trim() || "";
+    if (name.length < 2) {
+      setSettingsMessage("Designation name is too short.");
+      showAppMessage("Designation name is too short.");
+      return;
+    }
+
+    const addBtn = SELECTORS.addDesignationBtn;
+    try {
+      if (addBtn) {
+        addBtn.disabled = true;
+        addBtn.textContent = "Adding...";
+      }
+      await apiRequest("/api/settings/designations", {
+        method: "POST",
+        body: {
+          companyId: getSelectedCompanyId(),
+          name,
+        },
+      });
+      if (SELECTORS.designationPresetInput) {
+        SELECTORS.designationPresetInput.value = "";
+      }
+      await loadDesignationPresets();
+      setSettingsMessage("Designation added and saved to database.");
+      showAppMessage("Designation added and saved to database.");
+    } catch (error) {
+      const message = settingsApiErrorMessage(error);
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } finally {
+      if (addBtn) {
+        addBtn.disabled = false;
+        addBtn.textContent = "Add";
+      }
+    }
+  });
+
+  SELECTORS.designationList?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button[data-action='delete-designation']");
+    if (!button) return;
+
+    const id = Number(button.dataset.id);
+    if (!id) return;
+
+    try {
+      await apiRequest(`/api/settings/designations/${id}?companyId=${getSelectedCompanyId()}`, {
+        method: "DELETE",
+      });
+      await loadDesignationPresets();
+      setSettingsMessage("Designation removed from database.");
+      showAppMessage("Designation removed from database.");
+    } catch (error) {
+      const message = settingsApiErrorMessage(error);
+      setSettingsMessage(message);
+      showAppMessage(message);
+    }
+  });
+
+  SELECTORS.settingsLogoInput?.addEventListener("change", async (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 700 * 1024) {
+      setSettingsMessage("Logo too large. Keep it under 700KB.");
+      input.value = "";
+      return;
+    }
+
+    try {
+      pendingSettingsLogoDataUrl = await fileToDataUrl(file);
+      hydrateSettingsLogoPreview(pendingSettingsLogoDataUrl);
+      setSettingsMessage("Logo selected. Click Save Logo.");
+    } catch (error) {
+      setSettingsMessage(error.message || "Failed to read logo file.");
+    }
+  });
+
+  SELECTORS.saveLogoBtn?.addEventListener("click", async () => {
+    const companyId = getSelectedCompanyId();
+    if (!companyId) {
+      setSettingsMessage("Select a company first.");
+      showAppMessage("Select a company first.");
+      return;
+    }
+
+    const currentLogo = String(getActiveCompany()?.logoDataUrl || "");
+    const logoDataUrl = pendingSettingsLogoDataUrl || currentLogo;
+    if (!logoDataUrl) {
+      setSettingsMessage("Choose a logo first.");
+      showAppMessage("Choose a logo first.");
+      return;
+    }
+
+    const saveBtn = SELECTORS.saveLogoBtn;
+    try {
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+      }
+      await apiRequest(`/api/companies/${companyId}/logo`, {
+        method: "PUT",
+        body: { logoDataUrl },
+      });
+      const company = companies.find((item) => Number(item.id) === Number(companyId));
+      if (company) company.logoDataUrl = logoDataUrl;
+      pendingSettingsLogoDataUrl = "";
+      if (SELECTORS.settingsLogoInput) SELECTORS.settingsLogoInput.value = "";
+      hydrateSettingsLogoPreview(logoDataUrl);
+      setSettingsMessage("Company logo saved to database.");
+      showAppMessage("Company logo updated for payslips.");
+    } catch (error) {
+      const message = settingsApiErrorMessage(error);
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Logo";
+      }
+    }
+  });
+}
+
+async function loadDesignationPresets() {
+  try {
+    const companyId = getSelectedCompanyId();
+    const response = await apiRequest(`/api/settings/designations?companyId=${companyId}`);
+    designationPresets = Array.isArray(response.designations) ? response.designations : [];
+    renderDesignationPresets();
+    renderDesignationSuggestions();
+    hydrateSettingsLogoPreview(String(getActiveCompany()?.logoDataUrl || ""));
+  } catch (error) {
+    designationPresets = [];
+    renderDesignationPresets();
+    renderDesignationSuggestions();
+    setSettingsMessage(settingsApiErrorMessage(error));
+  }
+}
+
+function renderDesignationPresets() {
+  if (!SELECTORS.designationList) return;
+  if (designationPresets.length === 0) {
+    SELECTORS.designationList.innerHTML = '<p class="empty">No designation presets yet.</p>';
+    return;
+  }
+
+  SELECTORS.designationList.innerHTML = designationPresets
+    .map((item) => `
+      <div class="designation-item" data-id="${Number(item.id) || 0}">
+        <span>${escapeHtml(String(item.name || ""))}</span>
+        <button type="button" class="mini danger ghost" data-action="delete-designation" data-id="${Number(item.id) || 0}">Delete</button>
+      </div>
+    `)
+    .join("");
+}
+
+function hydrateSettingsLogoPreview(logoDataUrl) {
+  if (!SELECTORS.settingsLogoPreview) return;
+  const src = String(logoDataUrl || "");
+  if (!src) {
+    SELECTORS.settingsLogoPreview.removeAttribute("src");
+    SELECTORS.settingsLogoPreview.classList.add("hidden");
+    return;
+  }
+  SELECTORS.settingsLogoPreview.src = src;
+  SELECTORS.settingsLogoPreview.classList.remove("hidden");
+}
+
+function setSettingsMessage(message) {
+  if (!SELECTORS.settingsMessage) return;
+  applyStatusTone(SELECTORS.settingsMessage, message);
+  SELECTORS.settingsMessage.textContent = message || "";
+}
+
+function applyEmployeeSelection(index, employeeId) {
+  const picked = employeeMaster.find((item) => String(item.employeeId) === String(employeeId));
+  if (!picked || !currentRecords[index]) return;
+
+  currentRecords[index].employeeId = picked.employeeId || "";
+  currentRecords[index].employeeName = picked.employeeName || "";
+  currentRecords[index].designation = picked.designation || "";
+  currentRecords[index].presentSalary = Number(picked.baseSalary || 0);
+  currentRecords[index].employeeStatus = picked.status || "working";
+  currentRecords[index].leaveFrom = picked.leaveFrom || "";
+  currentRecords[index].leaveTo = picked.leaveTo || "";
+  currentRecords[index].terminatedOn = picked.terminatedOn || "";
+}
+
+function revealPayrollSectionsForRow(row) {
+  if (!row) return;
+  const sections = row.querySelectorAll(".payroll-reveal-section");
+  sections.forEach((section) => {
+    section.setAttribute("open", "");
+  });
+}
+
 function wireCompanyActions() {
   SELECTORS.companyPicker.addEventListener("change", async () => {
     await flushPendingSave();
     activeCompanyId = Number(SELECTORS.companyPicker.value) || null;
+    await loadEmployees();
     await loadMonthRecords();
+    await loadDesignationPresets();
+    resetEmployeeForm();
+    setSettingsMessage("");
   });
 
   SELECTORS.addCompanyBtn.addEventListener("click", () => {
@@ -379,7 +967,9 @@ function wireCompanyActions() {
       });
       activeCompanyId = response.company?.id || activeCompanyId;
       await loadCompanies();
+      await loadEmployees();
       await loadMonthRecords();
+      await loadDesignationPresets();
       SELECTORS.companyDialog.close();
       showAppMessage("Company created.");
     } catch (error) {
@@ -396,43 +986,59 @@ function wireRailActions() {
       button.classList.add("active");
 
       if (action === "dashboard") {
+        setWorkspace("dashboard");
         SELECTORS.dashboardSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 
       if (action === "employees") {
-        if (currentRecords.length === 0) {
-          SELECTORS.addEmployeeBtn.click();
-        }
-        SELECTORS.payrollSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setWorkspace("employees");
+        SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         setTimeout(() => {
-          const firstNameField = SELECTORS.payrollBody.querySelector('input[data-field="employeeName"]');
-          firstNameField?.focus();
+          SELECTORS.employeeNameInput?.focus();
         }, 260);
         return;
       }
 
       if (action === "payroll") {
+        setWorkspace("payroll");
         SELECTORS.payrollSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         setTimeout(() => {
-          const salaryField = SELECTORS.payrollBody.querySelector('input[data-field="presentSalary"]');
-          salaryField?.focus();
+          const incrementField = SELECTORS.payrollBody.querySelector('input[data-field="increment"]:not([disabled])');
+          incrementField?.focus();
         }, 240);
         return;
       }
 
       if (action === "reports") {
+        setWorkspace("payroll");
         SELECTORS.actionMenu?.setAttribute("open", "");
         SELECTORS.actionMenu?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
 
       if (action === "settings") {
-        SELECTORS.monthPicker?.focus();
-        SELECTORS.metricsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setWorkspace("settings");
+        SELECTORS.settingsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => {
+          SELECTORS.designationPresetInput?.focus();
+        }, 220);
       }
     });
   });
+}
+
+function setWorkspace(view) {
+  const dashboardView = view === "dashboard";
+  const employeesView = view === "employees";
+  const payrollView = view === "payroll";
+  const settingsView = view === "settings";
+
+  SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
+  SELECTORS.employeesSection?.classList.toggle("hidden", !employeesView);
+  SELECTORS.payrollSection?.classList.toggle("hidden", !payrollView);
+  SELECTORS.settingsSection?.classList.toggle("hidden", !settingsView);
+  SELECTORS.saveStatus?.classList.toggle("hidden", !payrollView);
 }
 
 function closeActionMenu() {
@@ -496,7 +1102,13 @@ async function switchToApp() {
   SELECTORS.authView.classList.add("hidden");
   SELECTORS.appView.classList.remove("hidden");
   await loadCompanies();
-  await loadMonthRecords();
+  await Promise.all([
+    loadEmployees(),
+    loadMonthRecords(),
+    loadDesignationPresets(),
+  ]);
+  setWorkspace("dashboard");
+  SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
 }
 
 function setDefaultMonth() {
@@ -574,10 +1186,15 @@ async function loadMonthRecords() {
   try {
     const response = await apiRequest(payrollMonthUrl(month));
     currentRecords = Array.isArray(response.records) ? response.records : [];
+    const visible = currentRecords.filter((record) => String(record.employeeStatus || "working").toLowerCase() !== "terminated");
+    if (!visible.some((record) => String(record.employeeId) === String(activePayrollEmployeeId))) {
+      activePayrollEmployeeId = visible[0]?.employeeId || "";
+    }
     renderPayrollTable();
     setSaveStatus("All changes saved.");
   } catch (error) {
     currentRecords = [];
+    activePayrollEmployeeId = "";
     renderPayrollTable();
     showAppMessage(error.message);
   }
@@ -610,17 +1227,59 @@ function findNextEmployeeId(records) {
   return `EMP${String(maxId + 1).padStart(3, "0")}`;
 }
 
-function computePayroll(record) {
-  const presentSalary = toMoney(record.presentSalary);
-  const increment = toMoney(record.increment);
+function monthBounds(isoMonth) {
+  if (!isoMonth || !isoMonth.includes("-")) {
+    const now = new Date();
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+    };
+  }
+  const [year, month] = isoMonth.split("-").map((item) => Number(item));
+  return {
+    start: new Date(year, month - 1, 1),
+    end: new Date(year, month, 0),
+  };
+}
+
+function parseIsoDate(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isPayrollBlocked(record, month) {
+  const status = String(record.employeeStatus || "working").toLowerCase();
+  if (status === "terminated") {
+    const terminatedOn = parseIsoDate(record.terminatedOn);
+    if (!terminatedOn) return true;
+    const { end } = monthBounds(month);
+    return terminatedOn <= end;
+  }
+  if (status === "leave") {
+    const { start, end } = monthBounds(month);
+    const leaveFrom = parseIsoDate(record.leaveFrom);
+    const leaveTo = parseIsoDate(record.leaveTo);
+    if (!leaveFrom && !leaveTo) return true;
+    if (leaveFrom && leaveFrom > end) return false;
+    if (leaveTo && leaveTo < start) return false;
+    return true;
+  }
+  return false;
+}
+
+function computePayroll(record, month = getSelectedMonth()) {
+  const blocked = isPayrollBlocked(record, month);
+  const presentSalary = blocked ? 0 : toMoney(record.presentSalary);
+  const increment = blocked ? 0 : toMoney(record.increment);
   const grossSalary = presentSalary + increment;
 
   const oldAdvanceTaken = toMoney(record.oldAdvanceTaken);
   const extraAdvanceAdded = toMoney(record.extraAdvanceAdded);
   const totalAdvance = oldAdvanceTaken + extraAdvanceAdded;
 
-  const deductionEntered = Math.max(0, toMoney(record.deductionEntered));
-  const daysAbsentRaw = toMoney(record.daysAbsent);
+  const deductionEntered = blocked ? 0 : Math.max(0, toMoney(record.deductionEntered));
+  const daysAbsentRaw = blocked ? 0 : toMoney(record.daysAbsent);
   const daysAbsent = clamp(daysAbsentRaw, 0, 30);
   const proratedAbsenceDeduction = (daysAbsent / 30) * grossSalary;
   const deductionApplied = Math.min(deductionEntered, totalAdvance);
@@ -628,6 +1287,7 @@ function computePayroll(record) {
   const netSalary = grossSalary - deductionApplied - proratedAbsenceDeduction;
 
   return {
+    blocked,
     presentSalary,
     increment,
     grossSalary,
@@ -645,50 +1305,126 @@ function computePayroll(record) {
 
 function renderPayrollTable() {
   const month = getSelectedMonth();
+  const visibleRecords = currentRecords
+    .map((record, index) => ({ record, index }))
+    .filter((item) => String(item.record.employeeStatus || "working").toLowerCase() !== "terminated");
+  const visibleCount = visibleRecords.length;
 
-  if (currentRecords.length === 0) {
+  if (visibleCount === 0) {
     SELECTORS.payrollBody.innerHTML = `
-      <tr>
-        <td colspan="17" class="empty">
-          No employees for ${formatMonth(month)}. Click "Add Employee" to begin.
-        </td>
-      </tr>
+      <div class="empty">
+        No employees for ${formatMonth(month)}. Add employees from Employee Management.
+      </div>
     `;
     updateMetrics([]);
     return;
   }
 
-  SELECTORS.payrollBody.innerHTML = currentRecords
-    .map((record, index) => {
-      const calc = computePayroll(record);
-      return `
-        <tr data-index="${index}">
-          <td><input data-field="employeeId" value="${escapeHtml(record.employeeId || "")}" /></td>
-          <td><input data-field="employeeName" value="${escapeHtml(record.employeeName || "")}" /></td>
-          <td><input data-field="designation" value="${escapeHtml(record.designation || "")}" /></td>
-          <td><input class="field-salary" data-field="presentSalary" type="number" min="0" step="0.01" value="${toRaw(record.presentSalary)}" /></td>
-          <td><input class="field-increment" data-field="increment" type="number" min="0" step="0.01" value="${toRaw(record.increment)}" /></td>
-          <td class="read money-gross">${formatCurrency(calc.grossSalary)}</td>
-          <td><input class="field-advance" data-field="oldAdvanceTaken" type="number" min="0" step="0.01" value="${toRaw(record.oldAdvanceTaken)}" /></td>
-          <td><input class="field-advance" data-field="extraAdvanceAdded" type="number" min="0" step="0.01" value="${toRaw(record.extraAdvanceAdded)}" /></td>
-          <td class="read money-advance">${formatCurrency(calc.totalAdvance)}</td>
-          <td><input class="field-deduction" data-field="deductionEntered" type="number" min="0" step="0.01" value="${toRaw(record.deductionEntered)}" /></td>
-          <td><input class="field-absent" data-field="daysAbsent" type="number" min="0" max="30" step="0.5" value="${toRaw(record.daysAbsent)}" /></td>
-          <td class="read money-deduction">${formatCurrency(calc.proratedAbsenceDeduction)}</td>
-          <td class="read money-deduction">${formatCurrency(calc.deductionApplied)}</td>
-          <td class="read money-advance">${formatCurrency(calc.advanceRemained)}</td>
-          <td class="read money-net">${formatCurrency(calc.netSalary)}</td>
-          <td><textarea data-field="comment" rows="2">${escapeHtml(record.comment || "")}</textarea></td>
-          <td>
-            <div class="row-actions">
-              <button data-action="payslip" class="mini">Payslip</button>
-              <button data-action="delete" class="mini danger">Delete</button>
-            </div>
-          </td>
-        </tr>
-      `;
+  const activeEntry = visibleRecords.find((item) => String(item.record.employeeId) === String(activePayrollEmployeeId)) || visibleRecords[0];
+  const record = activeEntry.record;
+  const index = activeEntry.index;
+  activePayrollEmployeeId = record.employeeId || "";
+  const calc = computePayroll(record, month);
+  const status = String(record.employeeStatus || "working").toLowerCase();
+  const statusLabel = status === "leave" ? "On Leave" : "Working";
+  const badgeClass = status === "leave" ? "status-pill leave" : "status-pill working";
+  const statusBoxClass = status === "leave" ? "status-box leave" : "status-box active";
+  const statusDetail = status === "leave"
+    ? `Leave: ${record.leaveFrom || "-"} to ${record.leaveTo || "-"}`
+    : "";
+  const employeeOptions = visibleRecords
+    .map((item) => {
+      const selected = String(item.record.employeeId) === String(record.employeeId) ? "selected" : "";
+      return `<option value="${escapeHtml(item.record.employeeId)}" ${selected}>${escapeHtml(item.record.employeeId)} - ${escapeHtml(item.record.employeeName)}</option>`;
     })
     .join("");
+
+  const selectClass = status === "leave" ? "emp-picker leave" : "emp-picker working";
+  SELECTORS.payrollBody.innerHTML = `
+        <article class="payroll-entry-card payroll-modern" data-index="${index}">
+          <div class="payroll-modern-grid">
+            <div class="payroll-modern-main">
+              <section class="payroll-stack-section">
+                <h3>Employee Profile</h3>
+                <div class="payroll-fields">
+                  <label>Employee ID
+                    <select data-action="pick-record" class="${selectClass}">
+                      ${employeeOptions}
+                    </select>
+                  </label>
+                  <label>Employee Name
+                    <input data-field="employeeName" value="${escapeHtml(record.employeeName || "")}" readonly />
+                  </label>
+                  <label>Designation
+                    <input data-field="designation" value="${escapeHtml(record.designation || "")}" readonly />
+                  </label>
+                  <label>Status
+                    <div class="${statusBoxClass}">${status === "leave" ? "ON LEAVE" : "ACTIVE ✓"}</div>
+                  </label>
+                </div>
+                ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
+              </section>
+
+              <section class="payroll-stack-section">
+                <h3>Core Salary & Increment</h3>
+                <div class="payroll-fields">
+                  <label>Present Salary (₹)
+                    <input class="field-salary" data-field="presentSalary" type="number" min="0" step="0.01" value="${toRaw(record.presentSalary)}" readonly />
+                  </label>
+                  <label>Increment (₹)
+                    <span class="field-tag">NEW</span>
+                    <input class="field-increment" data-field="increment" type="number" min="0" step="0.01" value="${toRaw(record.increment)}" ${calc.blocked ? "disabled" : ""} />
+                  </label>
+                  <div class="read money-gross strong-line"><span>GROSS SALARY</span><b>${formatCurrency(calc.grossSalary)} ↑</b></div>
+                </div>
+              </section>
+
+              <section class="payroll-stack-section">
+                <h3>Advance Tracking</h3>
+                <div class="payroll-fields">
+                  <label>Old Advance Taken (₹)
+                    <input class="field-advance" data-field="oldAdvanceTaken" type="number" min="0" step="0.01" value="${toRaw(record.oldAdvanceTaken)}" />
+                  </label>
+                  <label>Extra Advance Added (₹)
+                    <input class="field-advance" data-field="extraAdvanceAdded" type="number" min="0" step="0.01" value="${toRaw(record.extraAdvanceAdded)}" />
+                  </label>
+                  <div class="read money-advance strong-line"><span>Total Advance Balance</span><b>${formatCurrency(calc.totalAdvance)}</b></div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="payroll-modern-side">
+              <div class="kpi-card net">
+                <p>Net Salary In Hand</p>
+                <strong>${formatCurrency(calc.netSalary)}</strong>
+                <div class="net-sub">Calculated: Gross - Deductions</div>
+              </div>
+
+              <div class="kpi-card soft">
+                <h4>Deductions</h4>
+                <div class="kpi-line"><span>Deduction Entered</span><b>${formatCurrency(calc.deductionEntered)}</b></div>
+                <div class="kpi-line"><span>Absence Deduction</span><b>${formatCurrency(calc.proratedAbsenceDeduction)}</b></div>
+                <div class="kpi-line total"><span>Total Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
+              </div>
+
+              <div class="kpi-card amber">
+                <p>Advance Remained</p>
+                <strong>${formatCurrency(calc.advanceRemained)}</strong>
+              </div>
+            </aside>
+          </div>
+
+          <section class="payroll-footer">
+            <label>Notes / Comments
+              <textarea data-field="comment" rows="3" placeholder="Add professional notes here...">${escapeHtml(record.comment || "")}</textarea>
+            </label>
+            <div class="row-actions">
+              <button data-action="payslip" class="mini" type="button">Generate Payslip</button>
+              <button data-action="delete" class="mini danger" type="button">Delete Record</button>
+            </div>
+          </section>
+        </article>
+      `;
 
   updateMetrics(currentRecords.map((record) => computePayroll(record)));
 }
@@ -785,6 +1521,7 @@ function renderPayslipCard(record, calc, month, company) {
         <div><dt>Company</dt><dd>${escapeHtml(company.name || "-")}</dd></div>
         <div><dt>Year-Month</dt><dd>${escapeHtml(formatMonth(month))}</dd></div>
         <div><dt>Employee ID</dt><dd>${escapeHtml(record.employeeId || "-")}</dd></div>
+        <div><dt>Status</dt><dd>${escapeHtml(String(record.employeeStatus || "working"))}</dd></div>
         <div><dt>Present Salary</dt><dd>${formatCurrency(calc.presentSalary)}</dd></div>
         <div><dt>Increment</dt><dd>${formatCurrency(calc.increment)}</dd></div>
         <div><dt>Gross Salary</dt><dd>${formatCurrency(calc.grossSalary)}</dd></div>
@@ -820,6 +1557,7 @@ function getPayslipText(data) {
     `Employee ID: ${record.employeeId || "-"}`,
     `Employee Name: ${record.employeeName || "-"}`,
     `Designation: ${record.designation || "-"}`,
+    `Status: ${record.employeeStatus || "working"}`,
     `Present Salary: ${formatCurrency(calc.presentSalary)}`,
     `Increment: ${formatCurrency(calc.increment)}`,
     `Gross Salary: ${formatCurrency(calc.grossSalary)}`,
@@ -883,6 +1621,7 @@ function buildPrintRows(data) {
     ["Employee ID", escapeHtml(record.employeeId || "-")],
     ["Employee Name", escapeHtml(record.employeeName || "-")],
     ["Designation", escapeHtml(record.designation || "-")],
+    ["Status", escapeHtml(record.employeeStatus || "working")],
     ["Present Salary", formatCurrency(calc.presentSalary)],
     ["Increment", formatCurrency(calc.increment)],
     ["Gross Salary", formatCurrency(calc.grossSalary)],
@@ -959,6 +1698,7 @@ function makeCsv(records, month) {
     "Employee ID",
     "Employee Names",
     "Designation",
+    "Status",
     "Present Salary (₹)",
     "Increment (₹)",
     "Gross Salary (₹)",
@@ -982,6 +1722,7 @@ function makeCsv(records, month) {
       record.employeeId || "",
       record.employeeName || "",
       record.designation || "",
+      record.employeeStatus || "working",
       calc.presentSalary,
       calc.increment,
       calc.grossSalary,
@@ -1365,11 +2106,12 @@ function applyStatusTone(element, message) {
 }
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
-      // Non-critical if registration fails.
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.getRegistrations()
+    .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+    .catch(() => {
+      // Non-critical if unregister fails.
     });
-  }
 }
 
 function wireInstallPrompt() {

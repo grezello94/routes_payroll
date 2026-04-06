@@ -5,6 +5,23 @@
   const messageEl = document.getElementById("resetMessage");
   const token = new URLSearchParams(window.location.search).get("token") || "";
 
+  function wirePasswordToggles() {
+    const toggleButtons = Array.from(document.querySelectorAll(".password-toggle"));
+    for (const button of toggleButtons) {
+      button.addEventListener("click", () => {
+        const targetId = button.getAttribute("data-password-target") || "";
+        const input = document.getElementById(targetId);
+        if (!input) return;
+
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        button.setAttribute("aria-pressed", showing ? "false" : "true");
+        button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        button.textContent = "👁";
+      });
+    }
+  }
+
   function setMessage(text, tone) {
     messageEl.classList.remove("status-info", "status-success", "status-error");
     if (tone === "success") messageEl.classList.add("status-success");
@@ -40,6 +57,8 @@
     submitBtn.disabled = true;
     return;
   }
+
+  wirePasswordToggles();
 
   submitBtn.addEventListener("click", async () => {
     const newPassword = newPasswordEl.value || "";

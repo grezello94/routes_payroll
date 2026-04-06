@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260318b" />
+    <link rel="stylesheet" href="styles.css?v=20260407e" />
   </head>
   <body>
     <main class="shell">
@@ -42,11 +42,17 @@
             </label>
             <label>
               Password
-              <input id="setupPassword" type="password" required minlength="6" maxlength="80" />
+              <div class="password-field">
+                <input id="setupPassword" type="password" required minlength="8" maxlength="80" />
+                <button class="password-toggle" type="button" data-password-target="setupPassword" aria-label="Show password" aria-pressed="false">👁</button>
+              </div>
             </label>
             <label>
               Confirm Password
-              <input id="setupConfirm" type="password" required minlength="6" maxlength="80" />
+              <div class="password-field">
+                <input id="setupConfirm" type="password" required minlength="8" maxlength="80" />
+                <button class="password-toggle" type="button" data-password-target="setupConfirm" aria-label="Show password" aria-pressed="false">👁</button>
+              </div>
             </label>
             <button type="submit">Create Credentials</button>
           </form>
@@ -60,7 +66,10 @@
             </label>
             <label>
               Password
-              <input id="loginPassword" type="password" required />
+              <div class="password-field">
+                <input id="loginPassword" type="password" required />
+                <button class="password-toggle" type="button" data-password-target="loginPassword" aria-label="Show password" aria-pressed="false">👁</button>
+              </div>
             </label>
             <button type="submit">Sign In</button>
 
@@ -72,11 +81,11 @@
                   <h3>Forgot Username</h3>
                   <label>
                     Registered Company Name
-                    <input id="recoverUsernameCompanyName" type="text" required minlength="2" maxlength="120" />
+                    <input id="recoverUsernameCompanyName" type="text" minlength="2" maxlength="120" />
                   </label>
                   <label>
                     Registered Email
-                    <input id="recoverUsernameEmail" type="email" required maxlength="120" />
+                    <input id="recoverUsernameEmail" type="email" maxlength="120" />
                   </label>
                   <button id="recoverUsernameBtn" type="button" class="ghost">Send Username Reminder</button>
                 </div>
@@ -124,7 +133,7 @@
                 <input id="monthPicker" type="month" />
               </label>
               <button id="installBtn" class="ghost hidden">Install App</button>
-              <button id="addEmployeeBtn">+ Add New Entry</button>
+              <button id="addEmployeeBtn">+ Add Employee</button>
               <details id="actionMenu" class="action-menu">
                 <summary class="ghost">Actions</summary>
                 <div class="menu-sheet">
@@ -160,44 +169,134 @@
             </article>
           </section>
 
+          <section id="employeesSection" class="employee-mgmt">
+            <div class="table-head">
+              <h2>Employee Management</h2>
+              <p>Register and maintain employee profile, salary base, and employment status.</p>
+            </div>
+
+            <form id="employeeForm" class="employee-form" autocomplete="off">
+              <input id="employeeFormId" type="hidden" />
+              <label>
+                Employee Name
+                <input id="employeeNameInput" type="text" required minlength="2" maxlength="120" />
+              </label>
+              <label>
+                Date of Joining
+                <input id="employeeJoiningDateInput" type="date" required />
+              </label>
+              <label>
+                Date of Birth (Optional)
+                <input id="employeeBirthDateInput" type="date" />
+              </label>
+              <label>
+                Salary
+                <input id="employeeSalaryInput" type="number" min="0" step="0.01" required />
+              </label>
+              <label>
+                Old Advance Taken (Optional)
+                <input id="employeeOpeningAdvanceInput" type="number" min="0" step="0.01" />
+              </label>
+              <label>
+                Designation
+                <select id="employeeDesignationInput" required>
+                  <option value="">Select designation</option>
+                </select>
+              </label>
+              <label class="employee-optional">
+                Mobile (Optional)
+                <input id="employeeMobileInput" type="text" maxlength="30" />
+              </label>
+              <div id="employeeStatusFields" class="employee-status-fields hidden">
+                <p class="subtitle">Employment update (for existing employee)</p>
+                <label>
+                  Status
+                  <select id="employeeStatusInput">
+                    <option value="working">Working</option>
+                    <option value="leave">On Leave</option>
+                    <option value="terminated">Terminated</option>
+                  </select>
+                </label>
+                <label>
+                  Leave From (if On Leave)
+                  <input id="employeeLeaveFromInput" type="date" />
+                </label>
+                <label>
+                  Leave To (if On Leave)
+                  <input id="employeeLeaveToInput" type="date" />
+                </label>
+                <label>
+                  Terminated On (if Terminated)
+                  <input id="employeeTerminatedOnInput" type="date" />
+                </label>
+              </div>
+              <div class="employee-form-actions">
+                <button id="employeeSaveBtn" type="submit">Save Employee</button>
+                <button id="employeeCancelBtn" type="button" class="ghost">Cancel Edit</button>
+              </div>
+            </form>
+            <p id="employeeMessage" class="status-msg"></p>
+
+            <div class="employee-list-wrap">
+              <table>
+                <thead>
+                  <tr class="detail-row">
+                    <th>Employee ID</th>
+                    <th>Name</th>
+                    <th>Salary (₹)</th>
+                    <th>Old Advance (₹)</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="employeesBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="settingsSection" class="settings-panel hidden">
+            <div class="table-head">
+              <h2>Settings</h2>
+              <p>Manage designation presets and company logo for payslip print.</p>
+            </div>
+
+            <div class="settings-grid">
+              <article class="settings-card">
+                <h3>Designation Presets</h3>
+                <p>Pre-assign designations. Employee form will suggest these values.</p>
+                <div class="settings-inline">
+                  <input id="designationPresetInput" type="text" maxlength="120" placeholder="e.g. Senior Chef" />
+                  <button id="addDesignationBtn" type="button">Add</button>
+                </div>
+                <div id="designationList" class="designation-list"></div>
+              </article>
+
+              <article class="settings-card">
+                <h3>Company Logo (Payslip)</h3>
+                <p>Upload logo used in payslip preview and print.</p>
+                <label for="settingsLogoInput" class="settings-file-label">Choose Logo</label>
+                <input id="settingsLogoInput" class="settings-file-input" type="file" accept="image/*" />
+                <div class="logo-preview-wrap">
+                  <img id="settingsLogoPreview" class="settings-logo-preview hidden" alt="Company logo preview" />
+                </div>
+                <button id="saveLogoBtn" type="button">Save Logo</button>
+              </article>
+            </div>
+
+            <p id="settingsMessage" class="status-msg"></p>
+          </section>
+
           <section id="payrollSection" class="table-wrap">
             <div class="table-head">
               <h2>Employee Payroll Register</h2>
-              <p>Color indicators: Salary, Increment, Gross, Advance, Deductions, Net Payout.</p>
+              <p class="payroll-legend">
+                <span><i class="dot salary"></i>Salary</span>
+                <span><i class="dot increment"></i>Increment</span>
+                <span><i class="dot gross"></i>Gross</span>
+                <span><i class="dot deduction"></i>Deductions</span>
+              </p>
             </div>
-            <table>
-              <thead>
-                <tr class="group-row">
-                  <th colspan="3">Employee Info</th>
-                  <th colspan="3">Core Salary</th>
-                  <th colspan="3">Advance Management</th>
-                  <th colspan="4">Deductions & Attendance</th>
-                  <th colspan="2">Final Settlement</th>
-                  <th colspan="1">Notes</th>
-                  <th colspan="1">Actions</th>
-                </tr>
-                <tr class="detail-row">
-                  <th>Employee ID</th>
-                  <th>Employee Names</th>
-                  <th>Designation</th>
-                  <th class="th-salary">Present Salary (₹)</th>
-                  <th class="th-increment">Increment (₹)</th>
-                  <th class="th-gross">Gross Salary (₹)</th>
-                  <th class="th-advance">Old Advance Taken (₹)</th>
-                  <th class="th-advance">Extra Advance Added (₹)</th>
-                  <th class="th-advance">Total Advance (₹)</th>
-                  <th class="th-deduction">Deduction Entered (₹)</th>
-                  <th class="th-absent">Days Absent (out of 30)</th>
-                  <th class="th-deduction">Prorated Absence Deduction (₹)</th>
-                  <th class="th-deduction">Deduction Applied (Advance only)</th>
-                  <th class="th-advance">Advance Remained (₹)</th>
-                  <th class="th-net">Salary In Hand (Net Salary ₹)</th>
-                  <th>Comment</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="payrollBody"></tbody>
-            </table>
+            <div id="payrollBody" class="payroll-cards"></div>
           </section>
 
           <p id="saveStatus" class="status-msg"></p>
@@ -245,6 +344,6 @@
       </div>
     </dialog>
 
-    <script src="app.js?v=20260318b"></script>
+    <script src="app.js?v=20260407j"></script>
   </body>
 </html>

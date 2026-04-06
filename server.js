@@ -189,6 +189,83 @@ function normalizeRecord(record, index) {
   };
 }
 
+function isIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+
+function normalizeEmployee(employee, index) {
+  const rawStatus = String(employee?.status || "working").toLowerCase();
+  const status = rawStatus === "leave" || rawStatus === "terminated" ? rawStatus : "working";
+  const leaveFrom = isIsoDate(employee?.leaveFrom) ? String(employee.leaveFrom) : "";
+  const leaveTo = isIsoDate(employee?.leaveTo) ? String(employee.leaveTo) : "";
+  const terminatedOn = isIsoDate(employee?.terminatedOn) ? String(employee.terminatedOn) : "";
+
+  return {
+    id: Number.isFinite(Number(employee?.id)) ? Number(employee.id) : null,
+    employeeId: sanitizeText(employee?.employeeId, 60),
+    employeeName: sanitizeText(employee?.employeeName, 120),
+    joiningDate: isIsoDate(employee?.joiningDate) ? String(employee.joiningDate) : "",
+    birthDate: isIsoDate(employee?.birthDate) ? String(employee.birthDate) : "",
+    baseSalary: Math.max(0, toNumber(employee?.baseSalary)),
+    openingAdvance: Math.max(0, toNumber(employee?.openingAdvance)),
+    designation: sanitizeText(employee?.designation, 120),
+    mobileNumber: sanitizeText(employee?.mobileNumber, 30),
+    status,
+    leaveFrom,
+    leaveTo,
+    terminatedOn,
+    notes: sanitizeText(employee?.notes, 350),
+    positionIndex: Number.isFinite(Number(employee?.positionIndex)) ? Number(employee.positionIndex) : index,
+  };
+}
+
+function dbRowToEmployee(row) {
+  return {
+    id: Number(row.id),
+    companyId: Number(row.company_id),
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    joiningDate: row.joining_date || "",
+    birthDate: row.birth_date || "",
+    baseSalary: Number(row.base_salary || 0),
+    openingAdvance: Number(row.opening_advance || 0),
+    designation: row.designation || "",
+    mobileNumber: row.mobile_number || "",
+    status: row.status || "working",
+    leaveFrom: row.leave_from || "",
+    leaveTo: row.leave_to || "",
+    terminatedOn: row.terminated_on || "",
+    notes: row.notes || "",
+    positionIndex: Number(row.position_index || 0),
+  };
+}
+
+function previousMonthIso(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ""))) return "";
+  const [year, mon] = String(month).split("-").map((item) => Number(item));
+  const date = new Date(year, mon - 1, 1);
+  date.setMonth(date.getMonth() - 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function advanceRemainedFromPayrollRow(row) {
+  const oldAdvance = Math.max(0, toNumber(row?.old_advance_taken));
+  const extraAdvance = Math.max(0, toNumber(row?.extra_advance_added));
+  const totalAdvance = oldAdvance + extraAdvance;
+  const deductionEntered = Math.max(0, toNumber(row?.deduction_entered));
+  const deductionApplied = Math.min(deductionEntered, totalAdvance);
+  return totalAdvance - deductionApplied;
+}
+
+function dbRowToDesignation(row) {
+  return {
+    id: Number(row.id),
+    companyId: Number(row.company_id),
+    name: String(row.name || ""),
+    positionIndex: Number(row.position_index || 0),
+  };
+}
+
 function createToken(user) {
   return jwt.sign(
     { userId: user.id, username: user.username },
@@ -434,6 +511,103 @@ app.get("/api/companies", authMiddleware, async (_req, res) => {
   }
 });
 
+app.get("/api/employees", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  try {
+    const rows = await store.listEmployeesByCompany(companyId);
+    res.json({ employees: rows.map(dbRowToEmployee) });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch employees." });
+  }
+});
+
+app.post("/api/employees", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  const existing = await store.listEmployeesByCompany(companyId).catch(() => []);
+  const normalized = normalizeEmployee(req.body, existing.length);
+  if (
+    normalized.employeeName.length < 2
+    || normalized.employeeId.length < 2
+    || normalized.joiningDate.length !== 10
+    || normalized.designation.length < 2
+  ) {
+    res.status(400).json({ error: "Employee name, ID, joining date, and designation are required." });
+    return;
+  }
+
+  try {
+    const result = await store.createEmployee(companyId, normalized);
+    const saved = await store.getEmployeeByIdCompany(result.id, companyId);
+    res.status(201).json({ employee: dbRowToEmployee(saved) });
+  } catch (error) {
+    if (error?.code === "unique") {
+      res.status(409).json({ error: "Employee ID already exists for this company." });
+      return;
+    }
+    res.status(500).json({ error: "Failed to create employee." });
+  }
+});
+
+app.put("/api/employees/:id", authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid employee id." });
+    return;
+  }
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  const existing = await store.getEmployeeByIdCompany(id, companyId);
+  if (!existing) {
+    res.status(404).json({ error: "Employee not found." });
+    return;
+  }
+
+  const normalized = normalizeEmployee(req.body, Number(existing.position_index || 0));
+  if (
+    normalized.employeeName.length < 2
+    || normalized.employeeId.length < 2
+    || normalized.joiningDate.length !== 10
+    || normalized.designation.length < 2
+  ) {
+    res.status(400).json({ error: "Employee name, ID, joining date, and designation are required." });
+    return;
+  }
+
+  try {
+    await store.updateEmployee(companyId, id, normalized);
+    const saved = await store.getEmployeeByIdCompany(id, companyId);
+    res.json({ employee: dbRowToEmployee(saved) });
+  } catch (error) {
+    if (error?.code === "unique") {
+      res.status(409).json({ error: "Employee ID already exists for this company." });
+      return;
+    }
+    res.status(500).json({ error: "Failed to update employee." });
+  }
+});
+
+app.delete("/api/employees/:id", authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid employee id." });
+    return;
+  }
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  try {
+    await store.deleteEmployeeByIdCompany(id, companyId);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete employee." });
+  }
+});
+
 app.post("/api/companies", authMiddleware, async (req, res) => {
   const name = sanitizeText(req.body?.name, 120);
   const logoDataUrl = sanitizeLogoDataUrl(req.body?.logoDataUrl);
@@ -460,10 +634,92 @@ app.post("/api/companies", authMiddleware, async (req, res) => {
   }
 });
 
+app.put("/api/companies/:id/logo", authMiddleware, async (req, res) => {
+  const id = parseCompanyId(req.params.id, null);
+  if (!id) {
+    res.status(400).json({ error: "Invalid company id." });
+    return;
+  }
+
+  const logoDataUrl = sanitizeLogoDataUrl(req.body?.logoDataUrl);
+  try {
+    const exists = await store.companyExists(id);
+    if (!exists) {
+      res.status(404).json({ error: "Company not found." });
+      return;
+    }
+    await store.updateCompanyLogo(id, logoDataUrl);
+    res.json({ ok: true, companyId: id, logoDataUrl });
+  } catch {
+    res.status(500).json({ error: "Failed to update company logo." });
+  }
+});
+
+app.get("/api/settings/designations", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+  try {
+    const rows = await store.listDesignationPresets(companyId);
+    res.json({ designations: rows.map(dbRowToDesignation) });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch designation presets." });
+  }
+});
+
+app.post("/api/settings/designations", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+  const name = sanitizeText(req.body?.name, 120);
+  if (name.length < 2) {
+    res.status(400).json({ error: "Designation name is too short." });
+    return;
+  }
+
+  try {
+    const existing = await store.listDesignationPresets(companyId);
+    const result = await store.addDesignationPreset(companyId, name, existing.length);
+    const rows = await store.listDesignationPresets(companyId);
+    const created = rows.find((row) => Number(row.id) === Number(result.id));
+    res.status(201).json({ designation: dbRowToDesignation(created) });
+  } catch (error) {
+    if (error?.code === "unique") {
+      res.status(409).json({ error: "Designation already exists." });
+      return;
+    }
+    res.status(500).json({ error: "Failed to add designation." });
+  }
+});
+
+app.delete("/api/settings/designations/:id", authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid designation id." });
+    return;
+  }
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+  try {
+    await store.deleteDesignationPreset(companyId, id);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete designation." });
+  }
+});
+
 app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
   try {
     const companies = await store.listCompaniesById();
     const rows = await store.listPayrollEntriesAll();
+    const employees = [];
+    const designations = [];
+    for (const company of companies) {
+      // eslint-disable-next-line no-await-in-loop
+      const companyEmployees = await store.listEmployeesByCompany(company.id);
+      employees.push(...companyEmployees.map(dbRowToEmployee));
+      // eslint-disable-next-line no-await-in-loop
+      const companyDesignations = await store.listDesignationPresets(company.id);
+      designations.push(...companyDesignations.map(dbRowToDesignation));
+    }
 
     res.json({
       companies: companies.map((company) => ({
@@ -471,6 +727,8 @@ app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
         name: company.name,
         logoDataUrl: company.logo_data_url || "",
       })),
+      employees,
+      designations,
       entries: rows.map(dbRowToRecord),
     });
   } catch (error) {
@@ -480,6 +738,8 @@ app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
 
 app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
   const companiesPayload = req.body?.companies;
+  const employeesPayload = req.body?.employees;
+  const designationsPayload = req.body?.designations;
   const entriesPayload = req.body?.entries;
   const months = req.body?.months;
   const isLegacyPayload = months && typeof months === "object" && !Array.isArray(months);
@@ -494,6 +754,8 @@ app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
     await store.clearPayrollEntries();
     if (isNewPayload) {
       await store.clearCompanies();
+      await store.clearEmployees();
+      await store.clearDesignationPresets();
       for (const rawCompany of companiesPayload) {
         const id = parseCompanyId(rawCompany?.id, null);
         const name = sanitizeText(rawCompany?.name, 120);
@@ -502,6 +764,35 @@ app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
         await store.insertCompanyWithId(id, name, logoDataUrl);
       }
       await store.ensureDefaultCompany();
+
+      if (Array.isArray(designationsPayload)) {
+        for (const rawDesignation of designationsPayload) {
+          const companyId = parseCompanyId(rawDesignation?.companyId, null);
+          const name = sanitizeText(rawDesignation?.name, 120);
+          if (!companyId || name.length < 2 || !(await store.companyExists(companyId))) continue;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await store.addDesignationPreset(companyId, name, Number(rawDesignation?.positionIndex) || 0);
+          } catch {
+            // Ignore duplicates during restore.
+          }
+        }
+      }
+
+      if (Array.isArray(employeesPayload)) {
+        for (const rawEmployee of employeesPayload) {
+          const companyId = parseCompanyId(rawEmployee?.companyId, null);
+          if (!companyId || !(await store.companyExists(companyId))) continue;
+          const employee = normalizeEmployee(rawEmployee, Number(rawEmployee?.positionIndex) || 0);
+          if (employee.employeeId.length < 2 || employee.employeeName.length < 2) continue;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await store.createEmployee(companyId, employee);
+          } catch {
+            // Skip invalid/duplicate rows during bulk restore.
+          }
+        }
+      }
 
       for (const rawEntry of entriesPayload) {
         const month = String(rawEntry?.month || "");
@@ -545,8 +836,57 @@ app.get("/api/payroll/:month", authMiddleware, async (req, res) => {
 
   try {
     const rows = await store.listPayrollByMonthCompany(month, companyId);
+    const employees = await store.listEmployeesByCompany(companyId);
+    const prevMonth = previousMonthIso(month);
+    const previousRows = prevMonth ? await store.listPayrollByMonthCompany(prevMonth, companyId) : [];
+    const previousByEmployeeId = new Map(previousRows.map((row) => [String(row.employee_id || ""), row]));
+    const byEmployeeId = new Map(rows.map((row) => [String(row.employee_id || ""), row]));
+    const records = [];
 
-    res.json({ records: rows.map(dbRowToRecord) });
+    employees.forEach((employee, index) => {
+      if (String(employee.status || "").toLowerCase() === "terminated") {
+        return;
+      }
+      const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
+      const previous = previousByEmployeeId.get(String(employee.employee_id || "")) || null;
+      const carriedAdvance = previous ? advanceRemainedFromPayrollRow(previous) : null;
+      records.push({
+        id: linked?.id || null,
+        companyId,
+        month,
+        employeeId: employee.employee_id,
+        employeeName: employee.employee_name,
+        designation: employee.designation || "",
+        presentSalary: Number(employee.base_salary || 0),
+        increment: linked?.increment ?? 0,
+        oldAdvanceTaken: linked?.old_advance_taken ?? (carriedAdvance ?? Number(employee.opening_advance || 0)),
+        extraAdvanceAdded: linked?.extra_advance_added ?? 0,
+        deductionEntered: linked?.deduction_entered ?? 0,
+        daysAbsent: linked?.days_absent ?? 0,
+        comment: linked?.comment || "",
+        positionIndex: Number(employee.position_index ?? index),
+        employeeStatus: employee.status || "working",
+        leaveFrom: employee.leave_from || "",
+        leaveTo: employee.leave_to || "",
+        terminatedOn: employee.terminated_on || "",
+      });
+      byEmployeeId.delete(String(employee.employee_id || ""));
+    });
+
+    for (const extra of byEmployeeId.values()) {
+      if (String(extra.employee_status || "").toLowerCase() === "terminated") {
+        continue;
+      }
+      records.push({
+        ...dbRowToRecord(extra),
+        employeeStatus: "working",
+        leaveFrom: "",
+        leaveTo: "",
+        terminatedOn: "",
+      });
+    }
+
+    res.json({ records });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch payroll month data." });
   }

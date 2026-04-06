@@ -103,12 +103,54 @@ function createSqliteStore(baseDir) {
         )
       `);
 
+      await run(`
+        CREATE TABLE IF NOT EXISTS designation_presets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          company_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          name_lc TEXT NOT NULL,
+          position_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await run(`
+        CREATE TABLE IF NOT EXISTS employees (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          company_id INTEGER NOT NULL DEFAULT 1,
+          employee_id TEXT NOT NULL,
+          employee_name TEXT NOT NULL,
+          joining_date TEXT NOT NULL DEFAULT '',
+          birth_date TEXT NOT NULL DEFAULT '',
+          base_salary REAL NOT NULL DEFAULT 0,
+          opening_advance REAL NOT NULL DEFAULT 0,
+          designation TEXT NOT NULL DEFAULT '',
+          mobile_number TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'working',
+          leave_from TEXT NOT NULL DEFAULT '',
+          leave_to TEXT NOT NULL DEFAULT '',
+          terminated_on TEXT NOT NULL DEFAULT '',
+          notes TEXT NOT NULL DEFAULT '',
+          position_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
       await run(
         "INSERT OR IGNORE INTO companies (id, name, logo_data_url) VALUES (1, 'Routes Payroll', '')"
       );
 
       try {
         await run("ALTER TABLE payroll_entries ADD COLUMN company_id INTEGER NOT NULL DEFAULT 1");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE employees ADD COLUMN opening_advance REAL NOT NULL DEFAULT 0");
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
           throw error;
@@ -169,6 +211,39 @@ function createSqliteStore(baseDir) {
       await run(
         "CREATE INDEX IF NOT EXISTS idx_payroll_company_month_position ON payroll_entries(company_id, month, position_index)"
       );
+      await run(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_designation_company_name_lc_unique ON designation_presets(company_id, name_lc)"
+      );
+      await run(
+        "CREATE INDEX IF NOT EXISTS idx_designation_company_position ON designation_presets(company_id, position_index)"
+      );
+      await run(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_company_employee_id_unique ON employees(company_id, employee_id)"
+      );
+      await run(
+        "CREATE INDEX IF NOT EXISTS idx_employees_company_position ON employees(company_id, position_index)"
+      );
+
+      // Backfill employee master from payroll rows for older installs.
+      await run(`
+        INSERT OR IGNORE INTO employees (
+          company_id, employee_id, employee_name, joining_date, base_salary, designation, status, position_index
+        )
+        SELECT
+          p.company_id,
+          p.employee_id,
+          p.employee_name,
+          date('now'),
+          p.present_salary,
+          p.designation,
+          'working',
+          MIN(p.position_index)
+        FROM payroll_entries p
+        WHERE trim(p.employee_id) <> ''
+        GROUP BY p.company_id, p.employee_id
+      `);
+
+      await this.ensureDefaultDesignationPresets(1);
     },
 
     async countUsers() {
@@ -245,6 +320,10 @@ function createSqliteStore(baseDir) {
       await run("UPDATE companies SET name = ?, logo_data_url = ? WHERE id = ?", [name, logoDataUrl, id]);
     },
 
+    async updateCompanyLogo(id, logoDataUrl = "") {
+      await run("UPDATE companies SET logo_data_url = ? WHERE id = ?", [logoDataUrl, id]);
+    },
+
     async companyExists(id) {
       const row = await get("SELECT id FROM companies WHERE id = ?", [id]);
       return Boolean(row);
@@ -292,8 +371,165 @@ function createSqliteStore(baseDir) {
       }
     },
 
+    async listDesignationPresets(companyId) {
+      return all(
+        `SELECT id, company_id, name, name_lc, position_index
+         FROM designation_presets
+         WHERE company_id = ?
+         ORDER BY position_index, id`,
+        [companyId]
+      );
+    },
+
+    async addDesignationPreset(companyId, name, positionIndex) {
+      const nameLc = String(name || "").trim().toLowerCase();
+      try {
+        const result = await run(
+          `INSERT INTO designation_presets (company_id, name, name_lc, position_index)
+           VALUES (?, ?, ?, ?)`,
+          [companyId, name, nameLc, Number(positionIndex || 0)]
+        );
+        return { id: result.lastID };
+      } catch (error) {
+        if (String(error?.message || "").toLowerCase().includes("unique")) {
+          const conflict = new Error("Designation already exists.");
+          conflict.code = "unique";
+          throw conflict;
+        }
+        throw error;
+      }
+    },
+
+    async deleteDesignationPreset(companyId, id) {
+      await run("DELETE FROM designation_presets WHERE id = ? AND company_id = ?", [id, companyId]);
+    },
+
+    async ensureDefaultDesignationPresets(companyId) {
+      const defaults = ["Manager", "Chef", "Accountant", "Supervisor", "Staff"];
+      let idx = 0;
+      // eslint-disable-next-line no-restricted-syntax
+      for (const name of defaults) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await this.addDesignationPreset(companyId, name, idx);
+        } catch (error) {
+          if (error?.code !== "unique") throw error;
+        }
+        idx += 1;
+      }
+    },
+
+    async listEmployeesByCompany(companyId) {
+      return all(
+        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date,
+                base_salary, opening_advance, designation, mobile_number, status, leave_from, leave_to,
+                terminated_on, notes, position_index
+         FROM employees
+         WHERE company_id = ?
+         ORDER BY position_index, id`,
+        [companyId]
+      );
+    },
+
+    async getEmployeeByIdCompany(id, companyId) {
+      return get(
+        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date,
+                base_salary, opening_advance, designation, mobile_number, status, leave_from, leave_to,
+                terminated_on, notes, position_index
+         FROM employees
+         WHERE id = ? AND company_id = ?`,
+        [id, companyId]
+      );
+    },
+
+    async createEmployee(companyId, employee) {
+      try {
+        const result = await run(
+          `INSERT INTO employees (
+            company_id, employee_id, employee_name, joining_date, birth_date, base_salary,
+            opening_advance, designation, mobile_number, status, leave_from, leave_to, terminated_on, notes,
+            position_index, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            companyId,
+            employee.employeeId,
+            employee.employeeName,
+            employee.joiningDate,
+            employee.birthDate,
+            employee.baseSalary,
+            employee.openingAdvance,
+            employee.designation,
+            employee.mobileNumber,
+            employee.status,
+            employee.leaveFrom,
+            employee.leaveTo,
+            employee.terminatedOn,
+            employee.notes,
+            employee.positionIndex,
+          ]
+        );
+        return { id: result.lastID };
+      } catch (error) {
+        if (String(error?.message || "").toLowerCase().includes("unique")) {
+          const conflict = new Error("Employee ID already exists for this company.");
+          conflict.code = "unique";
+          throw conflict;
+        }
+        throw error;
+      }
+    },
+
+    async updateEmployee(companyId, id, employee) {
+      try {
+        await run(
+          `UPDATE employees
+           SET employee_id = ?, employee_name = ?, joining_date = ?, birth_date = ?, base_salary = ?,
+               opening_advance = ?, designation = ?, mobile_number = ?, status = ?, leave_from = ?, leave_to = ?,
+               terminated_on = ?, notes = ?, position_index = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND company_id = ?`,
+          [
+            employee.employeeId,
+            employee.employeeName,
+            employee.joiningDate,
+            employee.birthDate,
+            employee.baseSalary,
+            employee.openingAdvance,
+            employee.designation,
+            employee.mobileNumber,
+            employee.status,
+            employee.leaveFrom,
+            employee.leaveTo,
+            employee.terminatedOn,
+            employee.notes,
+            employee.positionIndex,
+            id,
+            companyId,
+          ]
+        );
+      } catch (error) {
+        if (String(error?.message || "").toLowerCase().includes("unique")) {
+          const conflict = new Error("Employee ID already exists for this company.");
+          conflict.code = "unique";
+          throw conflict;
+        }
+        throw error;
+      }
+    },
+
+    async deleteEmployeeByIdCompany(id, companyId) {
+      await run("DELETE FROM employees WHERE id = ? AND company_id = ?", [id, companyId]);
+    },
+
     async clearPayrollEntries() {
       await run("DELETE FROM payroll_entries");
+    },
+
+    async clearEmployees() {
+      await run("DELETE FROM employees");
+    },
+
+    async clearDesignationPresets() {
+      await run("DELETE FROM designation_presets");
     },
 
     async clearCompanies() {
@@ -449,9 +685,13 @@ function createFirebaseStore() {
           companies: admin.firestore.FieldValue.increment(0),
           users: admin.firestore.FieldValue.increment(0),
           payroll_entries: admin.firestore.FieldValue.increment(0),
+          employees: admin.firestore.FieldValue.increment(0),
+          designation_presets: admin.firestore.FieldValue.increment(0),
         },
         { merge: true }
       );
+
+      await this.ensureDefaultDesignationPresets(1);
     },
 
     async countUsers() {
@@ -557,6 +797,16 @@ function createFirebaseStore() {
       );
     },
 
+    async updateCompanyLogo(id, logoDataUrl = "") {
+      await col("companies").doc(String(id)).set(
+        {
+          id,
+          logo_data_url: logoDataUrl,
+        },
+        { merge: true }
+      );
+    },
+
     async companyExists(id) {
       const snapshot = await col("companies").doc(String(id)).get();
       return snapshot.exists;
@@ -602,11 +852,168 @@ function createFirebaseStore() {
         logo_data_url: logoDataUrl,
         created_at: nowIso(),
       });
+      await this.ensureDefaultDesignationPresets(id);
       return { id };
+    },
+
+    async listDesignationPresets(companyId) {
+      const snapshot = await col("designation_presets").get();
+      return snapshot.docs
+        .map((docSnap) => docSnap.data() || {})
+        .filter((row) => Number(row.company_id) === Number(companyId))
+        .sort((a, b) => {
+          const posCmp = Number(a.position_index || 0) - Number(b.position_index || 0);
+          if (posCmp !== 0) return posCmp;
+          return Number(a.id || 0) - Number(b.id || 0);
+        });
+    },
+
+    async addDesignationPreset(companyId, name, positionIndex) {
+      const nameLc = String(name || "").trim().toLowerCase();
+      const existing = await this.listDesignationPresets(companyId);
+      if (existing.some((row) => String(row.name_lc || "") === nameLc)) {
+        const conflict = new Error("Designation already exists.");
+        conflict.code = "unique";
+        throw conflict;
+      }
+
+      const id = await getCounter("designation_presets");
+      await col("designation_presets").doc(String(id)).set({
+        id,
+        company_id: companyId,
+        name,
+        name_lc: nameLc,
+        position_index: Number(positionIndex || 0),
+        created_at: nowIso(),
+      });
+      return { id };
+    },
+
+    async deleteDesignationPreset(companyId, id) {
+      const snapshot = await col("designation_presets").doc(String(id)).get();
+      if (!snapshot.exists) return;
+      const data = snapshot.data() || {};
+      if (Number(data.company_id) !== Number(companyId)) return;
+      await col("designation_presets").doc(String(id)).delete();
+    },
+
+    async ensureDefaultDesignationPresets(companyId) {
+      const defaults = ["Manager", "Chef", "Accountant", "Supervisor", "Staff"];
+      let idx = 0;
+      // eslint-disable-next-line no-restricted-syntax
+      for (const name of defaults) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await this.addDesignationPreset(companyId, name, idx);
+        } catch (error) {
+          if (error?.code !== "unique") throw error;
+        }
+        idx += 1;
+      }
+    },
+
+    async listEmployeesByCompany(companyId) {
+      const snapshot = await col("employees").get();
+      return snapshot.docs
+        .map((docSnap) => docSnap.data() || {})
+        .filter((row) => Number(row.company_id) === Number(companyId))
+        .sort((a, b) => {
+          const posCmp = Number(a.position_index || 0) - Number(b.position_index || 0);
+          if (posCmp !== 0) return posCmp;
+          return Number(a.id || 0) - Number(b.id || 0);
+        });
+    },
+
+    async getEmployeeByIdCompany(id, companyId) {
+      const snap = await col("employees").doc(String(id)).get();
+      if (!snap.exists) return null;
+      const row = snap.data() || {};
+      if (Number(row.company_id) !== Number(companyId)) return null;
+      return row;
+    },
+
+    async createEmployee(companyId, employee) {
+      const existing = await this.listEmployeesByCompany(companyId);
+      if (existing.some((row) => String(row.employee_id || "") === String(employee.employeeId || ""))) {
+        const conflict = new Error("Employee ID already exists for this company.");
+        conflict.code = "unique";
+        throw conflict;
+      }
+
+      const id = await getCounter("employees");
+      await col("employees").doc(String(id)).set({
+        id,
+        company_id: companyId,
+        employee_id: employee.employeeId,
+        employee_name: employee.employeeName,
+        joining_date: employee.joiningDate,
+        birth_date: employee.birthDate,
+        base_salary: Number(employee.baseSalary || 0),
+        opening_advance: Number(employee.openingAdvance || 0),
+        designation: employee.designation,
+        mobile_number: employee.mobileNumber,
+        status: employee.status,
+        leave_from: employee.leaveFrom,
+        leave_to: employee.leaveTo,
+        terminated_on: employee.terminatedOn,
+        notes: employee.notes,
+        position_index: Number(employee.positionIndex || 0),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      });
+      return { id };
+    },
+
+    async updateEmployee(companyId, id, employee) {
+      const existing = await this.listEmployeesByCompany(companyId);
+      if (
+        existing.some((row) => Number(row.id) !== Number(id) && String(row.employee_id || "") === String(employee.employeeId || ""))
+      ) {
+        const conflict = new Error("Employee ID already exists for this company.");
+        conflict.code = "unique";
+        throw conflict;
+      }
+
+      await col("employees").doc(String(id)).set(
+        {
+          id: Number(id),
+          company_id: companyId,
+          employee_id: employee.employeeId,
+          employee_name: employee.employeeName,
+          joining_date: employee.joiningDate,
+          birth_date: employee.birthDate,
+          base_salary: Number(employee.baseSalary || 0),
+          opening_advance: Number(employee.openingAdvance || 0),
+          designation: employee.designation,
+          mobile_number: employee.mobileNumber,
+          status: employee.status,
+          leave_from: employee.leaveFrom,
+          leave_to: employee.leaveTo,
+          terminated_on: employee.terminatedOn,
+          notes: employee.notes,
+          position_index: Number(employee.positionIndex || 0),
+          updated_at: nowIso(),
+        },
+        { merge: true }
+      );
+    },
+
+    async deleteEmployeeByIdCompany(id, companyId) {
+      const row = await this.getEmployeeByIdCompany(id, companyId);
+      if (!row) return;
+      await col("employees").doc(String(id)).delete();
     },
 
     async clearPayrollEntries() {
       await batchDeleteByCollection("payroll_entries");
+    },
+
+    async clearEmployees() {
+      await batchDeleteByCollection("employees");
+    },
+
+    async clearDesignationPresets() {
+      await batchDeleteByCollection("designation_presets");
     },
 
     async clearCompanies() {
