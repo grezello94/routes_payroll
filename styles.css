@@ -1717,6 +1717,11 @@ body {
   font-size: 0.92rem;
 }
 
+#verifyEmailBtn {
+  margin-top: 14px;
+  min-width: 160px;
+}
+
 .designation-list {
   margin-top: 14px;
   display: grid;

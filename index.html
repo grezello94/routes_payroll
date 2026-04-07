@@ -214,6 +214,7 @@
                   <select id="employeeStatusInput">
                     <option value="working">Working</option>
                     <option value="leave">On Leave</option>
+                    <option value="resumed">Resumed Work</option>
                     <option value="terminated">Terminated</option>
                   </select>
                 </label>
@@ -222,8 +223,8 @@
                   <input id="employeeLeaveFromInput" type="date" />
                 </label>
                 <label>
-                  Leave To (if On Leave)
-                  <input id="employeeLeaveToInput" type="date" />
+                  Resumed On
+                  <input id="employeeResumeOnInput" type="date" />
                 </label>
                 <label>
                   Terminated On (if Terminated)
@@ -244,8 +245,10 @@
                     <th>Employee ID</th>
                     <th>Name</th>
                     <th>Salary (₹)</th>
-                    <th>Old Advance (₹)</th>
+                    <th>Advance Remained (₹)</th>
                     <th>Status</th>
+                    <th>Leave From</th>
+                    <th>Resumed On</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -261,6 +264,43 @@
             </div>
 
             <div class="settings-grid">
+              <article class="settings-card">
+                <h3>Account</h3>
+                <p>Your registered login details stored in cloud auth.</p>
+                <div class="settings-inline-summary">
+                  <strong>Username:</strong> <span id="settingsUsernameValue">-</span>
+                </div>
+                <div class="settings-inline-summary">
+                  <strong>Registered Email:</strong> <span id="settingsEmailValue">-</span>
+                </div>
+                <div class="settings-inline-summary">
+                  <strong>Email Status:</strong> <span id="settingsEmailStatusValue">-</span>
+                </div>
+                <button id="verifyEmailBtn" type="button" class="hidden">Verify Email</button>
+              </article>
+
+              <article class="settings-card">
+                <h3>Company Details</h3>
+                <p>Change the selected company name so the dropdown, payslip, and records show the correct business name.</p>
+                <label>
+                  Company Name
+                  <input id="settingsCompanyNameInput" type="text" minlength="2" maxlength="120" placeholder="e.g. Red Lantern Restaurant" />
+                </label>
+                <button id="saveCompanyNameBtn" type="button">Save Company Name</button>
+              </article>
+
+              <article class="settings-card">
+                <h3>Payroll Cycle</h3>
+                <p>Choose which payroll month should open by default when you enter the app.</p>
+                <label>
+                  Default Payroll View
+                  <select id="settingsPayrollMonthMode">
+                    <option value="previous">Previous Month (salary paid on 10th)</option>
+                    <option value="current">Current Month</option>
+                  </select>
+                </label>
+              </article>
+
               <article class="settings-card">
                 <h3>Designation Presets</h3>
                 <p>Pre-assign designations. Employee form will suggest these values.</p>
@@ -315,6 +355,35 @@
             </div>
 
             <p id="settingsMessage" class="status-msg"></p>
+          </section>
+
+          <section id="reportsSection" class="employee-mgmt hidden">
+            <div class="table-head">
+              <h2>Reports</h2>
+              <p>Leave, resume, and termination details for the selected company, organized employee-wise.</p>
+            </div>
+
+            <article class="settings-card">
+              <h3>Leave / Resume Work</h3>
+              <p>Track who went on leave, when they resumed work, and any termination date on record.</p>
+              <div class="employee-list-wrap">
+                <table>
+                  <thead>
+                    <tr class="detail-row">
+                      <th>Employee ID</th>
+                      <th>Employee Name</th>
+                      <th>Status</th>
+                      <th>Leave From</th>
+                      <th>Resumed On</th>
+                      <th>Terminated On</th>
+                    </tr>
+                  </thead>
+                  <tbody id="leaveResumeReportBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <p id="reportsMessage" class="status-msg"></p>
           </section>
 
           <section id="payrollSection" class="table-wrap">

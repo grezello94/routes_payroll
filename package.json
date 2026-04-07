@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check app.js && node --check sw.js"
+    "start:open": "./start-routes-payroll.command",
+    "check": "node --check server.js && node --check datastore.js && node --check app.js && node --check sw.js && node --check reset-password.js && node --check verify-email.js && node --check sync-auth-to-firestore.js && node --check sync-auth-to-firebase-auth.js",
+    "sync:firebase-auth": "node sync-auth-to-firestore.js",
+    "sync:firebase-login": "node sync-auth-to-firebase-auth.js"
   },
   "keywords": [],
   "author": "",

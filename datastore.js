@@ -3,10 +3,32 @@ const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
 const admin = require("firebase-admin");
 
+function resolveFirebaseCredentialFile(baseDir) {
+  const explicitPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "").trim();
+  const candidatePaths = [
+    explicitPath,
+    path.join(baseDir, "firebase-service-account.json"),
+    path.join(baseDir, "routespayroll-firebase-adminsdk-fbsvc-6a7da5deea.json"),
+  ].filter(Boolean);
+
+  for (const candidate of candidatePaths) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
 function createStore({ baseDir }) {
-  const provider = String(process.env.DB_PROVIDER || "sqlite").toLowerCase();
+  const requestedProvider = String(process.env.DB_PROVIDER || "").toLowerCase();
+  const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const provider = requestedProvider || (hasSupabase ? "supabase" : "firebase");
+  if (provider === "supabase") {
+    return createSupabaseStore();
+  }
   if (provider === "firebase") {
-    return createFirebaseStore();
+    return createFirebaseStore(baseDir);
   }
   return createSqliteStore(baseDir);
 }
@@ -67,6 +89,9 @@ function createSqliteStore(baseDir) {
           username_lc TEXT NOT NULL DEFAULT '',
           email TEXT NOT NULL DEFAULT '',
           email_lc TEXT NOT NULL DEFAULT '',
+          email_verified INTEGER NOT NULL DEFAULT 1,
+          email_verification_hash TEXT NOT NULL DEFAULT '',
+          email_verification_expires_at TEXT NOT NULL DEFAULT '',
           password_hash TEXT NOT NULL,
           reset_code_hash TEXT NOT NULL DEFAULT '',
           reset_code_expires_at TEXT NOT NULL DEFAULT '',
@@ -182,6 +207,30 @@ function createSqliteStore(baseDir) {
       }
 
       try {
+        await run("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN email_verification_hash TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE users ADD COLUMN email_verification_expires_at TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
         await run("ALTER TABLE users ADD COLUMN reset_code_hash TEXT NOT NULL DEFAULT ''");
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
@@ -254,7 +303,8 @@ function createSqliteStore(baseDir) {
     async findUserByIdentifier(identifier) {
       const normalized = String(identifier || "").trim().toLowerCase();
       return get(
-        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+        `SELECT id, username, email, email_verified, email_verification_hash, email_verification_expires_at,
+                password_hash, reset_code_hash, reset_code_expires_at
          FROM users
          WHERE username_lc = ? OR email_lc = ?
          LIMIT 1`,
@@ -265,7 +315,8 @@ function createSqliteStore(baseDir) {
     async findUserByEmail(email) {
       const normalized = String(email || "").trim().toLowerCase();
       return get(
-        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+        `SELECT id, username, email, email_verified, email_verification_hash, email_verification_expires_at,
+                password_hash, reset_code_hash, reset_code_expires_at
          FROM users
          WHERE email_lc = ?
          LIMIT 1`,
@@ -273,10 +324,24 @@ function createSqliteStore(baseDir) {
       );
     },
 
-    async createUser(username, email, passwordHash) {
+    async getUserById(userId) {
+      return get(
+        `SELECT id, username, email, email_verified, email_verification_hash, email_verification_expires_at,
+                password_hash, reset_code_hash, reset_code_expires_at
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [userId]
+      );
+    },
+
+    async createUser(username, email, passwordHash, options = {}) {
+      const emailVerified = options.emailVerified === true ? 1 : 0;
       const result = await run(
-        "INSERT INTO users (username, username_lc, email, email_lc, password_hash) VALUES (?, ?, ?, ?, ?)",
-        [username, String(username).toLowerCase(), email, String(email).toLowerCase(), passwordHash]
+        `INSERT INTO users
+          (username, username_lc, email, email_lc, email_verified, password_hash)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [username, String(username).toLowerCase(), email, String(email).toLowerCase(), emailVerified, passwordHash]
       );
       return { id: result.lastID };
     },
@@ -290,6 +355,22 @@ function createSqliteStore(baseDir) {
 
     async updateUserPasswordById(userId, passwordHash) {
       await run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
+    },
+
+    async setUserEmailVerificationById(userId, verificationHash, expiresAtIso) {
+      await run(
+        "UPDATE users SET email_verified = 0, email_verification_hash = ?, email_verification_expires_at = ? WHERE id = ?",
+        [verificationHash, expiresAtIso, userId]
+      );
+    },
+
+    async markUserEmailVerifiedById(userId) {
+      await run(
+        `UPDATE users
+         SET email_verified = 1, email_verification_hash = '', email_verification_expires_at = ''
+         WHERE id = ?`,
+        [userId]
+      );
     },
 
     async setUserResetCodeById(userId, resetCodeHash, expiresAtIso) {
@@ -308,11 +389,23 @@ function createSqliteStore(baseDir) {
 
     async findUserByResetCodeHash(resetCodeHash) {
       return get(
-        `SELECT id, username, email, password_hash, reset_code_hash, reset_code_expires_at
+        `SELECT id, username, email, email_verified, email_verification_hash, email_verification_expires_at,
+                password_hash, reset_code_hash, reset_code_expires_at
          FROM users
          WHERE reset_code_hash = ?
          LIMIT 1`,
         [String(resetCodeHash || "")]
+      );
+    },
+
+    async findUserByEmailVerificationHash(verificationHash) {
+      return get(
+        `SELECT id, username, email, email_verified, email_verification_hash, email_verification_expires_at,
+                password_hash, reset_code_hash, reset_code_expires_at
+         FROM users
+         WHERE email_verification_hash = ?
+         LIMIT 1`,
+        [String(verificationHash || "")]
       );
     },
 
@@ -600,13 +693,20 @@ function createSqliteStore(baseDir) {
   };
 }
 
-function createFirebaseStore() {
+function createFirebaseStore(baseDir) {
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+  const serviceAccountPath = resolveFirebaseCredentialFile(baseDir);
   const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || "";
 
   if (!admin.apps.length) {
     if (serviceAccountJson) {
       const credentials = JSON.parse(serviceAccountJson);
+      admin.initializeApp({
+        credential: admin.credential.cert(credentials),
+        projectId: firebaseProjectId || credentials.project_id,
+      });
+    } else if (serviceAccountPath) {
+      const credentials = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
       admin.initializeApp({
         credential: admin.credential.cert(credentials),
         projectId: firebaseProjectId || credentials.project_id,
@@ -711,9 +811,15 @@ function createFirebaseStore() {
       return user || null;
     },
 
-    async createUser(username, email, passwordHash) {
+    async getUserById(userId) {
+      const snapshot = await col("users").doc(String(userId)).get();
+      return snapshot.exists ? (snapshot.data() || null) : null;
+    },
+
+    async createUser(username, email, passwordHash, options = {}) {
       const usernameLc = String(username || "").toLowerCase();
       const emailLc = String(email || "").toLowerCase();
+      const emailVerified = options.emailVerified === true;
       const existing = await findByField("users", "username_lc", usernameLc);
       if (existing) {
         const conflict = new Error("Username already exists.");
@@ -734,6 +840,9 @@ function createFirebaseStore() {
         username_lc: usernameLc,
         email,
         email_lc: emailLc,
+        email_verified: emailVerified,
+        email_verification_hash: "",
+        email_verification_expires_at: "",
         password_hash: passwordHash,
         created_at: nowIso(),
       });
@@ -755,6 +864,28 @@ function createFirebaseStore() {
       await col("users").doc(String(userId)).set(
         {
           password_hash: passwordHash,
+        },
+        { merge: true }
+      );
+    },
+
+    async setUserEmailVerificationById(userId, verificationHash, expiresAtIso) {
+      await col("users").doc(String(userId)).set(
+        {
+          email_verified: false,
+          email_verification_hash: verificationHash,
+          email_verification_expires_at: expiresAtIso,
+        },
+        { merge: true }
+      );
+    },
+
+    async markUserEmailVerifiedById(userId) {
+      await col("users").doc(String(userId)).set(
+        {
+          email_verified: true,
+          email_verification_hash: "",
+          email_verification_expires_at: "",
         },
         { merge: true }
       );
@@ -782,6 +913,11 @@ function createFirebaseStore() {
 
     async findUserByResetCodeHash(resetCodeHash) {
       const user = await findByField("users", "reset_code_hash", String(resetCodeHash || ""));
+      return user || null;
+    },
+
+    async findUserByEmailVerificationHash(verificationHash) {
+      const user = await findByField("users", "email_verification_hash", String(verificationHash || ""));
       return user || null;
     },
 
@@ -1114,6 +1250,562 @@ function createFirebaseStore() {
         comment: record.comment || "",
         position_index: Number(record.positionIndex || 0),
         updated_at: nowIso(),
+      });
+    },
+  };
+}
+
+function createSupabaseStore() {
+  const baseUrl = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const nowIso = () => new Date().toISOString();
+
+  if (!baseUrl || !serviceRoleKey) {
+    throw new Error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  async function supabaseRest(table, {
+    method = "GET",
+    query,
+    body,
+    headers = {},
+    allowEmpty = false,
+  } = {}) {
+    const url = new URL(`/rest/v1/${table}`, `${baseUrl}/`);
+    if (query) {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, value);
+        }
+      });
+    }
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      const error = new Error(payload?.message || payload?.error_description || payload?.hint || `Supabase request failed for ${table}.`);
+      error.code = payload?.code || response.status;
+      error.details = payload;
+      throw error;
+    }
+
+    if (response.status === 204) return allowEmpty ? [] : null;
+    const text = await response.text();
+    if (!text) return allowEmpty ? [] : null;
+    return JSON.parse(text);
+  }
+
+  async function maybeSingle(table, query) {
+    const rows = await supabaseRest(table, { query: { ...query, limit: "1" }, allowEmpty: true });
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  }
+
+  async function nextNumericId(table) {
+    const rows = await supabaseRest(table, {
+      query: { select: "id", order: "id.desc", limit: "1" },
+      allowEmpty: true,
+    });
+    const current = Array.isArray(rows) && rows.length > 0 ? Number(rows[0].id || 0) : 0;
+    return current + 1;
+  }
+
+  function mapConflict(error, message) {
+    if (String(error?.code || "") === "23505") {
+      const conflict = new Error(message);
+      conflict.code = "unique";
+      throw conflict;
+    }
+    throw error;
+  }
+
+  return {
+    provider: "supabase",
+
+    async init() {
+      await supabaseRest("companies", {
+        query: { select: "id", limit: "1" },
+        allowEmpty: true,
+      });
+      await this.ensureDefaultCompany();
+      await this.ensureDefaultDesignationPresets(1);
+    },
+
+    async countUsers() {
+      const rows = await supabaseRest("users", {
+        query: { select: "id", limit: "1000" },
+        allowEmpty: true,
+      });
+      return Array.isArray(rows) ? rows.length : 0;
+    },
+
+    async findUserByIdentifier(identifier) {
+      const normalized = String(identifier || "").trim().toLowerCase();
+      if (!normalized) return null;
+      const byUsername = await maybeSingle("users", {
+        select: "*",
+        username_lc: `eq.${normalized}`,
+      });
+      if (byUsername) return byUsername;
+      return maybeSingle("users", {
+        select: "*",
+        email_lc: `eq.${normalized}`,
+      });
+    },
+
+    async findUserByEmail(email) {
+      return maybeSingle("users", {
+        select: "*",
+        email_lc: `eq.${String(email || "").trim().toLowerCase()}`,
+      });
+    },
+
+    async getUserById(userId) {
+      return maybeSingle("users", {
+        select: "*",
+        id: `eq.${String(userId || "").trim()}`,
+      });
+    },
+
+    async createUser(username, email, passwordHash, options = {}) {
+      try {
+        const id = String(options.id || "").trim();
+        if (!id) {
+          throw new Error("Supabase user id is required.");
+        }
+        const rows = await supabaseRest("users", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: [{
+            id,
+            username,
+            username_lc: String(username || "").toLowerCase(),
+            email,
+            email_lc: String(email || "").toLowerCase(),
+            email_verified: options.emailVerified === true,
+            email_verification_hash: "",
+            email_verification_expires_at: "",
+            password_hash: passwordHash || "",
+            reset_code_hash: "",
+            reset_code_expires_at: "",
+            created_at: nowIso(),
+          }],
+        });
+        return { id: rows?.[0]?.id || id };
+      } catch (error) {
+        mapConflict(error, "Username or email already exists.");
+      }
+    },
+
+    async updateUserPasswordByEmail(email, passwordHash) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { email_lc: `eq.${String(email || "").trim().toLowerCase()}` },
+        body: { password_hash: passwordHash || "" },
+      });
+    },
+
+    async updateUserPasswordById(userId, passwordHash) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { id: `eq.${String(userId || "").trim()}` },
+        body: { password_hash: passwordHash || "" },
+      });
+    },
+
+    async setUserEmailVerificationById(userId, verificationHash, expiresAtIso) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { id: `eq.${String(userId || "").trim()}` },
+        body: {
+          email_verified: false,
+          email_verification_hash: verificationHash,
+          email_verification_expires_at: expiresAtIso,
+        },
+      });
+    },
+
+    async markUserEmailVerifiedById(userId) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { id: `eq.${String(userId || "").trim()}` },
+        body: {
+          email_verified: true,
+          email_verification_hash: "",
+          email_verification_expires_at: "",
+        },
+      });
+    },
+
+    async setUserResetCodeById(userId, resetCodeHash, expiresAtIso) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { id: `eq.${String(userId || "").trim()}` },
+        body: {
+          reset_code_hash: resetCodeHash,
+          reset_code_expires_at: expiresAtIso,
+        },
+      });
+    },
+
+    async clearUserResetCodeById(userId) {
+      await supabaseRest("users", {
+        method: "PATCH",
+        query: { id: `eq.${String(userId || "").trim()}` },
+        body: {
+          reset_code_hash: "",
+          reset_code_expires_at: "",
+        },
+      });
+    },
+
+    async findUserByResetCodeHash(resetCodeHash) {
+      return maybeSingle("users", {
+        select: "*",
+        reset_code_hash: `eq.${String(resetCodeHash || "")}`,
+      });
+    },
+
+    async findUserByEmailVerificationHash(verificationHash) {
+      return maybeSingle("users", {
+        select: "*",
+        email_verification_hash: `eq.${String(verificationHash || "")}`,
+      });
+    },
+
+    async updateCompanyName(id, name, logoDataUrl = "") {
+      await supabaseRest("companies", {
+        method: "PATCH",
+        query: { id: `eq.${Number(id)}` },
+        body: {
+          name,
+          name_lc: String(name || "").toLowerCase(),
+          logo_data_url: logoDataUrl,
+        },
+      });
+    },
+
+    async updateCompanyLogo(id, logoDataUrl = "") {
+      await supabaseRest("companies", {
+        method: "PATCH",
+        query: { id: `eq.${Number(id)}` },
+        body: { logo_data_url: logoDataUrl },
+      });
+    },
+
+    async companyExists(id) {
+      const row = await maybeSingle("companies", {
+        select: "id",
+        id: `eq.${Number(id)}`,
+      });
+      return Boolean(row);
+    },
+
+    async listCompanies() {
+      return supabaseRest("companies", {
+        query: { select: "*", order: "name.asc,id.asc" },
+        allowEmpty: true,
+      });
+    },
+
+    async listCompaniesById() {
+      return supabaseRest("companies", {
+        query: { select: "*", order: "id.asc" },
+        allowEmpty: true,
+      });
+    },
+
+    async getCompanyById(id) {
+      return maybeSingle("companies", {
+        select: "*",
+        id: `eq.${Number(id)}`,
+      });
+    },
+
+    async createCompany(name, logoDataUrl) {
+      try {
+        const id = await nextNumericId("companies");
+        const rows = await supabaseRest("companies", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: [{
+            id,
+            name,
+            name_lc: String(name || "").toLowerCase(),
+            logo_data_url: logoDataUrl,
+            created_at: nowIso(),
+          }],
+        });
+        await this.ensureDefaultDesignationPresets(id);
+        return { id: rows?.[0]?.id || id };
+      } catch (error) {
+        mapConflict(error, "Company name already exists.");
+      }
+    },
+
+    async listDesignationPresets(companyId) {
+      return supabaseRest("designation_presets", {
+        query: {
+          select: "*",
+          company_id: `eq.${Number(companyId)}`,
+          order: "position_index.asc,id.asc",
+        },
+        allowEmpty: true,
+      });
+    },
+
+    async addDesignationPreset(companyId, name, positionIndex) {
+      try {
+        const id = await nextNumericId("designation_presets");
+        const rows = await supabaseRest("designation_presets", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: [{
+            id,
+            company_id: Number(companyId),
+            name,
+            name_lc: String(name || "").trim().toLowerCase(),
+            position_index: Number(positionIndex || 0),
+            created_at: nowIso(),
+          }],
+        });
+        return { id: rows?.[0]?.id || id };
+      } catch (error) {
+        mapConflict(error, "Designation already exists.");
+      }
+    },
+
+    async deleteDesignationPreset(companyId, id) {
+      await supabaseRest("designation_presets", {
+        method: "DELETE",
+        query: {
+          id: `eq.${Number(id)}`,
+          company_id: `eq.${Number(companyId)}`,
+        },
+      });
+    },
+
+    async ensureDefaultDesignationPresets(companyId) {
+      const defaults = ["Manager", "Chef", "Accountant", "Supervisor", "Staff"];
+      let idx = 0;
+      for (const name of defaults) {
+        try {
+          await this.addDesignationPreset(companyId, name, idx);
+        } catch (error) {
+          if (error?.code !== "unique") throw error;
+        }
+        idx += 1;
+      }
+    },
+
+    async listEmployeesByCompany(companyId) {
+      return supabaseRest("employees", {
+        query: {
+          select: "*",
+          company_id: `eq.${Number(companyId)}`,
+          order: "position_index.asc,id.asc",
+        },
+        allowEmpty: true,
+      });
+    },
+
+    async getEmployeeByIdCompany(id, companyId) {
+      return maybeSingle("employees", {
+        select: "*",
+        id: `eq.${Number(id)}`,
+        company_id: `eq.${Number(companyId)}`,
+      });
+    },
+
+    async createEmployee(companyId, employee) {
+      try {
+        const id = await nextNumericId("employees");
+        const rows = await supabaseRest("employees", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: [{
+            id,
+            company_id: Number(companyId),
+            employee_id: employee.employeeId,
+            employee_name: employee.employeeName,
+            joining_date: employee.joiningDate,
+            birth_date: employee.birthDate,
+            base_salary: Number(employee.baseSalary || 0),
+            opening_advance: Number(employee.openingAdvance || 0),
+            designation: employee.designation,
+            mobile_number: employee.mobileNumber,
+            status: employee.status,
+            leave_from: employee.leaveFrom,
+            leave_to: employee.leaveTo,
+            terminated_on: employee.terminatedOn,
+            notes: employee.notes,
+            position_index: Number(employee.positionIndex || 0),
+            created_at: nowIso(),
+            updated_at: nowIso(),
+          }],
+        });
+        return { id: rows?.[0]?.id || id };
+      } catch (error) {
+        mapConflict(error, "Employee ID already exists for this company.");
+      }
+    },
+
+    async updateEmployee(companyId, id, employee) {
+      try {
+        await supabaseRest("employees", {
+          method: "PATCH",
+          query: {
+            id: `eq.${Number(id)}`,
+            company_id: `eq.${Number(companyId)}`,
+          },
+          body: {
+            employee_id: employee.employeeId,
+            employee_name: employee.employeeName,
+            joining_date: employee.joiningDate,
+            birth_date: employee.birthDate,
+            base_salary: Number(employee.baseSalary || 0),
+            opening_advance: Number(employee.openingAdvance || 0),
+            designation: employee.designation,
+            mobile_number: employee.mobileNumber,
+            status: employee.status,
+            leave_from: employee.leaveFrom,
+            leave_to: employee.leaveTo,
+            terminated_on: employee.terminatedOn,
+            notes: employee.notes,
+            position_index: Number(employee.positionIndex || 0),
+            updated_at: nowIso(),
+          },
+        });
+      } catch (error) {
+        mapConflict(error, "Employee ID already exists for this company.");
+      }
+    },
+
+    async deleteEmployeeByIdCompany(id, companyId) {
+      await supabaseRest("employees", {
+        method: "DELETE",
+        query: {
+          id: `eq.${Number(id)}`,
+          company_id: `eq.${Number(companyId)}`,
+        },
+      });
+    },
+
+    async clearPayrollEntries() {
+      await supabaseRest("payroll_entries", {
+        method: "DELETE",
+        query: { id: "gt.0" },
+      });
+    },
+
+    async clearEmployees() {
+      await supabaseRest("employees", {
+        method: "DELETE",
+        query: { id: "gt.0" },
+      });
+    },
+
+    async clearDesignationPresets() {
+      await supabaseRest("designation_presets", {
+        method: "DELETE",
+        query: { id: "gt.0" },
+      });
+    },
+
+    async clearCompanies() {
+      await supabaseRest("companies", {
+        method: "DELETE",
+        query: { id: "gt.0" },
+      });
+    },
+
+    async insertCompanyWithId(id, name, logoDataUrl) {
+      await supabaseRest("companies", {
+        method: "POST",
+        body: [{
+          id: Number(id),
+          name,
+          name_lc: String(name || "").toLowerCase(),
+          logo_data_url: logoDataUrl,
+          created_at: nowIso(),
+        }],
+      });
+    },
+
+    async ensureDefaultCompany() {
+      const exists = await this.companyExists(1);
+      if (!exists) {
+        await this.insertCompanyWithId(1, "Routes Payroll", "");
+      }
+    },
+
+    async listPayrollEntriesAll() {
+      return supabaseRest("payroll_entries", {
+        query: {
+          select: "*",
+          order: "company_id.asc,month.asc,position_index.asc,id.asc",
+        },
+        allowEmpty: true,
+      });
+    },
+
+    async listPayrollByMonthCompany(month, companyId) {
+      return supabaseRest("payroll_entries", {
+        query: {
+          select: "*",
+          month: `eq.${month}`,
+          company_id: `eq.${Number(companyId)}`,
+          order: "position_index.asc,id.asc",
+        },
+        allowEmpty: true,
+      });
+    },
+
+    async deletePayrollByMonthCompany(month, companyId) {
+      await supabaseRest("payroll_entries", {
+        method: "DELETE",
+        query: {
+          month: `eq.${month}`,
+          company_id: `eq.${Number(companyId)}`,
+        },
+      });
+    },
+
+    async insertPayrollRecord(month, companyId, record) {
+      const id = await nextNumericId("payroll_entries");
+      await supabaseRest("payroll_entries", {
+        method: "POST",
+        body: [{
+          id,
+          company_id: Number(companyId),
+          month,
+          employee_id: record.employeeId || "",
+          employee_name: record.employeeName || "",
+          designation: record.designation || "",
+          present_salary: Number(record.presentSalary || 0),
+          increment: Number(record.increment || 0),
+          old_advance_taken: Number(record.oldAdvanceTaken || 0),
+          extra_advance_added: Number(record.extraAdvanceAdded || 0),
+          deduction_entered: Number(record.deductionEntered || 0),
+          days_absent: Number(record.daysAbsent || 0),
+          comment: record.comment || "",
+          position_index: Number(record.positionIndex || 0),
+          updated_at: nowIso(),
+        }],
       });
     },
   };

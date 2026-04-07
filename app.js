@@ -1,5 +1,6 @@
 const STORAGE_KEYS = {
   authToken: "routes_payroll_auth_token_v1",
+  payrollMonthMode: "routes_payroll_month_mode_v1",
 };
 
 const SELECTORS = {
@@ -32,7 +33,7 @@ const SELECTORS = {
   employeeStatusFields: document.getElementById("employeeStatusFields"),
   employeeStatusInput: document.getElementById("employeeStatusInput"),
   employeeLeaveFromInput: document.getElementById("employeeLeaveFromInput"),
-  employeeLeaveToInput: document.getElementById("employeeLeaveToInput"),
+  employeeResumeOnInput: document.getElementById("employeeResumeOnInput"),
   employeeTerminatedOnInput: document.getElementById("employeeTerminatedOnInput"),
   employeeSaveBtn: document.getElementById("employeeSaveBtn"),
   employeeCancelBtn: document.getElementById("employeeCancelBtn"),
@@ -65,6 +66,14 @@ const SELECTORS = {
   metricsSection: document.getElementById("metricsSection"),
   payrollSection: document.getElementById("payrollSection"),
   settingsSection: document.getElementById("settingsSection"),
+  reportsSection: document.getElementById("reportsSection"),
+  settingsUsernameValue: document.getElementById("settingsUsernameValue"),
+  settingsEmailValue: document.getElementById("settingsEmailValue"),
+  settingsEmailStatusValue: document.getElementById("settingsEmailStatusValue"),
+  verifyEmailBtn: document.getElementById("verifyEmailBtn"),
+  settingsCompanyNameInput: document.getElementById("settingsCompanyNameInput"),
+  saveCompanyNameBtn: document.getElementById("saveCompanyNameBtn"),
+  settingsPayrollMonthMode: document.getElementById("settingsPayrollMonthMode"),
   designationPresetInput: document.getElementById("designationPresetInput"),
   addDesignationBtn: document.getElementById("addDesignationBtn"),
   designationList: document.getElementById("designationList"),
@@ -79,6 +88,8 @@ const SELECTORS = {
   confirmPasswordInput: document.getElementById("confirmPasswordInput"),
   changePasswordBtn: document.getElementById("changePasswordBtn"),
   settingsMessage: document.getElementById("settingsMessage"),
+  leaveResumeReportBody: document.getElementById("leaveResumeReportBody"),
+  reportsMessage: document.getElementById("reportsMessage"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
   closePayslipBtn: document.getElementById("closePayslipBtn"),
@@ -104,6 +115,9 @@ let saveQueued = false;
 let needsSetupFlow = false;
 let designationPresets = [];
 let pendingSettingsLogoDataUrl = "";
+let currentUser = null;
+let serverReconnectTimer = null;
+let serverReconnectInFlight = false;
 
 init();
 
@@ -160,10 +174,13 @@ function wireAuth() {
       }, false);
 
       setToken(response.token);
+      currentUser = response.user || null;
+      hydrateSettingsAccount();
       needsSetupFlow = false;
       SELECTORS.setupForm.reset();
       showAuthMessage("");
       await switchToApp();
+      showAppMessage(response.message || "Account created.");
     } catch (error) {
       showAuthMessage(error.message);
     } finally {
@@ -191,6 +208,8 @@ function wireAuth() {
       }, false);
 
       setToken(response.token);
+      currentUser = response.user || null;
+      hydrateSettingsAccount();
       SELECTORS.loginForm.reset();
       showAuthMessage("");
       await switchToApp();
@@ -288,7 +307,7 @@ function wireEmployeeManagement() {
       mobileNumber: SELECTORS.employeeMobileInput.value.trim(),
       status: statusValue,
       leaveFrom: isEditMode ? (SELECTORS.employeeLeaveFromInput.value || "") : "",
-      leaveTo: isEditMode ? (SELECTORS.employeeLeaveToInput.value || "") : "",
+      leaveTo: isEditMode ? (SELECTORS.employeeResumeOnInput.value || "") : "",
       terminatedOn: isEditMode ? (SELECTORS.employeeTerminatedOnInput.value || "") : "",
       notes: "",
     };
@@ -309,8 +328,12 @@ function wireEmployeeManagement() {
       setEmployeeMessage("Select designation from Settings presets.");
       return;
     }
-    if (isEditMode && payload.status === "leave" && !payload.leaveFrom && !payload.leaveTo) {
-      setEmployeeMessage("For leave status, set leave dates (from/to).");
+    if (isEditMode && payload.status === "leave" && !payload.leaveFrom) {
+      setEmployeeMessage("For leave status, set the leave from date.");
+      return;
+    }
+    if (isEditMode && payload.status === "resumed" && !payload.leaveTo) {
+      setEmployeeMessage("For resumed work status, select the resumed on date.");
       return;
     }
     if (isEditMode && payload.status === "terminated" && !payload.terminatedOn) {
@@ -397,15 +420,18 @@ function wireEmployeeManagement() {
 function syncEmployeeStatusFields() {
   const status = SELECTORS.employeeStatusInput?.value || "working";
   const leaveMode = status === "leave";
+  const resumedMode = status === "resumed";
   const terminatedMode = status === "terminated";
 
   SELECTORS.employeeLeaveFromInput.disabled = !leaveMode;
-  SELECTORS.employeeLeaveToInput.disabled = !leaveMode;
+  SELECTORS.employeeResumeOnInput.disabled = !(leaveMode || resumedMode);
   SELECTORS.employeeTerminatedOnInput.disabled = !terminatedMode;
 
   if (!leaveMode) {
     SELECTORS.employeeLeaveFromInput.value = "";
-    SELECTORS.employeeLeaveToInput.value = "";
+  }
+  if (!(leaveMode || resumedMode)) {
+    SELECTORS.employeeResumeOnInput.value = "";
   }
   if (!terminatedMode) {
     SELECTORS.employeeTerminatedOnInput.value = "";
@@ -452,7 +478,7 @@ function fillEmployeeForm(employee) {
   SELECTORS.employeeMobileInput.value = employee.mobileNumber || "";
   SELECTORS.employeeStatusInput.value = employee.status || "working";
   SELECTORS.employeeLeaveFromInput.value = employee.leaveFrom || "";
-  SELECTORS.employeeLeaveToInput.value = employee.leaveTo || "";
+  SELECTORS.employeeResumeOnInput.value = employee.leaveTo || "";
   SELECTORS.employeeTerminatedOnInput.value = employee.terminatedOn || "";
   SELECTORS.employeeSaveBtn.textContent = "Update Employee";
   SELECTORS.employeeCancelBtn.classList.remove("hidden");
@@ -477,16 +503,18 @@ async function loadEmployees() {
     // Fetch all payroll records for pending advances
     try {
       const payrollResp = await apiRequest('/api/payroll/all');
-      window.allPayrollRecords = Array.isArray(payrollResp.records) ? payrollResp.records : [];
+      window.allPayrollRecords = Array.isArray(payrollResp.entries) ? payrollResp.entries : [];
     } catch (e) {
       window.allPayrollRecords = [];
     }
     renderEmployeeTable();
+    renderLeaveResumeReport();
     renderDesignationSuggestions();
   } catch (error) {
     employeeMaster = [];
     window.allPayrollRecords = [];
     renderEmployeeTable();
+    renderLeaveResumeReport();
     renderDesignationSuggestions();
     setEmployeeMessage(employeeApiErrorMessage(error));
   }
@@ -496,12 +524,12 @@ function renderEmployeeTable() {
   if (!SELECTORS.employeesBody) return;
   if (employeeMaster.length === 0) {
     SELECTORS.employeesBody.innerHTML = `
-      <tr><td colspan="6" class="empty">No employees yet. Add employee details above.</td></tr>
+      <tr><td colspan="8" class="empty">No employees yet. Add employee details above.</td></tr>
     `;
     return;
   }
 
-  // For each employee, find the latest payroll record and show advanceRemained if > 0
+  // Advance Remained is the carried balance left after the latest month's deduction is applied.
   const payrollByEmployee = {};
   const companyId = getSelectedCompanyId && getSelectedCompanyId();
   if (window.allPayrollRecords) {
@@ -526,26 +554,17 @@ function renderEmployeeTable() {
         : employee.status === "terminated"
           ? "status-pill terminated"
           : "status-pill working";
-      const statusDates = employee.status === "leave"
-        ? `${employee.leaveFrom || "-"} to ${employee.leaveTo || "-"}`
-        : employee.status === "terminated"
-          ? (employee.terminatedOn || "-")
-          : "-";
-
-
-      // Find latest advanceRemained or oldAdvanceTaken
-      let pendingAdvance = 0;
+      let advanceRemainedDisplay = Number(employee.openingAdvance || 0);
       const payroll = payrollByEmployee[employee.employeeId];
       if (payroll) {
-        if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained)) && Number(payroll.advanceRemained) > 0) {
-          pendingAdvance = Number(payroll.advanceRemained);
-        } else if (payroll.oldAdvanceTaken != null && !isNaN(Number(payroll.oldAdvanceTaken)) && Number(payroll.oldAdvanceTaken) > 0) {
-          pendingAdvance = Number(payroll.oldAdvanceTaken);
-        } else {
-          pendingAdvance = Number(employee.openingAdvance || 0);
+        if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained))) {
+          advanceRemainedDisplay = Number(payroll.advanceRemained);
         }
-      } else {
-        pendingAdvance = Number(employee.openingAdvance || 0);
+        if (advanceRemainedDisplay <= 0) {
+          advanceRemainedDisplay = 0;
+        } else {
+          advanceRemainedDisplay = Math.max(0, advanceRemainedDisplay);
+        }
       }
 
       return `
@@ -556,8 +575,10 @@ function renderEmployeeTable() {
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
           <td>${formatCurrency(Number(employee.baseSalary || 0))}</td>
-          <td>${formatCurrency(pendingAdvance)}</td>
+          <td>${formatCurrency(advanceRemainedDisplay)}</td>
           <td><span class="${statusClass}">${statusLabel}</span></td>
+          <td>${escapeHtml(employee.leaveFrom || "-")}</td>
+          <td>${escapeHtml(employee.leaveTo || "-")}</td>
           <td>
             <div class="row-actions">
               <button type="button" class="mini ghost" data-action="edit">Edit</button>
@@ -568,6 +589,53 @@ function renderEmployeeTable() {
       `;
     })
     .join("");
+}
+
+function renderLeaveResumeReport() {
+  if (!SELECTORS.leaveResumeReportBody) return;
+
+  const rows = employeeMaster
+    .filter((employee) => employee.leaveFrom || employee.leaveTo || employee.terminatedOn)
+    .sort((a, b) => String(a.employeeId || "").localeCompare(String(b.employeeId || "")));
+
+  if (rows.length === 0) {
+    SELECTORS.leaveResumeReportBody.innerHTML = `
+      <tr><td colspan="6" class="empty">No leave, resume, or termination details recorded yet.</td></tr>
+    `;
+    if (SELECTORS.reportsMessage) {
+      SELECTORS.reportsMessage.textContent = "";
+    }
+    return;
+  }
+
+  SELECTORS.leaveResumeReportBody.innerHTML = rows
+    .map((employee) => {
+      const status = String(employee.status || "working").toLowerCase();
+      const statusLabel = status === "leave"
+        ? "On Leave"
+        : status === "terminated"
+          ? "Terminated"
+          : "Working";
+
+      return `
+        <tr>
+          <td>${escapeHtml(employee.employeeId || "-")}</td>
+          <td>
+            <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
+            <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
+          </td>
+          <td>${escapeHtml(statusLabel)}</td>
+          <td>${escapeHtml(employee.leaveFrom || "-")}</td>
+          <td>${escapeHtml(employee.leaveTo || "-")}</td>
+          <td>${escapeHtml(employee.terminatedOn || "-")}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  if (SELECTORS.reportsMessage) {
+    SELECTORS.reportsMessage.textContent = `${rows.length} employee record(s) with leave, resume, or termination details.`;
+  }
 }
 
 function setEmployeeMessage(message) {
@@ -786,6 +854,54 @@ function wireAppActions() {
 }
 
 function wireSettingsActions() {
+  SELECTORS.verifyEmailBtn?.addEventListener("click", async () => {
+    const button = SELECTORS.verifyEmailBtn;
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Sending...";
+      }
+      const response = await apiRequest("/api/auth/send-email-verification", {
+        method: "POST",
+      });
+      const message = response.message || "Verification email sent.";
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } catch (error) {
+      const message = String(error?.message || "Failed to send verification email.");
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Verify Email";
+      }
+    }
+  });
+
+  SELECTORS.settingsPayrollMonthMode?.addEventListener("change", async () => {
+    const mode = SELECTORS.settingsPayrollMonthMode.value === "current" ? "current" : "previous";
+    localStorage.setItem(STORAGE_KEYS.payrollMonthMode, mode);
+    setDefaultMonth();
+    try {
+      await loadMonthRecords();
+      setSettingsMessage(
+        mode === "previous"
+          ? "Payroll view now defaults to previous month. Example: in April, payroll opens March."
+          : "Payroll view now defaults to current month."
+      );
+      showAppMessage(
+        mode === "previous"
+          ? "Payroll will open on the previous month by default."
+          : "Payroll will open on the current month by default."
+      );
+    } catch (error) {
+      const message = settingsApiErrorMessage(error);
+      setSettingsMessage(message);
+      showAppMessage(message);
+    }
+  });
+
   SELECTORS.designationPresetInput?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -833,6 +949,52 @@ function wireSettingsActions() {
       if (addBtn) {
         addBtn.disabled = false;
         addBtn.textContent = "Add";
+      }
+    }
+  });
+
+  SELECTORS.saveCompanyNameBtn?.addEventListener("click", async () => {
+    const companyId = getSelectedCompanyId();
+    if (!companyId) {
+      setSettingsMessage("Select a company first.");
+      showAppMessage("Select a company first.");
+      return;
+    }
+
+    const name = SELECTORS.settingsCompanyNameInput?.value.trim() || "";
+    if (name.length < 2) {
+      setSettingsMessage("Company name is too short.");
+      showAppMessage("Company name is too short.");
+      return;
+    }
+
+    const saveBtn = SELECTORS.saveCompanyNameBtn;
+    try {
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+      }
+      const response = await apiRequest(`/api/companies/${companyId}`, {
+        method: "PUT",
+        body: { name },
+      });
+      const company = companies.find((item) => Number(item.id) === Number(companyId));
+      if (company) {
+        company.name = String(response?.company?.name || name);
+      }
+      await loadCompanies();
+      hydrateSettingsCompany();
+      renderPayrollTable();
+      setSettingsMessage("Company name saved to database.");
+      showAppMessage("Company name updated.");
+    } catch (error) {
+      const message = settingsApiErrorMessage(error);
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Company Name";
       }
     }
   });
@@ -988,30 +1150,44 @@ function wireSettingsActions() {
       setImportSummary("Analyzing file...");
       const rows = await parseLegacyPayrollFile(file);
       if (rows.length === 0) {
-        setImportSummary("No usable rows found in file.");
-        setSettingsMessage("Import failed: no usable rows found.");
+        setImportSummary("Import failed: no usable rows found in file.");
+        setSettingsMessage("Import failed: no usable rows found in file.");
         return;
       }
 
       const analyzed = analyzeLegacyRows(rows);
+      const inferenceText = analyzed.diagnostics?.inferenceNotes?.length
+        ? ` Mapped fields: ${analyzed.diagnostics.inferenceNotes.slice(0, 4).join("; ")}.`
+        : "";
       if (analyzed.payrollRecords.length === 0) {
-        setImportSummary("File analyzed but no payroll rows matched.");
-        setSettingsMessage("No payroll rows matched expected columns.");
+        const reasonText = analyzed.diagnostics?.reasons?.length
+          ? analyzed.diagnostics.reasons.join(" ")
+          : "No payroll rows matched expected columns.";
+        setImportSummary(`Import failed: ${reasonText}${inferenceText}`);
+        setSettingsMessage(`Import failed: ${reasonText}`);
         return;
       }
 
-      if (btn) btn.textContent = "Importing...";
-      setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing...`);
-      await importLegacyAnalysis(analyzed);
+      if (btn) btn.textContent = "Importing... 1%";
+      setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... 1%`);
+      await importLegacyAnalysis(analyzed, ({ percent, label }) => {
+        const safePercent = Math.max(1, Math.min(100, Number(percent) || 1));
+        if (btn) btn.textContent = `Importing... ${safePercent}%`;
+        setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... ${safePercent}%${label ? ` (${label})` : ""}`);
+      });
 
       await Promise.all([
         loadDesignationPresets(),
         loadEmployees(),
         loadMonthRecords(),
       ]);
-      setImportSummary(`Imported ${analyzed.payrollRecords.length} payroll rows across ${analyzed.months.length} month(s).`);
-      setSettingsMessage("Legacy payroll imported successfully.");
-      showAppMessage("Legacy payroll imported successfully.");
+      if (btn) btn.textContent = "Importing... 100%";
+      const warningText = analyzed.diagnostics?.warnings?.length
+        ? ` Warnings: ${analyzed.diagnostics.warnings.join(" ")}`
+        : "";
+      setImportSummary(`Import successful! 100%. Imported ${analyzed.payrollRecords.length} payroll rows across ${analyzed.months.length} month(s).${warningText}${inferenceText}`);
+      setSettingsMessage(`Import successful!${warningText}`);
+      showAppMessage("Import successful!");
       if (SELECTORS.legacyImportInput) SELECTORS.legacyImportInput.value = "";
     } catch (error) {
       const message = String(error?.message || "Legacy import failed.");
@@ -1187,9 +1363,8 @@ function wireRailActions() {
       }
 
       if (action === "reports") {
-        setWorkspace("payroll");
-        SELECTORS.actionMenu?.setAttribute("open", "");
-        SELECTORS.actionMenu?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setWorkspace("reports");
+        SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 
@@ -1208,11 +1383,13 @@ function setWorkspace(view) {
   const dashboardView = view === "dashboard";
   const employeesView = view === "employees";
   const payrollView = view === "payroll";
+  const reportsView = view === "reports";
   const settingsView = view === "settings";
 
   SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
   SELECTORS.employeesSection?.classList.toggle("hidden", !employeesView);
   SELECTORS.payrollSection?.classList.toggle("hidden", !payrollView);
+  SELECTORS.reportsSection?.classList.toggle("hidden", !reportsView);
   SELECTORS.settingsSection?.classList.toggle("hidden", !settingsView);
   SELECTORS.saveStatus?.classList.toggle("hidden", !payrollView);
 }
@@ -1235,9 +1412,16 @@ async function updateAuthView() {
 
   try {
     const bootstrap = await apiRequest("/api/auth/bootstrap", {}, false);
+    stopServerReconnectPolling();
     needsSetupFlow = Boolean(bootstrap.needsSetup);
     SELECTORS.showRegisterBtn?.classList.remove("hidden");
     SELECTORS.showLoginBtn?.classList.remove("hidden");
+
+    if (bootstrap.degraded) {
+      setAuthMode("login");
+      showAuthMessage(bootstrap.message || "Cloud service is temporarily busy. Please retry shortly.");
+      return;
+    }
 
     if (bootstrap.needsSetup) {
       setAuthMode("register");
@@ -1249,7 +1433,8 @@ async function updateAuthView() {
   } catch {
     SELECTORS.setupForm.classList.add("hidden");
     SELECTORS.loginForm.classList.add("hidden");
-    showAuthMessage("Server is not reachable. Start backend with: node server.js");
+    startServerReconnectPolling();
+    showAuthMessage("Server is not reachable. Start backend with `npm start` or double-click `start-routes-payroll.command`. We will reconnect automatically.");
   }
 }
 
@@ -1264,19 +1449,25 @@ function setAuthMode(mode) {
 async function validateToken() {
   if (!authToken) return false;
   try {
-    await apiRequest("/api/auth/me");
+    const response = await apiRequest("/api/auth/me");
+    currentUser = response.user || null;
+    hydrateSettingsAccount();
     return true;
   } catch (error) {
     if (String(error.message).toLowerCase().includes("expired") || String(error.message).toLowerCase().includes("authentication")) {
       setToken("");
     }
+    currentUser = null;
+    hydrateSettingsAccount();
     return false;
   }
 }
 
 async function switchToApp() {
+  stopServerReconnectPolling();
   SELECTORS.authView.classList.add("hidden");
   SELECTORS.appView.classList.remove("hidden");
+  hydrateSettingsAccount();
   await loadCompanies();
   await Promise.all([
     loadEmployees(),
@@ -1287,14 +1478,88 @@ async function switchToApp() {
   SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
 }
 
+async function isServerReachable() {
+  try {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function stopServerReconnectPolling() {
+  if (serverReconnectTimer) {
+    window.clearInterval(serverReconnectTimer);
+    serverReconnectTimer = null;
+  }
+  serverReconnectInFlight = false;
+}
+
+function startServerReconnectPolling() {
+  if (serverReconnectTimer) return;
+  serverReconnectTimer = window.setInterval(async () => {
+    if (serverReconnectInFlight) return;
+    serverReconnectInFlight = true;
+    try {
+      const reachable = await isServerReachable();
+      if (reachable) {
+        stopServerReconnectPolling();
+        await updateAuthView();
+      }
+    } finally {
+      serverReconnectInFlight = false;
+    }
+  }, 3000);
+}
+
+function hydrateSettingsAccount() {
+  if (SELECTORS.settingsUsernameValue) {
+    SELECTORS.settingsUsernameValue.textContent = currentUser?.username || "-";
+  }
+  if (SELECTORS.settingsEmailValue) {
+    SELECTORS.settingsEmailValue.textContent = currentUser?.email || "-";
+  }
+  if (SELECTORS.settingsEmailStatusValue) {
+    SELECTORS.settingsEmailStatusValue.textContent = currentUser?.emailVerified ? "Verified" : "Not Verified";
+  }
+  if (SELECTORS.verifyEmailBtn) {
+    SELECTORS.verifyEmailBtn.classList.toggle("hidden", Boolean(currentUser?.emailVerified) || !currentUser?.email);
+  }
+  hydrateSettingsCompany();
+  hydratePayrollMonthModeSetting();
+}
+
+function hydrateSettingsCompany() {
+  if (!SELECTORS.settingsCompanyNameInput) return;
+  SELECTORS.settingsCompanyNameInput.value = displayCompanyName(getActiveCompany());
+}
+
+function getPayrollMonthMode() {
+  const stored = localStorage.getItem(STORAGE_KEYS.payrollMonthMode) || "previous";
+  return stored === "current" ? "current" : "previous";
+}
+
+function hydratePayrollMonthModeSetting() {
+  if (!SELECTORS.settingsPayrollMonthMode) return;
+  SELECTORS.settingsPayrollMonthMode.value = getPayrollMonthMode();
+}
+
 function setDefaultMonth() {
   const now = new Date();
+  if (getPayrollMonthMode() === "previous") {
+    now.setMonth(now.getMonth() - 1);
+  }
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   SELECTORS.monthPicker.value = month;
 }
 
 function getSelectedMonth() {
   return SELECTORS.monthPicker.value || new Date().toISOString().slice(0, 7);
+}
+
+function isPayrollActiveStatus(status) {
+  const normalized = String(status || "working").toLowerCase();
+  return normalized !== "terminated" && normalized !== "leave";
 }
 
 function getSelectedCompanyId() {
@@ -1355,6 +1620,7 @@ async function loadCompanies() {
     .map((company) => `<option value="${company.id}">${escapeHtml(displayCompanyName(company))}</option>`)
     .join("");
   SELECTORS.companyPicker.value = String(activeCompanyId);
+  hydrateSettingsCompany();
 }
 
 async function loadMonthRecords() {
@@ -1362,7 +1628,7 @@ async function loadMonthRecords() {
   try {
     const response = await apiRequest(payrollMonthUrl(month));
     currentRecords = Array.isArray(response.records) ? response.records : [];
-    const visible = currentRecords.filter((record) => String(record.employeeStatus || "working").toLowerCase() !== "terminated");
+    const visible = currentRecords.filter((record) => isPayrollActiveStatus(record.employeeStatus));
     if (!visible.some((record) => String(record.employeeId) === String(activePayrollEmployeeId))) {
       activePayrollEmployeeId = visible[0]?.employeeId || "";
     }
@@ -1444,6 +1710,17 @@ function isPayrollBlocked(record, month) {
   return false;
 }
 
+function daysBeforeResumeInMonth(record, month) {
+  const status = String(record.employeeStatus || "working").toLowerCase();
+  if (status !== "resumed") return 0;
+  const resumedOn = parseIsoDate(record.leaveTo);
+  if (!resumedOn) return 0;
+  const { start, end } = monthBounds(month);
+  if (resumedOn <= start) return 0;
+  if (resumedOn > end) return 30;
+  return clamp(resumedOn.getDate() - 1, 0, 30);
+}
+
 function computePayroll(record, month = getSelectedMonth()) {
   const blocked = isPayrollBlocked(record, month);
   const presentSalary = blocked ? 0 : toMoney(record.presentSalary);
@@ -1455,8 +1732,9 @@ function computePayroll(record, month = getSelectedMonth()) {
   const totalAdvance = oldAdvanceTaken + extraAdvanceAdded;
 
   const deductionEntered = blocked ? 0 : Math.max(0, toMoney(record.deductionEntered));
-  const daysAbsentRaw = blocked ? 0 : toMoney(record.daysAbsent);
-  const daysAbsent = clamp(daysAbsentRaw, 0, 30);
+  const manualDaysAbsent = blocked ? 0 : toMoney(record.daysAbsent);
+  const resumedDaysAbsent = blocked ? 0 : daysBeforeResumeInMonth(record, month);
+  const daysAbsent = clamp(manualDaysAbsent + resumedDaysAbsent, 0, 30);
   const proratedAbsenceDeduction = (daysAbsent / 30) * grossSalary;
   const deductionApplied = Math.min(deductionEntered, totalAdvance);
   const advanceRemained = totalAdvance - deductionApplied;
@@ -1493,7 +1771,7 @@ function renderPayrollTable() {
   const allowOverride = isFirstMonth || isCurrentMonth;
   const visibleRecords = currentRecords
     .map((record, index) => ({ record, index }))
-    .filter((item) => String(item.record.employeeStatus || "working").toLowerCase() !== "terminated");
+    .filter((item) => isPayrollActiveStatus(item.record.employeeStatus));
   const visibleCount = visibleRecords.length;
 
   if (visibleCount === 0) {
@@ -1517,6 +1795,8 @@ function renderPayrollTable() {
   const statusBoxClass = status === "leave" ? "status-box leave" : "status-box active";
   const statusDetail = status === "leave"
     ? `Leave: ${record.leaveFrom || "-"} to ${record.leaveTo || "-"}`
+    : status === "resumed"
+      ? `Resumed on: ${record.leaveTo || "-"}`
     : "";
   const employeeOptions = visibleRecords
     .map((item) => {
@@ -2288,12 +2568,36 @@ function normalizeHeader(value) {
     .trim();
 }
 
-function pickCellByAliases(row, aliases) {
-  const entries = Object.entries(row || {});
-  for (const [key, value] of entries) {
-    const normalized = normalizeHeader(key);
-    if (aliases.some((alias) => normalized === alias || normalized.includes(alias))) {
-      if (String(value || "").trim() !== "") return value;
+function headerMatchesAlias(normalizedHeader, alias) {
+  const normalizedAlias = normalizeHeader(alias);
+  if (!normalizedHeader || !normalizedAlias) return false;
+  if (normalizedHeader === normalizedAlias) return true;
+  if (normalizedHeader.includes(normalizedAlias) || normalizedAlias.includes(normalizedHeader)) return true;
+
+  const headerTokens = normalizedHeader.split(" ").filter(Boolean);
+  const aliasTokens = normalizedAlias.split(" ").filter(Boolean);
+  if (aliasTokens.length > 0 && aliasTokens.every((token) => headerTokens.includes(token))) return true;
+  if (headerTokens.length > 0 && headerTokens.every((token) => aliasTokens.includes(token))) return true;
+  return false;
+}
+
+function collectImportHeaders(rows) {
+  const headerMap = new Map();
+  for (const row of rows || []) {
+    for (const key of Object.keys(row || {})) {
+      const normalized = normalizeHeader(key);
+      if (normalized && !headerMap.has(normalized)) {
+        headerMap.set(normalized, key);
+      }
+    }
+  }
+  return headerMap;
+}
+
+function detectImportHeader(headerMap, aliases) {
+  for (const [normalized, original] of headerMap.entries()) {
+    if (aliases.some((alias) => headerMatchesAlias(normalized, alias))) {
+      return original;
     }
   }
   return "";
@@ -2332,27 +2636,195 @@ function parseIsoFromImport(value) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function isLikelyEmployeeId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (raw.length > 24) return false;
+  return /[a-z]/i.test(raw) && /\d/.test(raw);
+}
+
+function isLikelyPersonName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (raw.length < 2 || raw.length > 80) return false;
+  if (/\d{3,}/.test(raw)) return false;
+  return /^[a-z .'-]+$/i.test(raw);
+}
+
+function isLikelyMonthValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return /^\d{4}[-/]\d{2}$/.test(raw)
+    || /^\d{2}[-/]\d{4}$/.test(raw)
+    || /^[a-z]{3,9}[\s_-]?\d{4}$/i.test(raw)
+    || !Number.isNaN(new Date(raw).getTime());
+}
+
+function isLikelyMoneyValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return Number.isFinite(Number(String(raw).replace(/[₹,\s]/g, "").replace(/[^0-9.-]/g, "")));
+}
+
+function isLikelyDaysAbsentValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const num = Number(raw);
+  return Number.isFinite(num) && num >= 0 && num <= 31;
+}
+
+function buildImportSchema(rows) {
+  const headerMap = collectImportHeaders(rows);
+  const headers = Array.from(headerMap.entries()).map(([normalized, original]) => ({ normalized, original }));
+  const sampleRows = Array.isArray(rows) ? rows.slice(0, 25) : [];
+  const fieldDefinitions = {
+    employeeId: {
+      aliases: ["employee id", "emp id", "employeeid", "staff id", "staff code", "id code", "code"],
+      scoreValue: isLikelyEmployeeId,
+    },
+    employeeName: {
+      aliases: ["employee name", "employee names", "name", "emp name", "staff name", "full name", "worker name"],
+      scoreValue: isLikelyPersonName,
+    },
+    designation: {
+      aliases: ["designation", "role", "position", "job title", "title", "department role"],
+      scoreValue: (value) => {
+        const raw = String(value || "").trim();
+        return raw.length >= 2 && raw.length <= 60 && !/\d{4,}/.test(raw);
+      },
+    },
+    month: {
+      aliases: ["year month", "updated month", "month", "period", "salary month", "pay month", "for month"],
+      scoreValue: isLikelyMonthValue,
+    },
+    presentSalary: {
+      aliases: ["present salary", "salary", "base salary", "net salary", "gross salary", "monthly salary", "salary amount"],
+      scoreValue: isLikelyMoneyValue,
+    },
+    increment: {
+      aliases: ["increment", "salary increment", "raise", "hike"],
+      scoreValue: isLikelyMoneyValue,
+    },
+    oldAdvanceTaken: {
+      aliases: ["old advance taken", "old advance", "advance taken", "previous advance", "opening advance"],
+      scoreValue: isLikelyMoneyValue,
+    },
+    extraAdvanceAdded: {
+      aliases: ["extra advance added", "extra advance", "new advance", "advance added", "fresh advance"],
+      scoreValue: isLikelyMoneyValue,
+    },
+    deductionEntered: {
+      aliases: ["deduction entered", "deduction", "advance deduction", "recovery", "recovered amount"],
+      scoreValue: isLikelyMoneyValue,
+    },
+    daysAbsent: {
+      aliases: ["days absent", "absent", "attendance absent", "absent days", "leave days"],
+      scoreValue: isLikelyDaysAbsentValue,
+    },
+    comment: {
+      aliases: ["comment", "notes", "remark", "remarks", "description"],
+      scoreValue: (value) => String(value || "").trim().length > 0,
+    },
+    joiningDate: {
+      aliases: ["joining date", "date of joining", "doj", "joined on"],
+      scoreValue: (value) => Boolean(parseIsoFromImport(value)),
+    },
+    birthDate: {
+      aliases: ["birth date", "date of birth", "dob"],
+      scoreValue: (value) => Boolean(parseIsoFromImport(value)),
+    },
+    mobileNumber: {
+      aliases: ["mobile", "phone", "contact", "mobile number", "phone number"],
+      scoreValue: (value) => /\d{7,}/.test(String(value || "").replace(/\D/g, "")),
+    },
+  };
+
+  const schema = {};
+  const inferenceNotes = [];
+
+  for (const [field, definition] of Object.entries(fieldDefinitions)) {
+    let best = { original: "", score: -1, matchedBy: "" };
+    for (const header of headers) {
+      let score = 0;
+      let matchedBy = "content";
+      for (const alias of definition.aliases) {
+        if (headerMatchesAlias(header.normalized, alias)) {
+          score += 12;
+          matchedBy = "header";
+        }
+      }
+
+      let sampleMatches = 0;
+      let sampleChecks = 0;
+      for (const row of sampleRows) {
+        const rawValue = row?.[header.original];
+        if (String(rawValue || "").trim() === "") continue;
+        sampleChecks += 1;
+        if (definition.scoreValue(rawValue)) sampleMatches += 1;
+      }
+      if (sampleChecks > 0) {
+        score += Math.round((sampleMatches / sampleChecks) * 8);
+      }
+
+      if (score > best.score) {
+        best = { original: header.original, score, matchedBy };
+      }
+    }
+
+    if (best.original && best.score >= 6) {
+      schema[field] = best.original;
+      inferenceNotes.push(`${field} -> ${best.original} (${best.matchedBy} inference)`);
+    } else {
+      schema[field] = "";
+    }
+  }
+
+  return { schema, inferenceNotes };
+}
+
+function pickCellFromSchema(row, schema, field) {
+  const header = schema?.[field];
+  if (!header) return "";
+  const value = row?.[header];
+  return String(value || "").trim() === "" ? "" : value;
+}
+
 function analyzeLegacyRows(rows) {
   const payrollRecords = [];
   const designationSet = new Set();
   const employeeMap = new Map();
   const monthSet = new Set();
+  const { schema: detectedHeaders, inferenceNotes } = buildImportSchema(rows);
+  let skippedMissingEmployeeId = 0;
+  let skippedMissingEmployeeName = 0;
+  let defaultedMonthCount = 0;
 
   for (const row of rows) {
-    const employeeId = String(pickCellByAliases(row, ["employee id", "emp id", "employeeid"]) || "").trim();
-    const employeeName = String(pickCellByAliases(row, ["employee name", "employee names", "name", "emp name"]) || "").trim();
-    if (!employeeId || !employeeName) continue;
+    const employeeId = String(pickCellFromSchema(row, detectedHeaders, "employeeId") || "").trim();
+    const employeeName = String(pickCellFromSchema(row, detectedHeaders, "employeeName") || "").trim();
+    if (!employeeId) {
+      skippedMissingEmployeeId += 1;
+      continue;
+    }
+    if (!employeeName) {
+      skippedMissingEmployeeName += 1;
+      continue;
+    }
 
-    const designation = String(pickCellByAliases(row, ["designation", "role", "position"]) || "").trim();
-    const month = parseMonthFromImport(pickCellByAliases(row, ["year month", "updated month", "month", "period"]));
-    const presentSalary = parseMoney(pickCellByAliases(row, ["present salary", "salary", "base salary"]));
-    const increment = parseMoney(pickCellByAliases(row, ["increment"]));
-    const oldAdvanceTaken = parseMoney(pickCellByAliases(row, ["old advance taken", "old advance", "advance taken"]));
-    const extraAdvanceAdded = parseMoney(pickCellByAliases(row, ["extra advance added", "extra advance", "new advance"]));
-    const deductionEntered = parseMoney(pickCellByAliases(row, ["deduction entered", "deduction"]));
-    const daysAbsentRaw = Number(pickCellByAliases(row, ["days absent", "absent", "attendance absent"]));
+    const designation = String(pickCellFromSchema(row, detectedHeaders, "designation") || "").trim();
+    const rawMonthValue = pickCellFromSchema(row, detectedHeaders, "month");
+    const month = parseMonthFromImport(rawMonthValue);
+    const presentSalary = parseMoney(pickCellFromSchema(row, detectedHeaders, "presentSalary"));
+    const increment = parseMoney(pickCellFromSchema(row, detectedHeaders, "increment"));
+    const oldAdvanceTaken = parseMoney(pickCellFromSchema(row, detectedHeaders, "oldAdvanceTaken"));
+    const extraAdvanceAdded = parseMoney(pickCellFromSchema(row, detectedHeaders, "extraAdvanceAdded"));
+    const deductionEntered = parseMoney(pickCellFromSchema(row, detectedHeaders, "deductionEntered"));
+    const daysAbsentRaw = Number(pickCellFromSchema(row, detectedHeaders, "daysAbsent"));
     const daysAbsent = Number.isFinite(daysAbsentRaw) ? Math.min(30, Math.max(0, daysAbsentRaw)) : 0;
-    const comment = String(pickCellByAliases(row, ["comment", "notes", "remark"]) || "").trim();
+    const comment = String(pickCellFromSchema(row, detectedHeaders, "comment") || "").trim();
+    if (!String(rawMonthValue || "").trim()) {
+      defaultedMonthCount += 1;
+    }
 
     if (designation) designationSet.add(designation);
     monthSet.add(month);
@@ -2375,15 +2847,43 @@ function analyzeLegacyRows(rows) {
       employeeMap.set(employeeId, {
         employeeId,
         employeeName,
-        joiningDate: parseIsoFromImport(pickCellByAliases(row, ["joining date", "date of joining", "doj"])) || new Date().toISOString().slice(0, 10),
-        birthDate: parseIsoFromImport(pickCellByAliases(row, ["birth date", "date of birth", "dob"])),
+        joiningDate: parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "joiningDate")) || new Date().toISOString().slice(0, 10),
+        birthDate: parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "birthDate")),
         baseSalary: presentSalary,
         openingAdvance: oldAdvanceTaken,
         designation: designation || "Staff",
-        mobileNumber: String(pickCellByAliases(row, ["mobile", "phone", "contact"]) || "").trim(),
+        mobileNumber: String(pickCellFromSchema(row, detectedHeaders, "mobileNumber") || "").trim(),
         status: "working",
       });
     }
+  }
+
+  const reasons = [];
+  if (!detectedHeaders.employeeId) {
+    reasons.push("Could not detect an Employee ID column.");
+  }
+  if (!detectedHeaders.employeeName) {
+    reasons.push("Could not detect an Employee Name column.");
+  }
+  if (rows.length > 0 && payrollRecords.length === 0 && skippedMissingEmployeeId > 0) {
+    reasons.push(`Skipped ${skippedMissingEmployeeId} row(s) because Employee ID was empty or not recognized.`);
+  }
+  if (rows.length > 0 && payrollRecords.length === 0 && skippedMissingEmployeeName > 0) {
+    reasons.push(`Skipped ${skippedMissingEmployeeName} row(s) because Employee Name was empty or not recognized.`);
+  }
+  if (!detectedHeaders.month) {
+    reasons.push("No Month column was detected, so the importer would fall back to the currently selected month.");
+  }
+
+  const warnings = [];
+  if (defaultedMonthCount > 0) {
+    warnings.push(`${defaultedMonthCount} row(s) did not include a month, so the selected app month was used.`);
+  }
+  if (skippedMissingEmployeeId > 0) {
+    warnings.push(`${skippedMissingEmployeeId} row(s) were skipped due to missing Employee ID.`);
+  }
+  if (skippedMissingEmployeeName > 0) {
+    warnings.push(`${skippedMissingEmployeeName} row(s) were skipped due to missing Employee Name.`);
   }
 
   return {
@@ -2392,11 +2892,28 @@ function analyzeLegacyRows(rows) {
     designations: Array.from(designationSet),
     employees: Array.from(employeeMap.values()),
     months: Array.from(monthSet).sort(),
+    diagnostics: {
+      detectedHeaders,
+      reasons,
+      warnings,
+      skippedMissingEmployeeId,
+      skippedMissingEmployeeName,
+      defaultedMonthCount,
+      inferenceNotes,
+    },
   };
 }
 
-async function importLegacyAnalysis(analyzed) {
+async function importLegacyAnalysis(analyzed, onProgress = () => {}) {
   const companyId = getSelectedCompanyId();
+  const totalSteps = Math.max(1, analyzed.designations.length + analyzed.employees.length + analyzed.months.length);
+  let completedSteps = 0;
+
+  function reportProgress(label) {
+    completedSteps += 1;
+    const percent = Math.min(100, Math.max(1, Math.round((completedSteps / totalSteps) * 100)));
+    onProgress({ percent, label });
+  }
 
   for (const name of analyzed.designations) {
     if (!name) continue;
@@ -2410,6 +2927,7 @@ async function importLegacyAnalysis(analyzed) {
       const msg = String(error?.message || "").toLowerCase();
       if (!msg.includes("already exists")) throw error;
     }
+    reportProgress(`designation: ${name}`);
   }
 
   const existingEmployeesResp = await apiRequest(`/api/employees?companyId=${companyId}`);
@@ -2442,6 +2960,7 @@ async function importLegacyAnalysis(analyzed) {
       // eslint-disable-next-line no-await-in-loop
       await apiRequest("/api/employees", { method: "POST", body: payload });
     }
+    reportProgress(`employee: ${incoming.employeeName}`);
   }
 
   // Sort months chronologically
@@ -2502,6 +3021,7 @@ async function importLegacyAnalysis(analyzed) {
       method: "PUT",
       body: { records: finalRecords },
     });
+    reportProgress(`month: ${month}`);
   }
 }
 
@@ -2522,16 +3042,24 @@ async function apiRequest(url, options = {}, withAuth = true) {
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    startServerReconnectPolling();
+    throw new Error("Server is not reachable. Start backend with `npm start` or double-click `start-routes-payroll.command`.");
+  }
 
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json")
     ? await response.json()
     : null;
+
+  stopServerReconnectPolling();
 
   if (!response.ok) {
     const message = payload?.error || `Request failed (${response.status}).`;
@@ -2551,6 +3079,8 @@ function setToken(token) {
     localStorage.setItem(STORAGE_KEYS.authToken, authToken);
   } else {
     localStorage.removeItem(STORAGE_KEYS.authToken);
+    currentUser = null;
+    hydrateSettingsAccount();
   }
 }
 

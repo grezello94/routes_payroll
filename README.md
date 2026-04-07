@@ -1,13 +1,13 @@
 # Routes Payroll
 
-Professional multi-company payroll PWA with backend auth, SQLite storage, branded payslips, and export tools.
+Professional multi-company payroll PWA with backend auth, Supabase cloud storage, and export tools.
 
 ## Stack
 
 - Frontend: HTML/CSS/JS (PWA-capable)
 - Backend: Node.js + Express
-- Database: SQLite (`data/payroll.db`) or Firebase Firestore
-- Auth: JWT-based admin login
+- Database: Supabase by default when configured, otherwise Firebase or SQLite fallback
+- Auth: Supabase Auth or Firebase Auth behind the same JWT-based app login
 
 ## Key Features
 
@@ -46,6 +46,15 @@ cd /Users/grezello/Desktop/routes_payroll
 npm install
 npm start
 ```
+
+On macOS you can also double-click:
+
+```bash
+start-routes-payroll.command
+```
+
+That starts the backend if needed and opens the app automatically.
+If `.env.local` exists in the project root, the launcher will load it before starting.
 
 Then open:
 
@@ -103,11 +112,34 @@ Then open:
 - JWT token is stored in browser `localStorage`
 - Company logos are stored as image data URLs in SQLite
 
-## Firebase Database (Optional)
+## Supabase (Recommended)
 
-You can switch backend storage from SQLite to Firebase Firestore.
+Supabase is now the recommended cloud backend for this project.
 
 Set environment variables and run:
+
+```bash
+DB_PROVIDER=supabase \
+SUPABASE_URL="https://YOUR_PROJECT.supabase.co" \
+SUPABASE_ANON_KEY="your-anon-key" \
+SUPABASE_SERVICE_ROLE_KEY="your-service-role-key" \
+npm start
+```
+
+Notes:
+
+- Run the SQL in [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql) inside the Supabase SQL editor before first start.
+- Copy [.env.supabase.example](/Users/grezello/Desktop/routes_payroll/.env.supabase.example) to `.env.local` and fill in your real keys for easier local startup.
+- `DB_PROVIDER=supabase` explicitly forces Supabase mode.
+- When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present, the datastore will prefer Supabase automatically.
+- `SUPABASE_ANON_KEY` is used for password sign-in requests.
+- `DB_PROVIDER=sqlite` is only for an intentional local-only fallback.
+- Email/password users live in Supabase Auth.
+- Username, email verification state, companies, employees, designations, and payroll rows live in Supabase tables.
+
+## Firebase Database (Legacy / Fallback)
+
+Firebase support is still present as a fallback while migrating.
 
 ```bash
 DB_PROVIDER=firebase \
@@ -116,11 +148,16 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account", ...}' \
 npm start
 ```
 
-Notes:
+This repo can connect to Firebase using either:
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_APPLICATION_CREDENTIALS`
+- A local service account file at the project root such as `firebase-service-account.json` or `routespayroll-firebase-adminsdk-*.json`
 
-- `DB_PROVIDER=firebase` enables Firebase mode.
-- `FIREBASE_SERVICE_ACCOUNT_JSON` should be a full service account JSON string.
-- You can use `GOOGLE_APPLICATION_CREDENTIALS` instead of `FIREBASE_SERVICE_ACCOUNT_JSON` if preferred.
+To sync the current local admin account into Firestore so login works the same across systems:
+
+```bash
+npm run sync:firebase-auth
+```
 
 ## Optional Security Hardening
 

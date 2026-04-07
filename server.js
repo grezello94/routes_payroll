@@ -4,13 +4,20 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const admin = require("firebase-admin");
 const { createStore } = require("./datastore");
 
 const app = express();
 const PORT = Number(process.env.PORT || 5501);
 const JWT_SECRET = process.env.JWT_SECRET || "routes_payroll_dev_secret_change_me";
+const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyCqK3ZVR-9qN9WmsXycGzYkar5hnZBEpW0";
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "").trim();
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const store = createStore({ baseDir: __dirname });
 const RATE_BUCKETS = new Map();
+const AUTH_CACHE = new Map();
+let startupDegradedError = null;
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(__dirname, { index: "index.html" }));
@@ -53,6 +60,216 @@ function isStrongPassword(value) {
   if (!/[A-Z]/.test(raw)) return false;
   if (!/[0-9]/.test(raw)) return false;
   return true;
+}
+
+function isUserEmailVerified(user) {
+  return user?.email_verified !== false && user?.email_verified !== 0;
+}
+
+function cacheUser(user) {
+  if (!user) return;
+  const normalizedUser = {
+    id: String(user.id || ""),
+    username: String(user.username || ""),
+    email: String(user.email || ""),
+    email_verified: isUserEmailVerified(user),
+    password_hash: String(user.password_hash || ""),
+  };
+  if (normalizedUser.id) AUTH_CACHE.set(`id:${normalizedUser.id}`, normalizedUser);
+  if (normalizedUser.username) AUTH_CACHE.set(`username:${normalizedUser.username.toLowerCase()}`, normalizedUser);
+  if (normalizedUser.email) AUTH_CACHE.set(`email:${normalizedUser.email.toLowerCase()}`, normalizedUser);
+}
+
+function getCachedUserByIdentifier(identifier) {
+  const normalized = String(identifier || "").trim().toLowerCase();
+  return AUTH_CACHE.get(`username:${normalized}`) || AUTH_CACHE.get(`email:${normalized}`) || null;
+}
+
+function isQuotaExceededError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.code === 8 || message.includes("quota exceeded");
+}
+
+function startupStatusPayload() {
+  if (!startupDegradedError) {
+    return { ok: true, degraded: false };
+  }
+  return {
+    ok: true,
+    degraded: true,
+    reason: isQuotaExceededError(startupDegradedError) ? "cloud_quota_exceeded" : "startup_failed",
+  };
+}
+
+function fallbackCompanies() {
+  return [
+    {
+      id: 1,
+      name: "Red Lantern Restaurant",
+      logo_data_url: "",
+    },
+  ];
+}
+
+function authProvider() {
+  return store.provider === "supabase" ? "supabase" : "firebase";
+}
+
+function firebaseAuth() {
+  return admin.auth();
+}
+
+function hasSupabaseAuthConfig() {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function supabaseAuthAdmin(pathname, { method = "GET", body } = {}) {
+  if (!hasSupabaseAuthConfig()) {
+    throw new Error("Supabase Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}${pathname}`, {
+    method,
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.msg || payload?.error_description || payload?.message || "Supabase auth request failed.");
+    error.code = payload?.code || response.status;
+    throw error;
+  }
+  return payload;
+}
+
+async function supabaseAuthPasswordSignIn(email, password) {
+  if (!hasSupabaseAuthConfig()) {
+    throw new Error("Supabase Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = String(payload?.error_code || payload?.error || payload?.msg || "").toLowerCase();
+    if (message.includes("invalid") || message.includes("credentials")) {
+      const error = new Error("Invalid username or password.");
+      error.code = "auth/invalid-login";
+      throw error;
+    }
+    throw new Error(payload?.msg || payload?.error_description || payload?.message || "Supabase sign-in failed.");
+  }
+
+  return payload;
+}
+
+async function listAllFirebaseAuthUsers() {
+  const users = [];
+  let nextPageToken;
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const page = await firebaseAuth().listUsers(1000, nextPageToken);
+    users.push(...(page.users || []));
+    nextPageToken = page.pageToken;
+  } while (nextPageToken);
+  return users;
+}
+
+async function countAuthUsers() {
+  return store.countUsers();
+}
+
+async function signInWithFirebasePassword(email, password) {
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true,
+      }),
+    }
+  );
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = String(payload?.error?.message || "").toUpperCase();
+    if (message.includes("INVALID_LOGIN_CREDENTIALS") || message.includes("INVALID_PASSWORD") || message.includes("EMAIL_NOT_FOUND")) {
+      const error = new Error("Invalid username or password.");
+      error.code = "auth/invalid-login";
+      throw error;
+    }
+    throw new Error(payload?.error?.message || "Firebase sign-in failed.");
+  }
+
+  return payload;
+}
+
+async function createAuthUser({ email, password, username, emailVerified }) {
+  if (authProvider() === "supabase") {
+    const payload = await supabaseAuthAdmin("/auth/v1/admin/users", {
+      method: "POST",
+      body: {
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          username,
+          email_verified: Boolean(emailVerified),
+        },
+      },
+    });
+    return {
+      id: String(payload?.id || ""),
+      email,
+    };
+  }
+
+  const firebaseUser = await firebaseAuth().createUser({
+    email,
+    password,
+    displayName: username,
+    emailVerified: Boolean(emailVerified),
+  });
+  return {
+    id: String(firebaseUser.uid || ""),
+    email: String(firebaseUser.email || email || ""),
+  };
+}
+
+async function signInWithAuthPassword(email, password) {
+  if (authProvider() === "supabase") {
+    return supabaseAuthPasswordSignIn(email, password);
+  }
+  return signInWithFirebasePassword(email, password);
+}
+
+async function updateAuthUserPassword(userId, newPassword) {
+  if (authProvider() === "supabase") {
+    await supabaseAuthAdmin(`/auth/v1/admin/users/${encodeURIComponent(String(userId || ""))}`, {
+      method: "PUT",
+      body: {
+        password: newPassword,
+      },
+    });
+    return;
+  }
+  await firebaseAuth().updateUser(String(userId || ""), { password: newPassword });
 }
 
 function checkRateLimit(key, limit, windowMs) {
@@ -137,6 +354,33 @@ async function sendPasswordResetLinkEmail({ to, resetLink }) {
   });
 }
 
+async function sendEmailVerificationLinkEmail({ to, verifyLink }) {
+  const mailer = createMailer();
+  if (!mailer) {
+    throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.");
+  }
+
+  await mailer.transport.sendMail({
+    from: mailer.from,
+    to,
+    subject: "Verify Your Routes Payroll Email",
+    text: [
+      "Welcome to Routes Payroll.",
+      "Please verify your registered email by opening this link:",
+      verifyLink,
+      "After verification, you can go back to your system or log in to your system.",
+      "If this was not you, please ignore this email.",
+    ].join("\n"),
+  });
+}
+
+function appBaseUrl(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || req.protocol || "http";
+  const host = String(req.get("host") || `127.0.0.1:${PORT}`);
+  return `${protocol}://${host}`;
+}
+
 function sanitizeLogoDataUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -151,6 +395,10 @@ function parseCompanyId(value, fallback = 1) {
   return id;
 }
 
+function normalizeEmploymentStatus(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 async function resolveCompanyId(req, res, source = "query") {
   const rawValue = source === "body" ? req.body?.companyId : req.query?.companyId;
   const companyId = parseCompanyId(rawValue, 1);
@@ -160,6 +408,9 @@ async function resolveCompanyId(req, res, source = "query") {
   }
 
   try {
+    if (startupDegradedError && companyId === 1) {
+      return 1;
+    }
     const exists = await store.companyExists(companyId);
     if (!exists) {
       res.status(404).json({ error: "Company not found." });
@@ -195,7 +446,7 @@ function isIsoDate(value) {
 
 function normalizeEmployee(employee, index) {
   const rawStatus = String(employee?.status || "working").toLowerCase();
-  const status = rawStatus === "leave" || rawStatus === "terminated" ? rawStatus : "working";
+  const status = rawStatus === "leave" || rawStatus === "resumed" || rawStatus === "terminated" ? rawStatus : "working";
   const leaveFrom = isIsoDate(employee?.leaveFrom) ? String(employee.leaveFrom) : "";
   const leaveTo = isIsoDate(employee?.leaveTo) ? String(employee.leaveTo) : "";
   const terminatedOn = isIsoDate(employee?.terminatedOn) ? String(employee.terminatedOn) : "";
@@ -268,9 +519,14 @@ function dbRowToDesignation(row) {
 
 function createToken(user) {
   return jwt.sign(
-    { userId: user.id, username: user.username },
+    {
+      userId: user.id,
+      username: user.username,
+      email: user.email || "",
+      emailVerified: isUserEmailVerified(user),
+    },
     JWT_SECRET,
-    { expiresIn: "12h" }
+    { expiresIn: "30d" }
   );
 }
 
@@ -293,13 +549,19 @@ function authMiddleware(req, res, next) {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
+  res.json({ ...startupStatusPayload(), time: new Date().toISOString() });
 });
 
 app.get("/api/auth/bootstrap", async (_req, res) => {
   try {
-    const count = await store.countUsers();
-    res.json({ needsSetup: count === 0 });
+    const count = await countAuthUsers();
+    res.json({
+      needsSetup: count === 0,
+      degraded: Boolean(startupDegradedError && isQuotaExceededError(startupDegradedError) && store.provider !== "supabase"),
+      message: startupDegradedError && isQuotaExceededError(startupDegradedError) && store.provider !== "supabase"
+        ? "Cloud payroll data is temporarily busy, but sign-in remains available."
+        : "",
+    });
   } catch (error) {
     res.status(500).json({ error: "Failed to check bootstrap state." });
   }
@@ -317,20 +579,58 @@ app.post("/api/auth/register", async (req, res) => {
   }
 
   try {
-    const userCount = await store.countUsers();
+    const userCount = await countAuthUsers();
     if (userCount > 0) {
       res.status(409).json({ error: "Admin account already exists." });
       return;
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const result = await store.createUser(username, email, passwordHash);
-    await store.updateCompanyName(1, companyName, "");
+    const authUser = await createAuthUser({
+      email,
+      password,
+      username,
+      emailVerified: false,
+    });
 
-    const token = createToken({ id: result.id, username });
-    res.status(201).json({ token, user: { id: result.id, username, email } });
+    const verifyToken = crypto.randomBytes(24).toString("hex");
+    const verifyTokenHash = hashResetCode(verifyToken);
+    const expiresAtIso = new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
+    await store.createUser(username, email, passwordHash, { id: authUser.id, emailVerified: false });
+    await store.setUserEmailVerificationById(authUser.id, verifyTokenHash, expiresAtIso);
+
+    if (!startupDegradedError || store.provider === "supabase") {
+      await store.updateCompanyName(1, companyName, "");
+    }
+
+    const verifyLink = `${appBaseUrl(req)}/verify-email.html?token=${encodeURIComponent(verifyToken)}`;
+    let verificationEmailSent = true;
+    let message = "Account created. Verify your email from the link we sent, or resend it from Settings.";
+    try {
+      await sendEmailVerificationLinkEmail({ to: email, verifyLink });
+    } catch (error) {
+      verificationEmailSent = false;
+      message = "Account created, but verification email could not be sent. Use Verify Email in Settings after SMTP is configured.";
+    }
+
+    const createdUser = { id: authUser.id, username, email, email_verified: false, password_hash: passwordHash };
+    cacheUser(createdUser);
+    const token = createToken(createdUser);
+    res.status(201).json({
+      token,
+      message,
+      verificationEmailSent,
+      user: { id: authUser.id, username, email, emailVerified: false },
+    });
   } catch (error) {
-    if (error?.code === "unique") {
+    if (
+      error?.code === "auth/email-already-exists"
+      || error?.code === "auth/uid-already-exists"
+      || error?.code === "email_exists"
+      || error?.code === "user_already_exists"
+      || error?.code === "unique"
+      || String(error?.message || "").toLowerCase().includes("already")
+    ) {
       res.status(409).json({ error: "Admin account or email already exists." });
       return;
     }
@@ -359,16 +659,67 @@ app.post("/api/auth/login", async (req, res) => {
       return;
     }
 
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) {
-      res.status(401).json({ error: "Invalid username or password." });
+    await signInWithAuthPassword(user.email, password);
+    if (!isUserEmailVerified(user)) {
+      res.status(403).json({ error: "Email not verified. Open the verification email or resend it from Settings on your registered system." });
       return;
     }
 
+    cacheUser(user);
     const token = createToken(user);
-    res.json({ token, user: { id: user.id, username: user.username } });
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email || "",
+        emailVerified: isUserEmailVerified(user),
+      },
+    });
   } catch (error) {
+    if (error?.code === "auth/invalid-login") {
+      res.status(401).json({ error: "Invalid username or password." });
+      return;
+    }
+    if (isQuotaExceededError(error)) {
+      res.status(503).json({ error: "Cloud login service is temporarily busy. Please keep the app open and retry shortly." });
+      return;
+    }
     res.status(500).json({ error: "Login failed." });
+  }
+});
+
+app.post("/api/auth/send-email-verification", authMiddleware, async (req, res) => {
+  const ip = clientIp(req);
+  if (!checkRateLimit(`verify-email:${ip}`, 5, 60_000)) {
+    res.status(429).json({ error: "Too many verification requests. Please wait and retry." });
+    return;
+  }
+
+  try {
+    const user = await store.getUserById(String(req.user.userId || ""));
+    if (!user) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+    if (isUserEmailVerified(user)) {
+      res.json({ ok: true, message: "Email is already verified." });
+      return;
+    }
+    if (!isValidEmail(user.email || "")) {
+      res.status(400).json({ error: "Registered email is invalid." });
+      return;
+    }
+
+    const verifyToken = crypto.randomBytes(24).toString("hex");
+    const verifyTokenHash = hashResetCode(verifyToken);
+    const expiresAtIso = new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
+    await store.setUserEmailVerificationById(user.id, verifyTokenHash, expiresAtIso);
+    const verifyLink = `${appBaseUrl(req)}/verify-email.html?token=${encodeURIComponent(verifyToken)}`;
+    await sendEmailVerificationLinkEmail({ to: user.email, verifyLink });
+    res.json({ ok: true, message: "Verification email sent to your registered email address." });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || "Failed to send verification email.") });
   }
 });
 
@@ -387,7 +738,7 @@ app.post("/api/auth/recover-email", async (req, res) => {
   }
 
   try {
-    const company = await store.getCompanyById(1);
+    const company = startupDegradedError ? { name: "Red Lantern Restaurant" } : await store.getCompanyById(1);
     const expectedCompanyName = sanitizeText(company?.name || "", 120).toLowerCase();
     const user = await store.findUserByEmail(email);
     const validMatch = expectedCompanyName
@@ -432,11 +783,11 @@ app.post("/api/auth/request-password-reset", async (req, res) => {
       return;
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    await store.setUserResetCodeById(user.id, hashResetCode(resetToken), expiresAt);
-    const appBaseUrl = String(process.env.APP_BASE_URL || `http://127.0.0.1:${PORT}`).replace(/\/+$/, "");
-    const resetLink = `${appBaseUrl}/reset-password.html?token=${encodeURIComponent(resetToken)}`;
+    const resetToken = crypto.randomBytes(24).toString("hex");
+    const resetTokenHash = hashResetCode(resetToken);
+    const expiresAtIso = new Date(Date.now() + (15 * 60 * 1000)).toISOString();
+    await store.setUserResetCodeById(user.id, resetTokenHash, expiresAtIso);
+    const resetLink = `${appBaseUrl(req)}/reset-password.html?token=${encodeURIComponent(resetToken)}`;
     await sendPasswordResetLinkEmail({
       to: user.email,
       resetLink,
@@ -479,21 +830,64 @@ app.post("/api/auth/reset-password-with-token", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
+    await updateAuthUserPassword(user.id, newPassword);
     await store.updateUserPasswordById(user.id, passwordHash);
     await store.clearUserResetCodeById(user.id);
     res.json({ ok: true, message: "Password reset successful." });
-  } catch {
-    res.status(500).json({ error: "Password reset failed." });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || "Password reset failed.") });
   }
 });
 
-app.get("/api/auth/me", authMiddleware, (req, res) => {
-  res.json({
-    user: {
-      id: req.user.userId,
-      username: req.user.username,
-    },
-  });
+app.post("/api/auth/verify-email-token", async (req, res) => {
+  const token = sanitizeText(req.body?.token, 200);
+  const ip = clientIp(req);
+
+  if (!token) {
+    res.status(400).json({ error: "Verification token is required." });
+    return;
+  }
+  if (!checkRateLimit(`verify-email-token:${ip}`, 10, 60_000)) {
+    res.status(429).json({ error: "Too many attempts. Please wait and retry." });
+    return;
+  }
+
+  try {
+    const tokenHash = hashResetCode(token);
+    const user = await store.findUserByEmailVerificationHash(tokenHash);
+    if (!user) {
+      res.status(401).json({ error: "Invalid or expired verification link." });
+      return;
+    }
+
+    const expectedHash = String(user.email_verification_hash || "");
+    const expiresAt = String(user.email_verification_expires_at || "");
+    const isExpired = !expiresAt || Date.parse(expiresAt) < Date.now();
+    if (!expectedHash || isExpired || expectedHash !== tokenHash) {
+      res.status(401).json({ error: "Invalid or expired verification link." });
+      return;
+    }
+
+    await store.markUserEmailVerifiedById(user.id);
+    res.json({ ok: true, message: "Email verified successfully. You can go back to your system or log in to your system." });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || "Email verification failed.") });
+  }
+});
+
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  try {
+    res.json({
+      user: {
+        id: req.user.userId,
+        username: req.user.username,
+        email: req.user.email || "",
+        emailVerified: req.user.emailVerified !== false,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to load user profile." });
+  }
 });
 
 app.post("/api/auth/change-password", authMiddleware, async (req, res) => {
@@ -510,22 +904,18 @@ app.post("/api/auth/change-password", authMiddleware, async (req, res) => {
   }
 
   try {
-    const user = await store.findUserByIdentifier(req.user.username);
+    const user = await store.getUserById(String(req.user.userId || ""));
     if (!user) {
       res.status(404).json({ error: "User not found." });
       return;
     }
-    const sameAsCurrent = await bcrypt.compare(newPassword, user.password_hash || "");
-    if (sameAsCurrent) {
-      res.status(400).json({ error: "New password must be different from current password." });
-      return;
-    }
-
+    await updateAuthUserPassword(String(req.user.userId || ""), newPassword);
     const passwordHash = await bcrypt.hash(newPassword, 12);
-    await store.updateUserPasswordById(req.user.userId, passwordHash);
+    await store.updateUserPasswordById(String(req.user.userId || ""), passwordHash);
+    cacheUser(user);
     res.json({ ok: true });
-  } catch {
-    res.status(500).json({ error: "Failed to update password." });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || "Failed to update password.") });
   }
 });
 
@@ -539,7 +929,19 @@ app.get("/api/companies", authMiddleware, async (_req, res) => {
         logoDataUrl: row.logo_data_url || "",
       })),
     });
-  } catch {
+  } catch (error) {
+    if (isQuotaExceededError(error) || startupDegradedError) {
+      const rows = fallbackCompanies();
+      res.json({
+        companies: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          logoDataUrl: row.logo_data_url || "",
+        })),
+        degraded: true,
+      });
+      return;
+    }
     res.status(500).json({ error: "Failed to fetch companies." });
   }
 });
@@ -664,6 +1066,44 @@ app.post("/api/companies", authMiddleware, async (req, res) => {
       return;
     }
     res.status(500).json({ error: "Failed to create company." });
+  }
+});
+
+app.put("/api/companies/:id", authMiddleware, async (req, res) => {
+  const id = parseCompanyId(req.params.id, null);
+  if (!id) {
+    res.status(400).json({ error: "Invalid company id." });
+    return;
+  }
+
+  const name = sanitizeText(req.body?.name, 120);
+  if (name.length < 2) {
+    res.status(400).json({ error: "Company name is too short." });
+    return;
+  }
+
+  try {
+    const existing = await store.getCompanyById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Company not found." });
+      return;
+    }
+
+    await store.updateCompanyName(id, name, String(existing.logo_data_url || ""));
+    res.json({
+      ok: true,
+      company: {
+        id,
+        name,
+        logoDataUrl: String(existing.logo_data_url || ""),
+      },
+    });
+  } catch (error) {
+    if (error?.code === "unique") {
+      res.status(409).json({ error: "Company name already exists." });
+      return;
+    }
+    res.status(500).json({ error: "Failed to update company name." });
   }
 });
 
@@ -870,6 +1310,9 @@ app.get("/api/payroll/:month", authMiddleware, async (req, res) => {
   try {
     const rows = await store.listPayrollByMonthCompany(month, companyId);
     const employees = await store.listEmployeesByCompany(companyId);
+    const employeeByEmployeeId = new Map(
+      employees.map((employee) => [String(employee.employee_id || ""), employee])
+    );
     const prevMonth = previousMonthIso(month);
     const previousRows = prevMonth ? await store.listPayrollByMonthCompany(prevMonth, companyId) : [];
     const previousByEmployeeId = new Map(previousRows.map((row) => [String(row.employee_id || ""), row]));
@@ -877,7 +1320,8 @@ app.get("/api/payroll/:month", authMiddleware, async (req, res) => {
     const records = [];
 
     employees.forEach((employee, index) => {
-      if (String(employee.status || "").toLowerCase() === "terminated") {
+      const status = normalizeEmploymentStatus(employee.status);
+      if (status === "terminated" || status === "leave") {
         return;
       }
       const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
@@ -907,15 +1351,17 @@ app.get("/api/payroll/:month", authMiddleware, async (req, res) => {
     });
 
     for (const extra of byEmployeeId.values()) {
-      if (String(extra.employee_status || "").toLowerCase() === "terminated") {
+      const linkedEmployee = employeeByEmployeeId.get(String(extra.employee_id || ""));
+      const status = normalizeEmploymentStatus(linkedEmployee?.status || extra.employee_status);
+      if (!linkedEmployee || status === "terminated" || status === "leave") {
         continue;
       }
       records.push({
         ...dbRowToRecord(extra),
-        employeeStatus: "working",
-        leaveFrom: "",
-        leaveTo: "",
-        terminatedOn: "",
+        employeeStatus: linkedEmployee?.status || "working",
+        leaveFrom: linkedEmployee?.leave_from || "",
+        leaveTo: linkedEmployee?.leave_to || "",
+        terminatedOn: linkedEmployee?.terminated_on || "",
       });
     }
 
@@ -982,14 +1428,14 @@ function dbRowToRecord(row) {
 }
 
 store.init()
-  .then(() => {
+  .catch((error) => {
+    startupDegradedError = error;
+    // eslint-disable-next-line no-console
+    console.error("Database initialized in degraded mode:", error);
+  })
+  .finally(() => {
     app.listen(PORT, "127.0.0.1", () => {
       // eslint-disable-next-line no-console
-      console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider})`);
+      console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}${startupDegradedError ? ", degraded" : ""})`);
     });
-  })
-  .catch((error) => {
-    // eslint-disable-next-line no-console
-    console.error("Failed to initialize database:", error);
-    process.exit(1);
   });
