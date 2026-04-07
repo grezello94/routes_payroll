@@ -1,168 +1,437 @@
 # Routes Payroll
 
-Professional multi-company payroll PWA with backend auth, Supabase cloud storage, and export tools.
+Routes Payroll is a multi-company payroll app for hotel and restaurant operations.
+It includes:
+
+- admin registration and sign-in
+- employee management
+- monthly payroll register
+- payslip preview/export/share
+- leave, resume, and termination tracking
+- company settings and logo management
+- JSON backup/restore
+- cloud-first Supabase support
+
+The app is built for a payroll workflow where salary is paid on the 10th for the previous month.
+Example: in April, the app can open March payroll by default.
 
 ## Stack
 
-- Frontend: HTML/CSS/JS (PWA-capable)
+- Frontend: plain HTML, CSS, and JavaScript
 - Backend: Node.js + Express
-- Database: Supabase by default when configured, otherwise Firebase or SQLite fallback
-- Auth: Supabase Auth or Firebase Auth behind the same JWT-based app login
+- Default cloud backend: Supabase
+- Legacy/fallback backends: Firebase and SQLite
+- Auth: app JWT session over Supabase Auth or Firebase Auth
 
-## Key Features
+## What The App Does
 
-- Secure admin setup/login
-- Multi-company payroll workspace
-  - Create company with `name` + `logo`
-  - Switch active company from the top toolbar
-  - Data is isolated per company + month
-- Month-wise payroll register with auto-save
-- Payslip preview with company branding
-  - Company name + logo rendered in payslip
-  - Print/Save PDF
-  - TXT download
-  - Share: WhatsApp, Messenger, Web Share, copy text
-- Exports
-  - CSV (monthly)
-  - Excel `.xls` (monthly, highlighted professional format)
-- Backup/restore (JSON)
-  - Supports new multi-company payload format
-  - Backward-compatible with legacy month-only payloads
-- Installable app (service worker + manifest)
+- Supports multiple companies in one workspace
+- Stores employee master data separately from monthly payroll entries
+- Calculates monthly gross, deductions, advance remained, and net pay
+- Hides `On Leave` and `Terminated` employees from the Payroll Register
+- Keeps leave, resume, and termination history in Reports
+- Lets `Resumed Work` employees come back into payroll automatically
+- Shows payroll by month and company
+- Supports a previous-month payroll cycle by default
 
-## Run
+## Main Screens
 
-```bash
-npm install
-npm start
-```
+### Employee Management
 
-Open: `http://127.0.0.1:5501`
+This is the employee master list.
 
-## Quick Start (Do This)
+- Shows all employees, including `Working`, `On Leave`, and `Terminated`
+- Lets you edit employee details, status, leave dates, resume date, and termination date
+- Shows advance remained in the employee table
 
-```bash
-cd /Users/grezello/Desktop/routes_payroll
-npm install
-npm start
-```
+### Employee Payroll Register
 
-On macOS you can also double-click:
+This is the monthly payroll working screen.
 
-```bash
-start-routes-payroll.command
-```
+- Only active payroll employees appear here
+- `On Leave` employees do not appear
+- `Terminated` employees do not appear
+- `Resumed Work` employees appear again in payroll
+- Payroll values are stored month-wise
 
-That starts the backend if needed and opens the app automatically.
-If `.env.local` exists in the project root, the launcher will load it before starting.
+### Reports
 
-Then open:
+Includes a `Leave / Resume Work` report.
 
-- Main app: `http://127.0.0.1:5501`
-- HRM mockup interface: `http://127.0.0.1:5501/hrm_interface_mockup.html`
+It shows:
 
-## How Multi-Company Works
+- employee ID
+- employee name
+- current status
+- leave from date
+- resumed on date
+- terminated on date
 
-1. Use `New Company` to create a company with logo.
-2. Select company from the `Company` dropdown.
-3. All month reads/writes are scoped by selected company.
-4. Payslip and exports reflect the selected company branding.
+This section is intended to keep status history visible in an organized way.
 
-## API Endpoints
+### Settings
 
-- `GET /api/health`
-- `GET /api/auth/bootstrap`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
+Settings currently include:
 
-### Company APIs
+- account details
+- email verification action
+- company name update
+- payroll cycle mode
+- designation presets
+- company logo upload
+- password change
+- legacy payroll import
 
-- `GET /api/companies`
-- `POST /api/companies`
-  - Body:
-    - `name: string`
-    - `logoDataUrl: string` (optional, image data URL)
+## Payroll Cycle Logic
 
-### Payroll APIs
+This app supports the hotel-style payroll cycle where salary is paid on the 10th for the previous month.
 
-- `GET /api/payroll/:month?companyId=<id>`
-- `PUT /api/payroll/:month?companyId=<id>`
-  - Body: `{ records: [...] }`
-- `GET /api/payroll/all`
-  - Returns multi-company backup shape:
-    - `{ companies: [...], entries: [...] }`
-- `POST /api/payroll/restore`
-  - Accepts:
-    - New format: `{ companies: [...], entries: [...] }`
-    - Legacy format: `{ months: { "YYYY-MM": [...] } }`
+Example:
 
-## Payroll Formulas
+- current calendar month: April
+- payroll worked on in the app: March
+- salary paid on: April 10
+
+This is controlled from Settings under `Payroll Cycle`.
+
+Available modes:
+
+- `Previous Month (salary paid on 10th)`
+- `Current Month`
+
+By default, the app is set up to open the previous month.
+
+## Employee Status Logic
+
+### Working
+
+- visible in Employee Management
+- visible in Payroll Register
+
+### On Leave
+
+- visible in Employee Management
+- hidden from Payroll Register
+- leave dates remain visible in Reports
+
+### Resumed Work
+
+- visible in Employee Management
+- visible in Payroll Register
+- treated like active working mode for display
+- used for payroll proration based on resume date
+
+### Terminated
+
+- visible in Employee Management
+- hidden from Payroll Register
+- termination date remains visible in Reports
+
+## Resume-Date Payroll Logic
+
+If an employee is marked as `Resumed Work`, the app uses the `Resumed On` date for the selected payroll month.
+
+The payroll calculation treats the days before that resume date as absent for that month.
+
+That means:
+
+- payout is generated only for the days worked after resuming
+- manual `Days Absent` can still be added on top if needed
+
+## Advance Logic
+
+The employee list shows `Advance Remained (₹)`.
+
+This comes from the latest available payroll month for that employee.
+
+Behavior:
+
+- if payroll exists, the latest `advanceRemained` is shown
+- if no payroll exists yet, the employee opening advance is used
+
+In payroll:
+
+- `Old Advance Taken` is the carried advance for that payroll month
+- `Extra Advance Added` adds more advance in the month
+- `Deduction Entered` reduces advance
+- `Advance Remained` is what stays after deduction
+
+## Payroll Formula
 
 - `Gross Salary = Present Salary + Increment`
 - `Total Advance = Old Advance Taken + Extra Advance Added`
 - `Prorated Absence Deduction = (Days Absent / 30) × Gross Salary`
-- `Deduction Applied = MIN(Deduction Entered, Total Advance)`
-- `Advance Remained = Total Advance − Deduction Applied`
-- `Net Salary = Gross Salary − Deduction Applied − Prorated Absence Deduction`
+- `Deduction Applied = min(Deduction Entered, Total Advance)`
+- `Advance Remained = Total Advance - Deduction Applied`
+- `Net Salary = Gross Salary - Deduction Applied - Prorated Absence Deduction`
 
-## Data Notes
-
-- SQLite DB file: `data/payroll.db`
-- JWT token is stored in browser `localStorage`
-- Company logos are stored as image data URLs in SQLite
-
-## Supabase (Recommended)
-
-Supabase is now the recommended cloud backend for this project.
-
-Set environment variables and run:
+## Quick Start
 
 ```bash
-DB_PROVIDER=supabase \
-SUPABASE_URL="https://YOUR_PROJECT.supabase.co" \
-SUPABASE_ANON_KEY="your-anon-key" \
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key" \
+cd /Users/grezello/Desktop/routes_payroll
+npm install
+```
+
+Then set up Supabase and run the app.
+
+## Supabase Setup
+
+Supabase is the recommended backend.
+
+### 1. Create a Supabase project
+
+In Supabase, create a new project.
+
+### 2. Enable Email auth
+
+In Supabase dashboard:
+
+- open `Authentication`
+- enable `Email` sign-in
+
+### 3. Create the database tables
+
+Run the SQL from [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql) in the Supabase SQL editor.
+
+That creates these tables:
+
+- `users`
+- `companies`
+- `designation_presets`
+- `employees`
+- `payroll_entries`
+
+### 4. Create `.env.local`
+
+Use [.env.supabase.example](/Users/grezello/Desktop/routes_payroll/.env.supabase.example) as the template.
+
+Create `.env.local` in the project root:
+
+```bash
+DB_PROVIDER=supabase
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+Important:
+
+- do not commit `.env.local`
+- the repo already ignores it in `.gitignore`
+
+### 5. Start the app
+
+Option A:
+
+```bash
 npm start
 ```
 
-Notes:
-
-- Run the SQL in [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql) inside the Supabase SQL editor before first start.
-- Copy [.env.supabase.example](/Users/grezello/Desktop/routes_payroll/.env.supabase.example) to `.env.local` and fill in your real keys for easier local startup.
-- `DB_PROVIDER=supabase` explicitly forces Supabase mode.
-- When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are present, the datastore will prefer Supabase automatically.
-- `SUPABASE_ANON_KEY` is used for password sign-in requests.
-- `DB_PROVIDER=sqlite` is only for an intentional local-only fallback.
-- Email/password users live in Supabase Auth.
-- Username, email verification state, companies, employees, designations, and payroll rows live in Supabase tables.
-
-## Firebase Database (Legacy / Fallback)
-
-Firebase support is still present as a fallback while migrating.
+Option B on macOS:
 
 ```bash
-DB_PROVIDER=firebase \
-FIREBASE_PROJECT_ID="your-project-id" \
-FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account", ...}' \
+./start-routes-payroll.command
+```
+
+The launcher loads `.env.local` automatically.
+
+### 6. Open the app
+
+```text
+http://127.0.0.1:5501
+```
+
+## Local Run Commands
+
+### Start
+
+```bash
 npm start
 ```
 
-This repo can connect to Firebase using either:
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
-- `GOOGLE_APPLICATION_CREDENTIALS`
-- A local service account file at the project root such as `firebase-service-account.json` or `routespayroll-firebase-adminsdk-*.json`
-
-To sync the current local admin account into Firestore so login works the same across systems:
+### Start and open on macOS
 
 ```bash
-npm run sync:firebase-auth
+./start-routes-payroll.command
 ```
 
-## Optional Security Hardening
-
-Set custom JWT secret before start:
+### Stop the local server
 
 ```bash
-JWT_SECRET="replace-with-a-strong-random-secret" npm start
+./stop-routes-payroll.command
 ```
+
+### Syntax check
+
+```bash
+npm run check
+```
+
+## First-Time App Setup
+
+On first launch:
+
+1. Register the company name
+2. Register admin email
+3. Register username
+4. Register password
+5. Verify the email
+
+After that, use Sign In normally.
+
+## Company Behavior
+
+- company selection happens from the top toolbar
+- payroll, employees, reports, and settings are all company-scoped
+- company logo is used in payslip preview and print
+- company name can be edited from Settings
+
+## Legacy Import
+
+The app supports importing older payroll sheets from:
+
+- `.xlsx`
+- `.xls`
+- `.csv`
+- `.xml`
+
+The importer:
+
+- analyzes columns
+- shows import progress from `1%` to `100%`
+- shows success or exact failure reason
+- infers field mappings from common header and value patterns
+- imports employees, designations, and payroll rows
+
+If import completes:
+
+- it shows `Import successful!`
+
+If import fails:
+
+- it shows the reason
+
+## Backup And Restore
+
+The app supports JSON backup and restore.
+
+Available from the `Actions` menu:
+
+- `Backup DB JSON`
+- `Restore DB JSON`
+
+Supported restore payloads:
+
+- new multi-company payload
+- legacy month-only payload
+
+## Important API Routes
+
+### Auth
+
+- `GET /api/auth/bootstrap`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/send-email-verification`
+- `POST /api/auth/request-password-reset`
+- `POST /api/auth/reset-password-with-token`
+- `POST /api/auth/change-password`
+
+### Companies
+
+- `GET /api/companies`
+- `POST /api/companies`
+- `PUT /api/companies/:id`
+- `PUT /api/companies/:id/logo`
+
+### Employees
+
+- `GET /api/employees?companyId=<id>`
+- `POST /api/employees`
+- `PUT /api/employees/:id`
+- `DELETE /api/employees/:id?companyId=<id>`
+
+### Payroll
+
+- `GET /api/payroll/:month?companyId=<id>`
+- `PUT /api/payroll/:month?companyId=<id>`
+- `GET /api/payroll/all`
+- `POST /api/payroll/restore`
+
+### Settings
+
+- `GET /api/settings/designations?companyId=<id>`
+- `POST /api/settings/designations`
+- `DELETE /api/settings/designations/:id?companyId=<id>`
+
+## Files To Know
+
+- [server.js](/Users/grezello/Desktop/routes_payroll/server.js): Express backend and APIs
+- [datastore.js](/Users/grezello/Desktop/routes_payroll/datastore.js): storage providers for Supabase, Firebase, and SQLite
+- [app.js](/Users/grezello/Desktop/routes_payroll/app.js): frontend app logic
+- [index.html](/Users/grezello/Desktop/routes_payroll/index.html): app structure
+- [styles.css](/Users/grezello/Desktop/routes_payroll/styles.css): UI styling
+- [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql): Supabase schema setup
+- [.env.supabase.example](/Users/grezello/Desktop/routes_payroll/.env.supabase.example): Supabase env template
+- [start-routes-payroll.command](/Users/grezello/Desktop/routes_payroll/start-routes-payroll.command): local launcher
+- [stop-routes-payroll.command](/Users/grezello/Desktop/routes_payroll/stop-routes-payroll.command): local stop script
+
+## Firebase And SQLite Notes
+
+Supabase is the preferred backend now.
+
+Firebase support still exists as a fallback for older setups.
+SQLite is available only as an intentional local fallback.
+
+## Security Notes
+
+- `.env.local` should stay local
+- do not commit service-role keys
+- do not commit Firebase service account files
+- set a custom `JWT_SECRET` in production
+
+## Troubleshooting
+
+### App says old backend is running
+
+Restart with:
+
+```bash
+cd /Users/grezello/Desktop/routes_payroll
+./stop-routes-payroll.command
+./start-routes-payroll.command
+```
+
+Then hard refresh the browser:
+
+```text
+Cmd + Shift + R
+```
+
+### Supabase is not connecting
+
+Check:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- whether `.env.local` exists
+- whether the project URL matches the real Supabase API settings
+
+### Payroll month is wrong
+
+Open `Settings` and change `Payroll Cycle`.
+
+### Leave or terminated employee is still visible in payroll
+
+Restart the backend and refresh the browser so the latest filtering logic is used.
+
+## Current Recommended Workflow
+
+1. Keep employee master data updated in Employee Management.
+2. Use status fields for leave, resume, and termination dates.
+3. Review status history in Reports.
+4. Open Payroll Register for the target payroll month.
+5. Complete payroll values and review computed payout.
+6. Export payslips, Excel, CSV, or backup JSON as needed.
