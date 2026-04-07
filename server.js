@@ -977,6 +977,7 @@ function dbRowToRecord(row) {
     daysAbsent: row.days_absent,
     comment: row.comment,
     positionIndex: row.position_index,
+    advanceRemained: advanceRemainedFromPayrollRow(row),
   };
 }
 

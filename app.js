@@ -474,10 +474,18 @@ async function loadEmployees() {
     const companyId = getSelectedCompanyId();
     const response = await apiRequest(`/api/employees?companyId=${companyId}`);
     employeeMaster = Array.isArray(response.employees) ? response.employees : [];
+    // Fetch all payroll records for pending advances
+    try {
+      const payrollResp = await apiRequest('/api/payroll/all');
+      window.allPayrollRecords = Array.isArray(payrollResp.records) ? payrollResp.records : [];
+    } catch (e) {
+      window.allPayrollRecords = [];
+    }
     renderEmployeeTable();
     renderDesignationSuggestions();
   } catch (error) {
     employeeMaster = [];
+    window.allPayrollRecords = [];
     renderEmployeeTable();
     renderDesignationSuggestions();
     setEmployeeMessage(employeeApiErrorMessage(error));
@@ -491,6 +499,19 @@ function renderEmployeeTable() {
       <tr><td colspan="6" class="empty">No employees yet. Add employee details above.</td></tr>
     `;
     return;
+  }
+
+  // For each employee, find the latest payroll record and show advanceRemained if > 0
+  const payrollByEmployee = {};
+  const companyId = getSelectedCompanyId && getSelectedCompanyId();
+  if (window.allPayrollRecords) {
+    for (const rec of window.allPayrollRecords) {
+      if (!rec.employeeId) continue;
+      if (companyId && Number(rec.companyId || rec.company_id || 1) !== Number(companyId)) continue;
+      if (!payrollByEmployee[rec.employeeId] || (rec.month > payrollByEmployee[rec.employeeId].month)) {
+        payrollByEmployee[rec.employeeId] = rec;
+      }
+    }
   }
 
   SELECTORS.employeesBody.innerHTML = employeeMaster
@@ -511,6 +532,22 @@ function renderEmployeeTable() {
           ? (employee.terminatedOn || "-")
           : "-";
 
+
+      // Find latest advanceRemained or oldAdvanceTaken
+      let pendingAdvance = 0;
+      const payroll = payrollByEmployee[employee.employeeId];
+      if (payroll) {
+        if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained)) && Number(payroll.advanceRemained) > 0) {
+          pendingAdvance = Number(payroll.advanceRemained);
+        } else if (payroll.oldAdvanceTaken != null && !isNaN(Number(payroll.oldAdvanceTaken)) && Number(payroll.oldAdvanceTaken) > 0) {
+          pendingAdvance = Number(payroll.oldAdvanceTaken);
+        } else {
+          pendingAdvance = Number(employee.openingAdvance || 0);
+        }
+      } else {
+        pendingAdvance = Number(employee.openingAdvance || 0);
+      }
+
       return `
         <tr data-id="${employee.id}">
           <td>${escapeHtml(employee.employeeId || "-")}</td>
@@ -519,7 +556,7 @@ function renderEmployeeTable() {
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
           <td>${formatCurrency(Number(employee.baseSalary || 0))}</td>
-          <td>${formatCurrency(Number(employee.openingAdvance || 0))}</td>
+          <td>${formatCurrency(pendingAdvance)}</td>
           <td><span class="${statusClass}">${statusLabel}</span></td>
           <td>
             <div class="row-actions">
@@ -1444,6 +1481,16 @@ function computePayroll(record, month = getSelectedMonth()) {
 
 function renderPayrollTable() {
   const month = getSelectedMonth();
+  const now = new Date();
+  const currentMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isCurrentMonth = month === currentMonthIso;
+  const isFirstMonth = (() => {
+    if (!currentRecords.length) return true;
+    const months = currentRecords.map(r => r.month || month).filter(Boolean);
+    const sorted = months.slice().sort();
+    return month === sorted[0];
+  })();
+  const allowOverride = isFirstMonth || isCurrentMonth;
   const visibleRecords = currentRecords
     .map((record, index) => ({ record, index }))
     .filter((item) => String(item.record.employeeStatus || "working").toLowerCase() !== "terminated");
@@ -1480,90 +1527,135 @@ function renderPayrollTable() {
 
   const selectClass = status === "leave" ? "emp-picker leave" : "emp-picker working";
   SELECTORS.payrollBody.innerHTML = `
-        <article class="payroll-entry-card payroll-modern" data-index="${index}">
-          <div class="payroll-modern-grid">
-            <div class="payroll-modern-main">
-              <section class="payroll-stack-section">
-                <h3>Employee Profile</h3>
-                <div class="payroll-fields">
-                  <label>Employee ID
-                    <select data-action="pick-record" class="${selectClass}">
-                      ${employeeOptions}
-                    </select>
-                  </label>
-                  <label>Employee Name
-                    <input data-field="employeeName" value="${escapeHtml(record.employeeName || "")}" readonly />
-                  </label>
-                  <label>Designation
-                    <input data-field="designation" value="${escapeHtml(record.designation || "")}" readonly />
-                  </label>
-                  <label>Status
-                    <div class="${statusBoxClass}">${status === "leave" ? "ON LEAVE" : "ACTIVE ✓"}</div>
-                  </label>
-                </div>
-                ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
-              </section>
-
-              <section class="payroll-stack-section">
-                <h3>Core Salary & Increment</h3>
-                <div class="payroll-fields">
-                  <label>Present Salary (₹)
-                    <input class="field-salary" data-field="presentSalary" type="number" min="0" step="0.01" value="${toRaw(record.presentSalary)}" readonly />
-                  </label>
-                  <label>Increment (₹)
-                    <span class="field-tag">NEW</span>
-                    <input class="field-increment" data-field="increment" type="number" min="0" step="0.01" value="${toRaw(record.increment)}" ${calc.blocked ? "disabled" : ""} />
-                  </label>
-                  <div class="read money-gross strong-line"><span>GROSS SALARY</span><b>${formatCurrency(calc.grossSalary)} ↑</b></div>
-                </div>
-              </section>
-
-              <section class="payroll-stack-section">
-                <h3>Advance Tracking</h3>
-                <div class="payroll-fields">
-                  <label>Old Advance Taken (₹)
-                    <input class="field-advance" data-field="oldAdvanceTaken" type="number" min="0" step="0.01" value="${toRaw(record.oldAdvanceTaken)}" />
-                  </label>
-                  <label>Extra Advance Added (₹)
-                    <input class="field-advance" data-field="extraAdvanceAdded" type="number" min="0" step="0.01" value="${toRaw(record.extraAdvanceAdded)}" />
-                  </label>
-                  <div class="read money-advance strong-line"><span>Total Advance Balance</span><b>${formatCurrency(calc.totalAdvance)}</b></div>
-                </div>
-              </section>
+    <article class="payroll-entry-card payroll-modern" data-index="${index}">
+      <div class="payroll-modern-grid">
+        <div class="payroll-modern-main">
+          <section class="payroll-stack-section">
+            <h3>Employee Profile</h3>
+            <div class="payroll-fields">
+              <label>Employee ID
+                <select data-action="pick-record" class="${selectClass}">
+                  ${employeeOptions}
+                </select>
+              </label>
+              <label>Employee Name
+                <input data-field="employeeName" value="${escapeHtml(record.employeeName || "")}" readonly />
+              </label>
+              <label>Designation
+                <input data-field="designation" value="${escapeHtml(record.designation || "")}" readonly />
+              </label>
+              <label>Status
+                <div class="${statusBoxClass}">${status === "leave" ? "ON LEAVE" : "ACTIVE ✓"}</div>
+              </label>
             </div>
+            ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
+          </section>
 
-            <aside class="payroll-modern-side">
-              <div class="kpi-card net">
-                <p>Net Salary In Hand</p>
-                <strong>${formatCurrency(calc.netSalary)}</strong>
-                <div class="net-sub">Calculated: Gross - Deductions</div>
-              </div>
-
-              <div class="kpi-card soft">
-                <h4>Deductions</h4>
-                <div class="kpi-line"><span>Deduction Entered</span><b>${formatCurrency(calc.deductionEntered)}</b></div>
-                <div class="kpi-line"><span>Absence Deduction</span><b>${formatCurrency(calc.proratedAbsenceDeduction)}</b></div>
-                <div class="kpi-line total"><span>Total Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
-              </div>
-
-              <div class="kpi-card amber">
-                <p>Advance Remained</p>
-                <strong>${formatCurrency(calc.advanceRemained)}</strong>
-              </div>
-            </aside>
-          </div>
-
-          <section class="payroll-footer">
-            <label>Notes / Comments
-              <textarea data-field="comment" rows="3" placeholder="Add professional notes here...">${escapeHtml(record.comment || "")}</textarea>
-            </label>
-            <div class="row-actions">
-              <button data-action="payslip" class="mini" type="button">Generate Payslip</button>
-              <button data-action="delete" class="mini danger" type="button">Delete Record</button>
+          <section class="payroll-stack-section">
+            <h3>Core Salary & Increment</h3>
+            <div class="payroll-fields">
+              <label>Present Salary (₹)
+                <input class="field-salary locked-field" data-field="presentSalary" type="number" min="0" step="0.01" value="${toRaw(record.presentSalary)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+              <label>Increment (₹)
+                <span class="field-tag">NEW</span>
+                <input class="field-increment" data-field="increment" type="number" min="0" step="0.01" value="${toRaw(record.increment)}" ${calc.blocked || !allowOverride ? "disabled" : ""} />
+                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+              </label>
+              <label>Gross Salary (₹)
+                <input type="text" value="${formatCurrency(calc.grossSalary)}" readonly />
+              </label>
             </div>
           </section>
-        </article>
-      `;
+
+          <section class="payroll-stack-section">
+            <h3>Advance Tracking</h3>
+            <div class="payroll-fields">
+              <label>Old Advance Taken (₹)
+                <input class="field-advance locked-field" data-field="oldAdvanceTaken" type="number" min="0" step="0.01" value="${toRaw(record.oldAdvanceTaken)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+              <label>Extra Advance Added (₹)
+                <input class="field-advance" data-field="extraAdvanceAdded" type="number" min="0" step="0.01" value="${toRaw(record.extraAdvanceAdded)}" ${allowOverride ? "" : "readonly"} />
+                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+              </label>
+              <label>Total Advance (₹)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.totalAdvance)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="payroll-stack-section">
+            <h3>Deductions & Absence</h3>
+            <div class="payroll-fields">
+              <label>Deduction Entered (₹)
+                <input class="field-deduction" data-field="deductionEntered" type="number" min="0" step="0.01" value="${toRaw(record.deductionEntered)}" ${allowOverride ? "" : "readonly"} />
+                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+              </label>
+              <label>Days Absent (out of 30)
+                <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="30" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
+                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+              </label>
+              <label>Prorated Absence Deduction (₹)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.proratedAbsenceDeduction)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+              <label>Deduction Applied (Advance only)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.deductionApplied)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="payroll-stack-section">
+            <h3>Summary</h3>
+            <div class="payroll-fields">
+              <label>Advance Remained (₹)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.advanceRemained)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+              <label>Salary In Hand (Net Salary ₹)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.netSalary)}" readonly />
+                <span class="field-note">Locked (system calculated)</span>
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <aside class="payroll-modern-side">
+          <div class="kpi-card net">
+            <p>Net Salary In Hand</p>
+            <strong>${formatCurrency(calc.netSalary)}</strong>
+            <div class="net-sub">Calculated: Gross - Deductions</div>
+          </div>
+
+          <div class="kpi-card soft">
+            <h4>Deductions</h4>
+            <div class="kpi-line"><span>Deduction Entered</span><b>${formatCurrency(calc.deductionEntered)}</b></div>
+            <div class="kpi-line"><span>Absence Deduction</span><b>${formatCurrency(calc.proratedAbsenceDeduction)}</b></div>
+            <div class="kpi-line total"><span>Total Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
+          </div>
+
+          <div class="kpi-card amber">
+            <p>Advance Remained</p>
+            <strong>${formatCurrency(calc.advanceRemained)}</strong>
+          </div>
+        </aside>
+      </div>
+
+      <section class="payroll-footer">
+        <label>Notes / Comments
+          <textarea data-field="comment" rows="3" placeholder="Add professional notes here...">${escapeHtml(record.comment || "")}</textarea>
+        </label>
+        <div class="row-actions">
+          <button data-action="payslip" class="mini" type="button">Generate Payslip</button>
+          <button data-action="delete" class="mini danger" type="button">Delete Record</button>
+        </div>
+      </section>
+    </article>
+  `;
 
   updateMetrics(currentRecords.map((record) => computePayroll(record)));
 }
@@ -2110,10 +2202,39 @@ async function parseLegacyPayrollFile(file) {
   }
   const buffer = await file.arrayBuffer();
   const workbook = window.XLSX.read(buffer, { type: "array" });
-  const firstSheetName = workbook.SheetNames?.[0];
-  if (!firstSheetName) return [];
-  const sheet = workbook.Sheets[firstSheetName];
-  return window.XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) return [];
+
+  // Helper to convert sheet name like 'Mar_2026' or 'Apr_2025' to '2026-03' or '2025-04'
+  function parseMonthFromSheetName(sheetName) {
+    const match = String(sheetName).match(/([A-Za-z]{3})[_-](\d{4})/);
+    if (match) {
+      const monthMap = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+      };
+      const m = monthMap[match[1].toLowerCase()];
+      if (m) return `${match[2]}-${m}`;
+    }
+    return '';
+  }
+
+  let allRows = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+    const monthFromSheet = parseMonthFromSheetName(sheetName);
+    if (Array.isArray(rows) && rows.length > 0) {
+      // If no explicit month column, add it from the sheet name
+      for (const row of rows) {
+        const hasMonth = Object.keys(row).some(k => /month|period|year/i.test(k));
+        if (!hasMonth && monthFromSheet) {
+          row["Month"] = monthFromSheet;
+        }
+      }
+      allRows = allRows.concat(rows);
+    }
+  }
+  return allRows;
 }
 
 function parseCsvRows(text) {
@@ -2323,21 +2444,34 @@ async function importLegacyAnalysis(analyzed) {
     }
   }
 
-  const rowsByMonth = new Map();
+  // Sort months chronologically
+  const sortedMonths = Array.from(new Set(analyzed.payrollRecords.map(r => r.month))).sort();
+  // Map: employeeId -> last advance remained
+  const lastAdvanceByEmployee = new Map();
+  // Group records by month and employee
+  const recordsByMonth = new Map();
   for (const row of analyzed.payrollRecords) {
     const month = row.month || getSelectedMonth();
-    if (!rowsByMonth.has(month)) rowsByMonth.set(month, []);
-    rowsByMonth.get(month).push(row);
+    if (!recordsByMonth.has(month)) recordsByMonth.set(month, new Map());
+    recordsByMonth.get(month).set(row.employeeId, row);
   }
 
-  for (const [month, incomingRows] of rowsByMonth.entries()) {
+  for (const month of sortedMonths) {
+    const incomingMap = recordsByMonth.get(month) || new Map();
     // eslint-disable-next-line no-await-in-loop
     const existingResp = await apiRequest(`/api/payroll/${month}?companyId=${companyId}`);
     const existingRecords = Array.isArray(existingResp.records) ? existingResp.records : [];
     const map = new Map(existingRecords.map((item) => [String(item.employeeId || ""), item]));
 
-    for (const row of incomingRows) {
-      const existing = map.get(String(row.employeeId || ""));
+    // For each employee in this month
+    for (const [employeeId, row] of incomingMap.entries()) {
+      const existing = map.get(String(employeeId));
+      // Always use the imported value for this month if present
+      let oldAdvanceTaken = row.oldAdvanceTaken;
+      // If missing or blank, carry forward from previous month
+      if ((oldAdvanceTaken === undefined || oldAdvanceTaken === null || oldAdvanceTaken === "") && lastAdvanceByEmployee.has(employeeId)) {
+        oldAdvanceTaken = lastAdvanceByEmployee.get(employeeId);
+      }
       const merged = {
         ...(existing || {}),
         employeeId: row.employeeId,
@@ -2345,13 +2479,18 @@ async function importLegacyAnalysis(analyzed) {
         designation: row.designation || existing?.designation || "",
         presentSalary: row.presentSalary,
         increment: row.increment,
-        oldAdvanceTaken: row.oldAdvanceTaken,
+        oldAdvanceTaken,
         extraAdvanceAdded: row.extraAdvanceAdded,
         deductionEntered: row.deductionEntered,
         daysAbsent: row.daysAbsent,
         comment: row.comment || existing?.comment || "",
       };
-      map.set(String(row.employeeId || ""), merged);
+      // Calculate advance remained for next month
+      const totalAdvance = Number(oldAdvanceTaken) + Number(row.extraAdvanceAdded);
+      const deductionApplied = Math.min(Number(row.deductionEntered), totalAdvance);
+      const advanceRemained = totalAdvance - deductionApplied;
+      lastAdvanceByEmployee.set(employeeId, advanceRemained);
+      map.set(String(employeeId), merged);
     }
 
     const finalRecords = Array.from(map.values()).map((item, index) => ({
