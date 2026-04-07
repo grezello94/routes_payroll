@@ -71,6 +71,13 @@ const SELECTORS = {
   settingsLogoInput: document.getElementById("settingsLogoInput"),
   settingsLogoPreview: document.getElementById("settingsLogoPreview"),
   saveLogoBtn: document.getElementById("saveLogoBtn"),
+  legacyImportInput: document.getElementById("legacyImportInput"),
+  importLegacyBtn: document.getElementById("importLegacyBtn"),
+  importLegacySummary: document.getElementById("importLegacySummary"),
+  changePasswordForm: document.getElementById("changePasswordForm"),
+  newPasswordInput: document.getElementById("newPasswordInput"),
+  confirmPasswordInput: document.getElementById("confirmPasswordInput"),
+  changePasswordBtn: document.getElementById("changePasswordBtn"),
   settingsMessage: document.getElementById("settingsMessage"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
@@ -265,6 +272,7 @@ function wireEmployeeManagement() {
 
   SELECTORS.employeeForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitBtn = SELECTORS.employeeSaveBtn;
     const editingId = Number(SELECTORS.employeeForm.dataset.editingId || 0);
     const isEditMode = editingId > 0;
     const statusValue = isEditMode ? (SELECTORS.employeeStatusInput.value || "working") : "working";
@@ -293,8 +301,12 @@ function wireEmployeeManagement() {
       setEmployeeMessage("Joining date is required.");
       return;
     }
+    if (payload.openingAdvance < 0) {
+      setEmployeeMessage("Old advance cannot be negative.");
+      return;
+    }
     if (payload.designation.length < 2) {
-      setEmployeeMessage("Designation is required.");
+      setEmployeeMessage("Select designation from Settings presets.");
       return;
     }
     if (isEditMode && payload.status === "leave" && !payload.leaveFrom && !payload.leaveTo) {
@@ -307,6 +319,10 @@ function wireEmployeeManagement() {
     }
 
     try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = isEditMode ? "Updating..." : "Saving...";
+      }
       if (editingId > 0) {
         await apiRequest(`/api/employees/${editingId}`, {
           method: "PUT",
@@ -328,6 +344,12 @@ function wireEmployeeManagement() {
       setEmployeeMessage("");
     } catch (error) {
       setEmployeeMessage(employeeApiErrorMessage(error));
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        const stillEditing = Number(SELECTORS.employeeForm?.dataset.editingId || 0) > 0;
+        submitBtn.textContent = stillEditing ? "Update Employee" : "Save Employee";
+      }
     }
   });
 
@@ -422,6 +444,7 @@ function fillEmployeeForm(employee) {
       option.textContent = designationValue;
       SELECTORS.employeeDesignationInput.append(option);
     }
+    SELECTORS.employeeDesignationInput.disabled = false;
     SELECTORS.employeeDesignationInput.value = designationValue;
   } else {
     SELECTORS.employeeDesignationInput.value = "";
@@ -529,13 +552,15 @@ function renderDesignationSuggestions() {
 
   const currentValue = String(SELECTORS.employeeDesignationInput.value || "").trim();
   const sortedValues = Array.from(values.values()).sort((a, b) => a.localeCompare(b));
+  const hasPresets = sortedValues.length > 0;
 
   SELECTORS.employeeDesignationInput.innerHTML = [
-    '<option value="">Select designation</option>',
+    `<option value="">${hasPresets ? "Select designation" : "Add designation in Settings first"}</option>`,
     ...sortedValues.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
   ].join("");
+  SELECTORS.employeeDesignationInput.disabled = !hasPresets;
 
-  if (currentValue && sortedValues.includes(currentValue)) {
+  if (hasPresets && currentValue && sortedValues.includes(currentValue)) {
     SELECTORS.employeeDesignationInput.value = currentValue;
   } else {
     SELECTORS.employeeDesignationInput.value = "";
@@ -724,11 +749,23 @@ function wireAppActions() {
 }
 
 function wireSettingsActions() {
+  SELECTORS.designationPresetInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    SELECTORS.addDesignationBtn?.click();
+  });
+
   SELECTORS.addDesignationBtn?.addEventListener("click", async () => {
     const name = SELECTORS.designationPresetInput?.value.trim() || "";
     if (name.length < 2) {
       setSettingsMessage("Designation name is too short.");
       showAppMessage("Designation name is too short.");
+      return;
+    }
+    const exists = designationPresets.some((item) => String(item.name || "").toLowerCase() === name.toLowerCase());
+    if (exists) {
+      setSettingsMessage("Designation already exists.");
+      showAppMessage("Designation already exists.");
       return;
     }
 
@@ -850,6 +887,107 @@ function wireSettingsActions() {
       }
     }
   });
+
+  SELECTORS.changePasswordForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const newPassword = SELECTORS.newPasswordInput?.value || "";
+    const confirmPassword = SELECTORS.confirmPasswordInput?.value || "";
+    const submitBtn = SELECTORS.changePasswordBtn;
+
+    if (newPassword.length < 8) {
+      setSettingsMessage("New password must be at least 8 characters.");
+      showAppMessage("New password must be at least 8 characters.");
+      return;
+    }
+    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setSettingsMessage("Password must include uppercase, lowercase, and number.");
+      showAppMessage("Password must include uppercase, lowercase, and number.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setSettingsMessage("New password and confirm password do not match.");
+      showAppMessage("New password and confirm password do not match.");
+      return;
+    }
+
+    try {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Updating...";
+      }
+      await apiRequest("/api/auth/change-password", {
+        method: "POST",
+        body: { newPassword, confirmPassword },
+      });
+      SELECTORS.changePasswordForm.reset();
+      setSettingsMessage("Password updated successfully.");
+      showAppMessage("Password updated successfully.");
+    } catch (error) {
+      const message = String(error?.message || "Failed to update password.");
+      setSettingsMessage(message);
+      showAppMessage(message);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Update Password";
+      }
+    }
+  });
+
+  SELECTORS.importLegacyBtn?.addEventListener("click", async () => {
+    const file = SELECTORS.legacyImportInput?.files?.[0];
+    if (!file) {
+      setSettingsMessage("Choose an Excel/CSV file first.");
+      showAppMessage("Choose an Excel/CSV file first.");
+      return;
+    }
+
+    const btn = SELECTORS.importLegacyBtn;
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Analyzing...";
+      }
+      setImportSummary("Analyzing file...");
+      const rows = await parseLegacyPayrollFile(file);
+      if (rows.length === 0) {
+        setImportSummary("No usable rows found in file.");
+        setSettingsMessage("Import failed: no usable rows found.");
+        return;
+      }
+
+      const analyzed = analyzeLegacyRows(rows);
+      if (analyzed.payrollRecords.length === 0) {
+        setImportSummary("File analyzed but no payroll rows matched.");
+        setSettingsMessage("No payroll rows matched expected columns.");
+        return;
+      }
+
+      if (btn) btn.textContent = "Importing...";
+      setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing...`);
+      await importLegacyAnalysis(analyzed);
+
+      await Promise.all([
+        loadDesignationPresets(),
+        loadEmployees(),
+        loadMonthRecords(),
+      ]);
+      setImportSummary(`Imported ${analyzed.payrollRecords.length} payroll rows across ${analyzed.months.length} month(s).`);
+      setSettingsMessage("Legacy payroll imported successfully.");
+      showAppMessage("Legacy payroll imported successfully.");
+      if (SELECTORS.legacyImportInput) SELECTORS.legacyImportInput.value = "";
+    } catch (error) {
+      const message = String(error?.message || "Legacy import failed.");
+      setSettingsMessage(message);
+      showAppMessage(message);
+      setImportSummary(`Import failed: ${message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Analyze & Import";
+      }
+    }
+  });
 }
 
 async function loadDesignationPresets() {
@@ -860,6 +998,7 @@ async function loadDesignationPresets() {
     renderDesignationPresets();
     renderDesignationSuggestions();
     hydrateSettingsLogoPreview(String(getActiveCompany()?.logoDataUrl || ""));
+    setSettingsMessage("");
   } catch (error) {
     designationPresets = [];
     renderDesignationPresets();
@@ -1954,6 +2093,279 @@ function fileToDataUrl(file) {
   });
 }
 
+function setImportSummary(message) {
+  if (!SELECTORS.importLegacySummary) return;
+  SELECTORS.importLegacySummary.textContent = String(message || "");
+}
+
+async function parseLegacyPayrollFile(file) {
+  const name = String(file?.name || "").toLowerCase();
+  if (name.endsWith(".csv")) {
+    const text = await file.text();
+    return parseCsvRows(text);
+  }
+
+  if (!window.XLSX) {
+    throw new Error("Excel parser not loaded. Reload app and try again.");
+  }
+  const buffer = await file.arrayBuffer();
+  const workbook = window.XLSX.read(buffer, { type: "array" });
+  const firstSheetName = workbook.SheetNames?.[0];
+  if (!firstSheetName) return [];
+  const sheet = workbook.Sheets[firstSheetName];
+  return window.XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+}
+
+function parseCsvRows(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((item) => String(item || "").trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const values = parseCsvLine(lines[i]);
+    const row = {};
+    headers.forEach((key, idx) => {
+      row[key] = values[idx] ?? "";
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.map((item) => item.trim());
+}
+
+function normalizeHeader(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function pickCellByAliases(row, aliases) {
+  const entries = Object.entries(row || {});
+  for (const [key, value] of entries) {
+    const normalized = normalizeHeader(key);
+    if (aliases.some((alias) => normalized === alias || normalized.includes(alias))) {
+      if (String(value || "").trim() !== "") return value;
+    }
+  }
+  return "";
+}
+
+function parseMoney(value) {
+  const cleaned = String(value ?? "")
+    .replace(/[₹,\s]/g, "")
+    .replace(/[^0-9.-]/g, "");
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? Math.max(0, num) : 0;
+}
+
+function parseMonthFromImport(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return getSelectedMonth();
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}\/\d{2}$/.test(raw)) return raw.replace("/", "-");
+  if (/^\d{2}[-/]\d{4}$/.test(raw)) {
+    const [m, y] = raw.split(/[-/]/);
+    return `${y}-${m}`;
+  }
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+  return getSelectedMonth();
+}
+
+function parseIsoFromImport(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function analyzeLegacyRows(rows) {
+  const payrollRecords = [];
+  const designationSet = new Set();
+  const employeeMap = new Map();
+  const monthSet = new Set();
+
+  for (const row of rows) {
+    const employeeId = String(pickCellByAliases(row, ["employee id", "emp id", "employeeid"]) || "").trim();
+    const employeeName = String(pickCellByAliases(row, ["employee name", "employee names", "name", "emp name"]) || "").trim();
+    if (!employeeId || !employeeName) continue;
+
+    const designation = String(pickCellByAliases(row, ["designation", "role", "position"]) || "").trim();
+    const month = parseMonthFromImport(pickCellByAliases(row, ["year month", "updated month", "month", "period"]));
+    const presentSalary = parseMoney(pickCellByAliases(row, ["present salary", "salary", "base salary"]));
+    const increment = parseMoney(pickCellByAliases(row, ["increment"]));
+    const oldAdvanceTaken = parseMoney(pickCellByAliases(row, ["old advance taken", "old advance", "advance taken"]));
+    const extraAdvanceAdded = parseMoney(pickCellByAliases(row, ["extra advance added", "extra advance", "new advance"]));
+    const deductionEntered = parseMoney(pickCellByAliases(row, ["deduction entered", "deduction"]));
+    const daysAbsentRaw = Number(pickCellByAliases(row, ["days absent", "absent", "attendance absent"]));
+    const daysAbsent = Number.isFinite(daysAbsentRaw) ? Math.min(30, Math.max(0, daysAbsentRaw)) : 0;
+    const comment = String(pickCellByAliases(row, ["comment", "notes", "remark"]) || "").trim();
+
+    if (designation) designationSet.add(designation);
+    monthSet.add(month);
+
+    payrollRecords.push({
+      month,
+      employeeId,
+      employeeName,
+      designation,
+      presentSalary,
+      increment,
+      oldAdvanceTaken,
+      extraAdvanceAdded,
+      deductionEntered,
+      daysAbsent,
+      comment,
+    });
+
+    if (!employeeMap.has(employeeId)) {
+      employeeMap.set(employeeId, {
+        employeeId,
+        employeeName,
+        joiningDate: parseIsoFromImport(pickCellByAliases(row, ["joining date", "date of joining", "doj"])) || new Date().toISOString().slice(0, 10),
+        birthDate: parseIsoFromImport(pickCellByAliases(row, ["birth date", "date of birth", "dob"])),
+        baseSalary: presentSalary,
+        openingAdvance: oldAdvanceTaken,
+        designation: designation || "Staff",
+        mobileNumber: String(pickCellByAliases(row, ["mobile", "phone", "contact"]) || "").trim(),
+        status: "working",
+      });
+    }
+  }
+
+  return {
+    totalRows: rows.length,
+    payrollRecords,
+    designations: Array.from(designationSet),
+    employees: Array.from(employeeMap.values()),
+    months: Array.from(monthSet).sort(),
+  };
+}
+
+async function importLegacyAnalysis(analyzed) {
+  const companyId = getSelectedCompanyId();
+
+  for (const name of analyzed.designations) {
+    if (!name) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await apiRequest("/api/settings/designations", {
+        method: "POST",
+        body: { companyId, name },
+      });
+    } catch (error) {
+      const msg = String(error?.message || "").toLowerCase();
+      if (!msg.includes("already exists")) throw error;
+    }
+  }
+
+  const existingEmployeesResp = await apiRequest(`/api/employees?companyId=${companyId}`);
+  const existingEmployees = Array.isArray(existingEmployeesResp.employees) ? existingEmployeesResp.employees : [];
+  const byEmployeeId = new Map(existingEmployees.map((emp) => [String(emp.employeeId || ""), emp]));
+
+  for (const incoming of analyzed.employees) {
+    const existing = byEmployeeId.get(String(incoming.employeeId || ""));
+    const payload = {
+      companyId,
+      employeeId: incoming.employeeId,
+      employeeName: incoming.employeeName,
+      joiningDate: incoming.joiningDate,
+      birthDate: incoming.birthDate,
+      baseSalary: incoming.baseSalary,
+      openingAdvance: incoming.openingAdvance,
+      designation: incoming.designation,
+      mobileNumber: incoming.mobileNumber,
+      status: incoming.status,
+      leaveFrom: "",
+      leaveTo: "",
+      terminatedOn: "",
+      notes: "",
+    };
+
+    if (existing) {
+      // eslint-disable-next-line no-await-in-loop
+      await apiRequest(`/api/employees/${existing.id}`, { method: "PUT", body: payload });
+    } else {
+      // eslint-disable-next-line no-await-in-loop
+      await apiRequest("/api/employees", { method: "POST", body: payload });
+    }
+  }
+
+  const rowsByMonth = new Map();
+  for (const row of analyzed.payrollRecords) {
+    const month = row.month || getSelectedMonth();
+    if (!rowsByMonth.has(month)) rowsByMonth.set(month, []);
+    rowsByMonth.get(month).push(row);
+  }
+
+  for (const [month, incomingRows] of rowsByMonth.entries()) {
+    // eslint-disable-next-line no-await-in-loop
+    const existingResp = await apiRequest(`/api/payroll/${month}?companyId=${companyId}`);
+    const existingRecords = Array.isArray(existingResp.records) ? existingResp.records : [];
+    const map = new Map(existingRecords.map((item) => [String(item.employeeId || ""), item]));
+
+    for (const row of incomingRows) {
+      const existing = map.get(String(row.employeeId || ""));
+      const merged = {
+        ...(existing || {}),
+        employeeId: row.employeeId,
+        employeeName: row.employeeName,
+        designation: row.designation || existing?.designation || "",
+        presentSalary: row.presentSalary,
+        increment: row.increment,
+        oldAdvanceTaken: row.oldAdvanceTaken,
+        extraAdvanceAdded: row.extraAdvanceAdded,
+        deductionEntered: row.deductionEntered,
+        daysAbsent: row.daysAbsent,
+        comment: row.comment || existing?.comment || "",
+      };
+      map.set(String(row.employeeId || ""), merged);
+    }
+
+    const finalRecords = Array.from(map.values()).map((item, index) => ({
+      ...item,
+      positionIndex: Number(item.positionIndex ?? index),
+    }));
+    // eslint-disable-next-line no-await-in-loop
+    await apiRequest(`/api/payroll/${month}?companyId=${companyId}`, {
+      method: "PUT",
+      body: { records: finalRecords },
+    });
+  }
+}
+
 function escapeCsv(value) {
   const text = String(value ?? "");
   if (text.includes(",") || text.includes('"') || text.includes("\n")) {
@@ -2098,7 +2510,17 @@ function applyStatusTone(element, message) {
     element.classList.add("status-error");
     return;
   }
-  if (text.includes("saved") || text.includes("restored") || text.includes("exported") || text.includes("downloaded") || text.includes("added") || text.includes("removed") || text.includes("copied")) {
+  if (
+    text.includes("saved")
+    || text.includes("restored")
+    || text.includes("exported")
+    || text.includes("downloaded")
+    || text.includes("added")
+    || text.includes("removed")
+    || text.includes("copied")
+    || text.includes("updated")
+    || text.includes("changed")
+  ) {
     element.classList.add("status-success");
     return;
   }

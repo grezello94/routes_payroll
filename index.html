@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260407e" />
+    <link rel="stylesheet" href="styles.css?v=20260407g" />
   </head>
   <body>
     <main class="shell">
@@ -281,6 +281,37 @@
                 </div>
                 <button id="saveLogoBtn" type="button">Save Logo</button>
               </article>
+
+              <article class="settings-card">
+                <h3>Change Password</h3>
+                <p>Update your existing account password securely.</p>
+                <form id="changePasswordForm" class="settings-password-form" autocomplete="off">
+                  <label>
+                    New Password
+                    <div class="password-field">
+                      <input id="newPasswordInput" type="password" minlength="8" maxlength="80" required />
+                      <button class="password-toggle" type="button" data-password-target="newPasswordInput" aria-label="Show password" aria-pressed="false">👁</button>
+                    </div>
+                  </label>
+                  <label>
+                    Confirm Password
+                    <div class="password-field">
+                      <input id="confirmPasswordInput" type="password" minlength="8" maxlength="80" required />
+                      <button class="password-toggle" type="button" data-password-target="confirmPasswordInput" aria-label="Show password" aria-pressed="false">👁</button>
+                    </div>
+                  </label>
+                  <button id="changePasswordBtn" type="submit">Update Password</button>
+                </form>
+              </article>
+
+              <article class="settings-card">
+                <h3>Import Legacy Payroll (Excel/CSV)</h3>
+                <p>Upload your old sheet. The system analyzes columns and imports employees, designations, and monthly payroll data.</p>
+                <label for="legacyImportInput" class="settings-file-label">Choose Payroll File</label>
+                <input id="legacyImportInput" class="settings-file-input" type="file" accept=".xlsx,.xls,.csv,.xml" />
+                <button id="importLegacyBtn" type="button">Analyze & Import</button>
+                <p id="importLegacySummary" class="settings-inline-summary"></p>
+              </article>
             </div>
 
             <p id="settingsMessage" class="status-msg"></p>
@@ -344,6 +375,7 @@
       </div>
     </dialog>
 
-    <script src="app.js?v=20260407j"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js?v=20260407m"></script>
   </body>
 </html>

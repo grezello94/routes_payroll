@@ -496,6 +496,39 @@ app.get("/api/auth/me", authMiddleware, (req, res) => {
   });
 });
 
+app.post("/api/auth/change-password", authMiddleware, async (req, res) => {
+  const newPassword = String(req.body?.newPassword || "");
+  const confirmPassword = String(req.body?.confirmPassword || "");
+
+  if (!isStrongPassword(newPassword)) {
+    res.status(400).json({ error: "Password must be 8+ chars with uppercase, lowercase, and number." });
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    res.status(400).json({ error: "New password and confirm password do not match." });
+    return;
+  }
+
+  try {
+    const user = await store.findUserByIdentifier(req.user.username);
+    if (!user) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+    const sameAsCurrent = await bcrypt.compare(newPassword, user.password_hash || "");
+    if (sameAsCurrent) {
+      res.status(400).json({ error: "New password must be different from current password." });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await store.updateUserPasswordById(req.user.userId, passwordHash);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to update password." });
+  }
+});
+
 app.get("/api/companies", authMiddleware, async (_req, res) => {
   try {
     const rows = await store.listCompanies();
