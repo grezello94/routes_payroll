@@ -90,6 +90,9 @@ const SELECTORS = {
   settingsMessage: document.getElementById("settingsMessage"),
   leaveResumeReportBody: document.getElementById("leaveResumeReportBody"),
   reportsMessage: document.getElementById("reportsMessage"),
+  generatedPayrollBody: document.getElementById("generatedPayrollBody"),
+  generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
+  generatedPayrollEmployeesBody: document.getElementById("generatedPayrollEmployeesBody"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
   closePayslipBtn: document.getElementById("closePayslipBtn"),
@@ -99,6 +102,7 @@ const SELECTORS = {
   shareWhatsappBtn: document.getElementById("shareWhatsappBtn"),
   shareMessengerBtn: document.getElementById("shareMessengerBtn"),
   copyPayslipBtn: document.getElementById("copyPayslipBtn"),
+  payrollWorkflowMessage: document.getElementById("payrollWorkflowMessage"),
 };
 
 let pendingInstallPrompt = null;
@@ -118,6 +122,9 @@ let pendingSettingsLogoDataUrl = "";
 let currentUser = null;
 let serverReconnectTimer = null;
 let serverReconnectInFlight = false;
+let payrollReports = [];
+let activePayrollReportId = null;
+let activePayrollReportSnapshot = null;
 
 init();
 
@@ -191,11 +198,6 @@ function wireAuth() {
   SELECTORS.loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitBtn = SELECTORS.loginForm.querySelector('button[type="submit"]');
-    if (needsSetupFlow) {
-      setAuthMode("register");
-      showAuthMessage("Please register company and admin first, then use Sign In.");
-      return;
-    }
     const username = document.getElementById("loginUsername").value.trim();
     const password = document.getElementById("loginPassword").value;
 
@@ -638,6 +640,124 @@ function renderLeaveResumeReport() {
   }
 }
 
+function setPayrollWorkflowMessage(message) {
+  applyStatusTone(SELECTORS.payrollWorkflowMessage, message);
+  if (SELECTORS.payrollWorkflowMessage) {
+    SELECTORS.payrollWorkflowMessage.textContent = message || "";
+  }
+}
+
+function getCurrentMonthPayrollReport() {
+  const month = getSelectedMonth();
+  return payrollReports.find((report) => String(report.month) === String(month)) || null;
+}
+
+function renderPayrollWorkflow() {
+  const report = getCurrentMonthPayrollReport();
+  const monthLabel = formatMonth(getSelectedMonth());
+  const parts = [];
+  if (report?.generatedAt) {
+    parts.push(`${report.employeeCount || 0} payslip(s) generated for ${monthLabel}`);
+    parts.push(`Last generated on ${formatDateTime(report.generatedAt)}`);
+  }
+  if (!parts.length) {
+    parts.push(`Generate payslips one by one for ${monthLabel} from the employee payroll register.`);
+  }
+
+  setPayrollWorkflowMessage(parts.join(" • "));
+}
+
+async function generatePayslipForCurrentRecord(index) {
+  const record = currentRecords[index];
+  if (!record) return;
+
+  try {
+    await flushPendingSave();
+    const month = getSelectedMonth();
+    const response = await apiRequest("/api/payroll-reports/generate-entry", {
+      method: "POST",
+      body: {
+        companyId: getSelectedCompanyId(),
+        month,
+        employeeId: record.employeeId,
+      },
+    });
+    activePayrollReportId = Number(response.report?.id || activePayrollReportId || 0) || null;
+    activePayrollReportSnapshot = response.snapshot || null;
+    await loadPayrollReports(activePayrollReportId);
+    setWorkspace("reports");
+    SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "reports"));
+    showAppMessage(`Payslip generated for ${record.employeeName || record.employeeId} and added to Reports.`);
+  } catch (error) {
+    showAppMessage(error.message);
+  }
+}
+
+function renderGeneratedPayrollReports() {
+  if (!SELECTORS.generatedPayrollBody || !SELECTORS.generatedPayrollEmployeesBody || !SELECTORS.generatedPayrollDetailTitle) return;
+
+  if (!payrollReports.length) {
+    SELECTORS.generatedPayrollBody.innerHTML = `
+      <tr><td colspan="5" class="empty">No payroll has been generated yet for this company.</td></tr>
+    `;
+    SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
+      <tr><td colspan="5" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
+    `;
+    SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
+    renderPayrollWorkflow();
+    return;
+  }
+
+  SELECTORS.generatedPayrollBody.innerHTML = payrollReports
+    .map((report) => {
+      const activeClass = Number(report.id) === Number(activePayrollReportId) ? "active-report-row" : "";
+      return `
+        <tr class="${activeClass}">
+          <td>Payroll Generated for the month of ${escapeHtml(formatMonth(report.month))}</td>
+          <td>${escapeHtml(formatDateTime(report.checkedAt) || "-")}</td>
+          <td>${escapeHtml(formatDateTime(report.generatedAt) || "-")}</td>
+          <td>${escapeHtml(String(report.employeeCount || 0))}</td>
+          <td><button type="button" class="mini ghost" data-report-id="${report.id}">Open</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const snapshot = activePayrollReportSnapshot;
+  if (!snapshot || !Array.isArray(snapshot.records) || snapshot.records.length === 0) {
+    SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
+      <tr><td colspan="5" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
+    `;
+    SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
+    renderPayrollWorkflow();
+    return;
+  }
+
+  SELECTORS.generatedPayrollDetailTitle.textContent = `Generated Payslips for ${formatMonth(snapshot.month)}`;
+  SELECTORS.generatedPayrollEmployeesBody.innerHTML = snapshot.records
+    .map((record, index) => {
+      const calc = computePayroll(record, snapshot.month);
+      return `
+        <tr>
+          <td>${escapeHtml(record.employeeId || "-")}</td>
+          <td>${escapeHtml(record.employeeName || "-")}</td>
+          <td>${escapeHtml(record.designation || "-")}</td>
+          <td>${escapeHtml(formatCurrency(calc.netSalary))}</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="mini ghost icon-mini" title="View Payslip" aria-label="View Payslip" data-report-index="${index}" data-action="preview">&#128065;</button>
+              <button type="button" class="mini ghost icon-mini" title="Download Payslip" aria-label="Download Payslip" data-report-index="${index}" data-action="download">&#8681;</button>
+              <button type="button" class="mini icon-mini" title="Print or Save PDF" aria-label="Print or Save PDF" data-report-index="${index}" data-action="print">&#128424;</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  renderPayrollWorkflow();
+}
+
 function setEmployeeMessage(message) {
   applyStatusTone(SELECTORS.employeeMessage, message);
   SELECTORS.employeeMessage.textContent = message || "";
@@ -695,6 +815,7 @@ function wireAppActions() {
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
     await loadMonthRecords();
+    await loadPayrollReports();
   });
 
   SELECTORS.addEmployeeBtn.addEventListener("click", async () => {
@@ -769,10 +890,14 @@ function wireAppActions() {
     currentRecords = [];
     employeeMaster = [];
     designationPresets = [];
+    payrollReports = [];
+    activePayrollReportId = null;
+    activePayrollReportSnapshot = null;
     pendingSettingsLogoDataUrl = "";
     renderEmployeeTable();
     renderDesignationPresets();
     renderDesignationSuggestions();
+    renderGeneratedPayrollReports();
     hydrateSettingsLogoPreview("");
     setSettingsMessage("");
     renderPayrollTable();
@@ -840,7 +965,7 @@ function wireAppActions() {
     }
 
     if (action === "payslip") {
-      openPayslip(currentRecords[index], getSelectedMonth());
+      generatePayslipForCurrentRecord(index);
     }
   });
 
@@ -851,6 +976,35 @@ function wireAppActions() {
   SELECTORS.shareMessengerBtn.addEventListener("click", shareCurrentPayslipMessenger);
   SELECTORS.shareWebBtn.addEventListener("click", shareCurrentPayslipWeb);
   SELECTORS.copyPayslipBtn.addEventListener("click", copyCurrentPayslip);
+
+  SELECTORS.generatedPayrollBody?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button[data-report-id]");
+    if (!button) return;
+    const reportId = Number(button.dataset.reportId);
+    if (!Number.isInteger(reportId) || reportId <= 0) return;
+    await openPayrollReport(reportId);
+  });
+
+  SELECTORS.generatedPayrollEmployeesBody?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button[data-report-index]");
+    if (!button || !activePayrollReportSnapshot) return;
+    const index = Number(button.dataset.reportIndex);
+    if (Number.isNaN(index)) return;
+    const record = activePayrollReportSnapshot.records?.[index];
+    if (!record) return;
+    openPayslip(record, activePayrollReportSnapshot.month, activePayrollReportSnapshot.company || null);
+    if (button.dataset.action === "print") {
+      printCurrentPayslip();
+      return;
+    }
+    if (button.dataset.action === "download") {
+      downloadCurrentPayslipText();
+    }
+  });
 }
 
 function wireSettingsActions() {
@@ -1284,6 +1438,7 @@ function wireCompanyActions() {
     await loadEmployees();
     await loadMonthRecords();
     await loadDesignationPresets();
+    await loadPayrollReports();
     resetEmployeeForm();
     setSettingsMessage("");
   });
@@ -1322,6 +1477,7 @@ function wireCompanyActions() {
       await loadEmployees();
       await loadMonthRecords();
       await loadDesignationPresets();
+      await loadPayrollReports();
       SELECTORS.companyDialog.close();
       showAppMessage("Company created.");
     } catch (error) {
@@ -1412,17 +1568,28 @@ async function updateAuthView() {
 
   try {
     const bootstrap = await apiRequest("/api/auth/bootstrap", {}, false);
-    stopServerReconnectPolling();
     needsSetupFlow = Boolean(bootstrap.needsSetup);
     SELECTORS.showRegisterBtn?.classList.remove("hidden");
     SELECTORS.showLoginBtn?.classList.remove("hidden");
 
+    if (bootstrap.pending) {
+      SELECTORS.setupForm.classList.add("hidden");
+      SELECTORS.loginForm.classList.add("hidden");
+      startServerReconnectPolling();
+      showAuthMessage(bootstrap.message || "Connecting to cloud payroll service. Please wait...");
+      return;
+    }
+
     if (bootstrap.degraded) {
+      SELECTORS.setupForm.classList.add("hidden");
+      SELECTORS.loginForm.classList.add("hidden");
+      startServerReconnectPolling();
       setAuthMode("login");
       showAuthMessage(bootstrap.message || "Cloud service is temporarily busy. Please retry shortly.");
       return;
     }
 
+    stopServerReconnectPolling();
     if (bootstrap.needsSetup) {
       setAuthMode("register");
       showAuthMessage("First-time setup: register company + admin email + username + password.");
@@ -1473,6 +1640,7 @@ async function switchToApp() {
     loadEmployees(),
     loadMonthRecords(),
     loadDesignationPresets(),
+    loadPayrollReports(),
   ]);
   setWorkspace("dashboard");
   SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
@@ -1502,10 +1670,7 @@ function startServerReconnectPolling() {
     serverReconnectInFlight = true;
     try {
       const reachable = await isServerReachable();
-      if (reachable) {
-        stopServerReconnectPolling();
-        await updateAuthView();
-      }
+      if (reachable) await updateAuthView();
     } finally {
       serverReconnectInFlight = false;
     }
@@ -1634,11 +1799,52 @@ async function loadMonthRecords() {
     }
     renderPayrollTable();
     setSaveStatus("All changes saved.");
+    renderPayrollWorkflow();
   } catch (error) {
     currentRecords = [];
     activePayrollEmployeeId = "";
     renderPayrollTable();
+    renderPayrollWorkflow();
     showAppMessage(error.message);
+  }
+}
+
+function payrollReportsUrl() {
+  return `/api/payroll-reports?companyId=${getSelectedCompanyId()}`;
+}
+
+async function loadPayrollReports(preferredReportId = activePayrollReportId) {
+  try {
+    const response = await apiRequest(payrollReportsUrl());
+    payrollReports = Array.isArray(response.reports) ? response.reports : [];
+    const selectedReport = payrollReports.find((report) => Number(report.id) === Number(preferredReportId))
+      || payrollReports.find((report) => String(report.month) === String(getSelectedMonth()))
+      || payrollReports[0]
+      || null;
+    activePayrollReportId = selectedReport ? Number(selectedReport.id) : null;
+    if (activePayrollReportId) {
+      await openPayrollReport(activePayrollReportId, true);
+    } else {
+      activePayrollReportSnapshot = null;
+      renderGeneratedPayrollReports();
+    }
+  } catch (error) {
+    payrollReports = [];
+    activePayrollReportId = null;
+    activePayrollReportSnapshot = null;
+    renderGeneratedPayrollReports();
+    showAppMessage(error.message);
+  }
+}
+
+async function openPayrollReport(reportId, skipListRender = false) {
+  const response = await apiRequest(`/api/payroll-reports/${reportId}?companyId=${getSelectedCompanyId()}`);
+  activePayrollReportId = Number(response.report?.id || reportId);
+  activePayrollReportSnapshot = response.snapshot || null;
+  if (!skipListRender) {
+    renderGeneratedPayrollReports();
+  } else {
+    renderGeneratedPayrollReports();
   }
 }
 
@@ -2006,9 +2212,9 @@ async function persistRecords() {
   }
 }
 
-function openPayslip(record, month) {
-  const calc = computePayroll(record);
-  const company = getActiveCompany();
+function openPayslip(record, month, companyOverride = null) {
+  const calc = computePayroll(record, month);
+  const company = companyOverride || getActiveCompany();
   activePayslip = { record, calc, month, company };
   SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month, company);
   SELECTORS.payslipDialog.showModal();
@@ -3116,6 +3322,14 @@ function formatMonth(isoMonth) {
   const [year, month] = isoMonth.split("-");
   const date = new Date(Number(year), Number(month) - 1, 1);
   return date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+function formatDateTime(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleString("en-IN");
 }
 
 function downloadBlob(blob, filename) {

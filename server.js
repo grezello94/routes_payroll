@@ -14,10 +14,13 @@ const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyCqK3ZVR-
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+const SUPABASE_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 8000));
 const store = createStore({ baseDir: __dirname });
 const RATE_BUCKETS = new Map();
 const AUTH_CACHE = new Map();
 let startupDegradedError = null;
+let startupReady = false;
+let startupState = "pending";
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(__dirname, { index: "index.html" }));
@@ -91,12 +94,17 @@ function isQuotaExceededError(error) {
 }
 
 function startupStatusPayload() {
+  if (startupState === "pending") {
+    return { ok: true, pending: true, degraded: false, provider: store.provider };
+  }
   if (!startupDegradedError) {
-    return { ok: true, degraded: false };
+    return { ok: true, pending: false, degraded: false, provider: store.provider };
   }
   return {
     ok: true,
+    pending: false,
     degraded: true,
+    provider: store.provider,
     reason: isQuotaExceededError(startupDegradedError) ? "cloud_quota_exceeded" : "startup_failed",
   };
 }
@@ -123,12 +131,28 @@ function hasSupabaseAuthConfig() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function supabaseAuthAdmin(pathname, { method = "GET", body } = {}) {
   if (!hasSupabaseAuthConfig()) {
     throw new Error("Supabase Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.");
   }
 
-  const response = await fetch(`${SUPABASE_URL}${pathname}`, {
+  const response = await fetchWithTimeout(`${SUPABASE_URL}${pathname}`, {
     method,
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -152,7 +176,7 @@ async function supabaseAuthPasswordSignIn(email, password) {
     throw new Error("Supabase Auth is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.");
   }
 
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
@@ -188,12 +212,82 @@ async function listAllFirebaseAuthUsers() {
   return users;
 }
 
+async function listAllSupabaseAuthUsers() {
+  const users = [];
+  let page = 1;
+
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const payload = await supabaseAuthAdmin(`/auth/v1/admin/users?page=${page}&per_page=200`);
+    const batch = Array.isArray(payload?.users) ? payload.users : [];
+    users.push(...batch);
+    if (batch.length < 200) break;
+    page += 1;
+  }
+
+  return users;
+}
+
+async function listAllAuthUsers() {
+  if (authProvider() === "supabase") {
+    return listAllSupabaseAuthUsers();
+  }
+  return listAllFirebaseAuthUsers();
+}
+
 async function countAuthUsers() {
   return store.countUsers();
 }
 
+function authUserEmailVerified(authUser) {
+  if (!authUser) return false;
+  if (typeof authUser.email_confirmed_at === "string" && authUser.email_confirmed_at) return true;
+  if (authUser.email_confirmed_at instanceof Date) return true;
+  return Boolean(authUser.user_metadata?.email_verified);
+}
+
+function authUserUsername(authUser) {
+  const metadataUsername = sanitizeText(authUser?.user_metadata?.username, 40);
+  if (metadataUsername) return metadataUsername;
+  const email = sanitizeEmail(authUser?.email);
+  if (!email) return "";
+  return sanitizeText(email.split("@")[0], 40);
+}
+
+async function reconcileSupabaseUserFromAuth(identifier) {
+  if (store.provider !== "supabase") return null;
+
+  const normalized = sanitizeEmail(identifier) || sanitizeText(identifier, 120).toLowerCase();
+  if (!normalized) return null;
+
+  const authUsers = await listAllSupabaseAuthUsers();
+  const authUser = authUsers.find((candidate) => {
+    const email = sanitizeEmail(candidate?.email);
+    const username = sanitizeText(candidate?.user_metadata?.username, 40).toLowerCase();
+    return email === normalized || username === normalized;
+  });
+
+  if (!authUser?.id || !authUser?.email) return null;
+
+  let storeUser = await store.getUserById(String(authUser.id));
+  if (storeUser) return storeUser;
+
+  storeUser = await store.findUserByEmail(String(authUser.email));
+  if (storeUser) return storeUser;
+
+  const username = authUserUsername(authUser);
+  if (!username) return null;
+
+  await store.createUser(username, String(authUser.email), "", {
+    id: String(authUser.id),
+    emailVerified: authUserEmailVerified(authUser),
+  });
+
+  return store.getUserById(String(authUser.id));
+}
+
 async function signInWithFirebasePassword(email, password) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(FIREBASE_WEB_API_KEY)}`,
     {
       method: "POST",
@@ -222,20 +316,8 @@ async function signInWithFirebasePassword(email, password) {
 
 async function createAuthUser({ email, password, username, emailVerified }) {
   if (authProvider() === "supabase") {
-    const payload = await supabaseAuthAdmin("/auth/v1/admin/users", {
-      method: "POST",
-      body: {
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          username,
-          email_verified: Boolean(emailVerified),
-        },
-      },
-    });
     return {
-      id: String(payload?.id || ""),
+      id: crypto.randomUUID(),
       email,
     };
   }
@@ -252,21 +334,27 @@ async function createAuthUser({ email, password, username, emailVerified }) {
   };
 }
 
-async function signInWithAuthPassword(email, password) {
+async function signInWithAuthPassword(email, password, passwordHash = "") {
   if (authProvider() === "supabase") {
-    return supabaseAuthPasswordSignIn(email, password);
+    const normalizedHash = String(passwordHash || "");
+    if (!normalizedHash) {
+      const error = new Error("Invalid username or password.");
+      error.code = "auth/invalid-login";
+      throw error;
+    }
+    const valid = await bcrypt.compare(password, normalizedHash);
+    if (!valid) {
+      const error = new Error("Invalid username or password.");
+      error.code = "auth/invalid-login";
+      throw error;
+    }
+    return { ok: true };
   }
   return signInWithFirebasePassword(email, password);
 }
 
 async function updateAuthUserPassword(userId, newPassword) {
   if (authProvider() === "supabase") {
-    await supabaseAuthAdmin(`/auth/v1/admin/users/${encodeURIComponent(String(userId || ""))}`, {
-      method: "PUT",
-      body: {
-        password: newPassword,
-      },
-    });
     return;
   }
   await firebaseAuth().updateUser(String(userId || ""), { password: newPassword });
@@ -517,6 +605,67 @@ function dbRowToDesignation(row) {
   };
 }
 
+function dbRowToPayrollReport(row) {
+  return {
+    id: Number(row.id),
+    companyId: Number(row.company_id),
+    month: String(row.month || ""),
+    checkedAt: String(row.checked_at || ""),
+    generatedAt: String(row.generated_at || ""),
+    employeeCount: Number(row.employee_count || 0),
+  };
+}
+
+function parseSnapshotJson(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function buildPayrollReportSnapshot(month, companyId) {
+  const [company, rows, employees] = await Promise.all([
+    store.getCompanyById(companyId),
+    store.listPayrollByMonthCompany(month, companyId),
+    store.listEmployeesByCompany(companyId),
+  ]);
+  const employeeById = new Map(employees.map((employee) => [String(employee.employee_id || ""), employee]));
+  const records = rows.map((row) => {
+    const record = dbRowToRecord(row);
+    const employee = employeeById.get(String(row.employee_id || ""));
+    return {
+      ...record,
+      employeeStatus: employee?.status || "working",
+      leaveFrom: employee?.leave_from || "",
+      leaveTo: employee?.leave_to || "",
+      terminatedOn: employee?.terminated_on || "",
+    };
+  });
+
+  return {
+    company: {
+      id: Number(company?.id || companyId),
+      name: String(company?.name || "Company"),
+      logoDataUrl: String(company?.logo_data_url || ""),
+    },
+    month,
+    records,
+  };
+}
+
+async function buildPayrollReportRecord(month, companyId, employeeId) {
+  const snapshot = await buildPayrollReportSnapshot(month, companyId);
+  const record = (snapshot.records || []).find((item) => String(item.employeeId || "") === String(employeeId || ""));
+  if (!record) return null;
+  return {
+    company: snapshot.company,
+    month: snapshot.month,
+    record,
+  };
+}
+
 function createToken(user) {
   return jwt.sign(
     {
@@ -553,10 +702,31 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/auth/bootstrap", async (_req, res) => {
+  if (!startupReady && !startupDegradedError) {
+    res.json({
+      needsSetup: false,
+      pending: true,
+      degraded: false,
+      message: "Connecting to cloud payroll service. Please wait...",
+    });
+    return;
+  }
+
+  if (startupDegradedError && store.provider === "supabase") {
+    res.json({
+      needsSetup: false,
+      pending: false,
+      degraded: true,
+      message: startupDegradedError.message || "Cloud startup failed. Check internet access and Supabase settings.",
+    });
+    return;
+  }
+
   try {
     const count = await countAuthUsers();
     res.json({
       needsSetup: count === 0,
+      pending: false,
       degraded: Boolean(startupDegradedError && isQuotaExceededError(startupDegradedError) && store.provider !== "supabase"),
       message: startupDegradedError && isQuotaExceededError(startupDegradedError) && store.provider !== "supabase"
         ? "Cloud payroll data is temporarily busy, but sign-in remains available."
@@ -659,7 +829,7 @@ app.post("/api/auth/login", async (req, res) => {
       return;
     }
 
-    await signInWithAuthPassword(user.email, password);
+    await signInWithAuthPassword(user.email, password, user.password_hash);
     if (!isUserEmailVerified(user)) {
       res.status(403).json({ error: "Email not verified. Open the verification email or resend it from Settings on your registered system." });
       return;
@@ -1209,6 +1379,161 @@ app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
   }
 });
 
+app.get("/api/payroll-reports", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  try {
+    const rows = await store.listPayrollReportsByCompany(companyId);
+    res.json({ reports: rows.map(dbRowToPayrollReport) });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch payroll reports." });
+  }
+});
+
+app.get("/api/payroll-reports/:id", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid payroll report id." });
+    return;
+  }
+
+  try {
+    const row = await store.getPayrollReportByIdCompany(id, companyId);
+    if (!row) {
+      res.status(404).json({ error: "Payroll report not found." });
+      return;
+    }
+    res.json({
+      report: dbRowToPayrollReport(row),
+      snapshot: parseSnapshotJson(row.snapshot_json),
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch payroll report." });
+  }
+});
+
+app.post("/api/payroll-reports/check", authMiddleware, async (req, res) => {
+  const month = String(req.body?.month || "");
+  if (!isValidMonth(month)) {
+    res.status(400).json({ error: "Invalid month format. Use YYYY-MM." });
+    return;
+  }
+
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  try {
+    const rows = await store.listPayrollByMonthCompany(month, companyId);
+    if (!rows.length) {
+      res.status(400).json({ error: "No payroll rows found for this month." });
+      return;
+    }
+
+    const checkedAt = new Date().toISOString();
+    const result = await store.markPayrollChecked(month, companyId, checkedAt);
+    const report = await store.getPayrollReportByIdCompany(result.id, companyId);
+    res.json({ report: report ? dbRowToPayrollReport(report) : null });
+  } catch {
+    res.status(500).json({ error: "Failed to mark payroll as checked." });
+  }
+});
+
+app.post("/api/payroll-reports/generate", authMiddleware, async (req, res) => {
+  const month = String(req.body?.month || "");
+  if (!isValidMonth(month)) {
+    res.status(400).json({ error: "Invalid month format. Use YYYY-MM." });
+    return;
+  }
+
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  try {
+    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+    if (!existing?.checked_at) {
+      res.status(400).json({ error: "Mark payroll as checked before generating payslips." });
+      return;
+    }
+
+    const snapshot = await buildPayrollReportSnapshot(month, companyId);
+    if (!Array.isArray(snapshot.records) || snapshot.records.length === 0) {
+      res.status(400).json({ error: "No payroll rows found for this month." });
+      return;
+    }
+
+    const generatedAt = new Date().toISOString();
+    const saved = await store.savePayrollReportSnapshot(month, companyId, {
+      checkedAt: String(existing.checked_at || ""),
+      generatedAt,
+      employeeCount: snapshot.records.length,
+      snapshot,
+    });
+    const report = await store.getPayrollReportByIdCompany(saved.id, companyId);
+    res.json({
+      report: report ? dbRowToPayrollReport(report) : null,
+      snapshot,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to generate payroll report." });
+  }
+});
+
+app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res) => {
+  const month = String(req.body?.month || "");
+  const employeeId = sanitizeText(req.body?.employeeId, 60);
+  if (!isValidMonth(month)) {
+    res.status(400).json({ error: "Invalid month format. Use YYYY-MM." });
+    return;
+  }
+  if (employeeId.length < 2) {
+    res.status(400).json({ error: "Employee id is required." });
+    return;
+  }
+
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  try {
+    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+    const payload = await buildPayrollReportRecord(month, companyId, employeeId);
+    if (!payload?.record) {
+      res.status(404).json({ error: "Payroll record not found for this employee." });
+      return;
+    }
+
+    const existingSnapshot = parseSnapshotJson(existing.snapshot_json);
+    const existingRecords = Array.isArray(existingSnapshot.records) ? existingSnapshot.records : [];
+    const mergedByEmployee = new Map(existingRecords.map((record) => [String(record.employeeId || ""), record]));
+    mergedByEmployee.set(String(payload.record.employeeId || ""), payload.record);
+    const records = Array.from(mergedByEmployee.values()).sort((a, b) => Number(a.positionIndex || 0) - Number(b.positionIndex || 0));
+
+    const snapshot = {
+      company: payload.company,
+      month: payload.month,
+      records,
+    };
+    const generatedAt = new Date().toISOString();
+    const saved = await store.savePayrollReportSnapshot(month, companyId, {
+      checkedAt: String(existing?.checked_at || ""),
+      generatedAt,
+      employeeCount: records.length,
+      snapshot,
+    });
+    const report = await store.getPayrollReportByIdCompany(saved.id, companyId);
+    res.json({
+      report: report ? dbRowToPayrollReport(report) : null,
+      snapshot,
+      generatedEmployeeId: payload.record.employeeId,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to generate payslip for this employee." });
+  }
+});
+
 app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
   const companiesPayload = req.body?.companies;
   const employeesPayload = req.body?.employees;
@@ -1427,15 +1752,21 @@ function dbRowToRecord(row) {
   };
 }
 
+app.listen(PORT, "127.0.0.1", () => {
+  // eslint-disable-next-line no-console
+  console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}, startup: ${startupState})`);
+});
+
 store.init()
+  .then(() => {
+    startupReady = true;
+    startupState = "ready";
+    // eslint-disable-next-line no-console
+    console.log(`Routes Payroll cloud startup completed (db: ${store.provider})`);
+  })
   .catch((error) => {
     startupDegradedError = error;
+    startupState = "degraded";
     // eslint-disable-next-line no-console
     console.error("Database initialized in degraded mode:", error);
-  })
-  .finally(() => {
-    app.listen(PORT, "127.0.0.1", () => {
-      // eslint-disable-next-line no-console
-      console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}${startupDegradedError ? ", degraded" : ""})`);
-    });
   });

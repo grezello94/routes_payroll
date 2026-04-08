@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260407g" />
+    <link rel="stylesheet" href="styles.css?v=20260408f" />
   </head>
   <body>
     <main class="shell">
@@ -360,8 +360,46 @@
           <section id="reportsSection" class="employee-mgmt hidden">
             <div class="table-head">
               <h2>Reports</h2>
-              <p>Leave, resume, and termination details for the selected company, organized employee-wise.</p>
+              <p>Leave records plus generated monthly payroll reports for the selected company.</p>
             </div>
+
+            <article class="settings-card">
+              <h3>Generated Payroll Reports</h3>
+              <p>Once payroll is checked and generated, it will appear here month-wise so you can reopen employee payslips later.</p>
+              <div class="employee-list-wrap">
+                <table>
+                  <thead>
+                    <tr class="detail-row">
+                      <th>Generated Payroll</th>
+                      <th>Checked At</th>
+                      <th>Generated At</th>
+                      <th>Employees</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="generatedPayrollBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="settings-card">
+              <h3 id="generatedPayrollDetailTitle">Generated Payslips</h3>
+              <p>Open any generated payroll month below, then print or save PDF employee-wise.</p>
+              <div class="employee-list-wrap">
+                <table>
+                  <thead>
+                    <tr class="detail-row">
+                      <th>Employee ID</th>
+                      <th>Employee Name</th>
+                      <th>Designation</th>
+                      <th>Net Salary</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="generatedPayrollEmployeesBody"></tbody>
+                </table>
+              </div>
+            </article>
 
             <article class="settings-card">
               <h3>Leave / Resume Work</h3>
@@ -395,6 +433,7 @@
                 <span><i class="dot gross"></i>Gross</span>
                 <span><i class="dot deduction"></i>Deductions</span>
               </p>
+              <p id="payrollWorkflowMessage" class="status-msg"></p>
             </div>
             <div id="payrollBody" class="payroll-cards"></div>
           </section>
@@ -445,6 +484,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260407m"></script>
+    <script src="app.js?v=20260408f"></script>
   </body>
 </html>

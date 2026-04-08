@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
 const admin = require("firebase-admin");
+const PAYROLL_REPORT_ROW_ID = "__PAYROLL_REPORT__";
 
 function resolveFirebaseCredentialFile(baseDir) {
   const explicitPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "").trim();
@@ -124,6 +125,20 @@ function createSqliteStore(baseDir) {
           days_absent REAL NOT NULL DEFAULT 0,
           comment TEXT NOT NULL DEFAULT '',
           position_index INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await run(`
+        CREATE TABLE IF NOT EXISTS payroll_reports (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          company_id INTEGER NOT NULL DEFAULT 1,
+          month TEXT NOT NULL,
+          checked_at TEXT NOT NULL DEFAULT '',
+          generated_at TEXT NOT NULL DEFAULT '',
+          employee_count INTEGER NOT NULL DEFAULT 0,
+          snapshot_json TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -259,6 +274,12 @@ function createSqliteStore(baseDir) {
       );
       await run(
         "CREATE INDEX IF NOT EXISTS idx_payroll_company_month_position ON payroll_entries(company_id, month, position_index)"
+      );
+      await run(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_reports_company_month_unique ON payroll_reports(company_id, month)"
+      );
+      await run(
+        "CREATE INDEX IF NOT EXISTS idx_payroll_reports_company_month ON payroll_reports(company_id, month)"
       );
       await run(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_designation_company_name_lc_unique ON designation_presets(company_id, name_lc)"
@@ -645,8 +666,9 @@ function createSqliteStore(baseDir) {
                 present_salary, increment, old_advance_taken, extra_advance_added,
                 deduction_entered, days_absent, comment, position_index
          FROM payroll_entries
+         WHERE employee_id <> ?
          ORDER BY company_id, month, position_index, id`
-      );
+      , [PAYROLL_REPORT_ROW_ID]);
     },
 
     async listPayrollByMonthCompany(month, companyId) {
@@ -655,9 +677,9 @@ function createSqliteStore(baseDir) {
                 present_salary, increment, old_advance_taken, extra_advance_added,
                 deduction_entered, days_absent, comment, position_index
          FROM payroll_entries
-         WHERE month = ? AND company_id = ?
+         WHERE month = ? AND company_id = ? AND employee_id <> ?
          ORDER BY position_index, id`,
-        [month, companyId]
+        [month, companyId, PAYROLL_REPORT_ROW_ID]
       );
     },
 
@@ -689,6 +711,121 @@ function createSqliteStore(baseDir) {
           record.positionIndex,
         ]
       );
+    },
+
+    async listPayrollReportsByCompany(companyId) {
+      return all(
+        `SELECT id, company_id, month, employee_name, designation, present_salary, comment
+         FROM payroll_entries
+         WHERE company_id = ? AND employee_id = ?
+         ORDER BY month DESC, id DESC`,
+        [companyId, PAYROLL_REPORT_ROW_ID]
+      ).then((rows) => rows.map((row) => ({
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      })));
+    },
+
+    async getPayrollReportByIdCompany(id, companyId) {
+      return get(
+        `SELECT id, company_id, month, employee_name, designation, present_salary, comment
+         FROM payroll_entries
+         WHERE id = ? AND company_id = ? AND employee_id = ?
+         LIMIT 1`,
+        [id, companyId, PAYROLL_REPORT_ROW_ID]
+      ).then((row) => (!row ? null : {
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      }));
+    },
+
+    async getPayrollReportByMonthCompany(month, companyId) {
+      return get(
+        `SELECT id, company_id, month, employee_name, designation, present_salary, comment
+         FROM payroll_entries
+         WHERE month = ? AND company_id = ? AND employee_id = ?
+         LIMIT 1`,
+        [month, companyId, PAYROLL_REPORT_ROW_ID]
+      ).then((row) => (!row ? null : {
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      }));
+    },
+
+    async markPayrollChecked(month, companyId, checkedAt) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      if (existing) {
+        await run(
+          `UPDATE payroll_entries
+           SET employee_name = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [checkedAt, existing.id]
+        );
+        return { id: existing.id };
+      }
+
+      const result = await run(
+        `INSERT INTO payroll_entries (
+          company_id, month, employee_id, employee_name, designation, present_salary,
+          increment, old_advance_taken, extra_advance_added, deduction_entered, days_absent,
+          comment, position_index, updated_at
+         ) VALUES (?, ?, ?, ?, '', 0, 0, 0, 0, 0, 0, '', 999999, CURRENT_TIMESTAMP)`,
+        [companyId, month, PAYROLL_REPORT_ROW_ID, checkedAt]
+      );
+      return { id: result.lastID };
+    },
+
+    async savePayrollReportSnapshot(month, companyId, payload) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      const snapshotJson = JSON.stringify(payload?.snapshot || {});
+      if (existing) {
+        await run(
+          `UPDATE payroll_entries
+           SET employee_name = ?, designation = ?, present_salary = ?, comment = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [
+            payload?.checkedAt || existing.checked_at || "",
+            payload?.generatedAt || "",
+            Number(payload?.employeeCount || 0),
+            snapshotJson,
+            existing.id,
+          ]
+        );
+        return { id: existing.id };
+      }
+
+      const result = await run(
+        `INSERT INTO payroll_entries (
+          company_id, month, employee_id, employee_name, designation, present_salary,
+          increment, old_advance_taken, extra_advance_added, deduction_entered, days_absent,
+          comment, position_index, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, 999999, CURRENT_TIMESTAMP)`,
+        [
+          companyId,
+          month,
+          PAYROLL_REPORT_ROW_ID,
+          payload?.checkedAt || "",
+          payload?.generatedAt || "",
+          Number(payload?.employeeCount || 0),
+          snapshotJson,
+        ]
+      );
+      return { id: result.lastID };
     },
   };
 }
@@ -785,6 +922,7 @@ function createFirebaseStore(baseDir) {
           companies: admin.firestore.FieldValue.increment(0),
           users: admin.firestore.FieldValue.increment(0),
           payroll_entries: admin.firestore.FieldValue.increment(0),
+          payroll_reports: admin.firestore.FieldValue.increment(0),
           employees: admin.firestore.FieldValue.increment(0),
           designation_presets: admin.firestore.FieldValue.increment(0),
         },
@@ -1189,6 +1327,7 @@ function createFirebaseStore(baseDir) {
       const snapshot = await col("payroll_entries").get();
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
+        .filter((row) => String(row.employee_id || "") !== PAYROLL_REPORT_ROW_ID)
         .sort((a, b) => {
           const aCompany = Number(a.company_id || 0);
           const bCompany = Number(b.company_id || 0);
@@ -1205,7 +1344,7 @@ function createFirebaseStore(baseDir) {
       const snapshot = await col("payroll_entries").get();
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
-        .filter((row) => row.month === month && Number(row.company_id) === Number(companyId))
+        .filter((row) => row.month === month && Number(row.company_id) === Number(companyId) && String(row.employee_id || "") !== PAYROLL_REPORT_ROW_ID)
         .sort((a, b) => {
           const posCmp = Number(a.position_index || 0) - Number(b.position_index || 0);
           if (posCmp !== 0) return posCmp;
@@ -1252,16 +1391,124 @@ function createFirebaseStore(baseDir) {
         updated_at: nowIso(),
       });
     },
+
+    async listPayrollReportsByCompany(companyId) {
+      const snapshot = await col("payroll_entries").get();
+      return snapshot.docs
+        .map((docSnap) => docSnap.data() || {})
+        .filter((row) => Number(row.company_id) === Number(companyId) && String(row.employee_id || "") === PAYROLL_REPORT_ROW_ID)
+        .map((row) => ({
+          id: row.id,
+          company_id: row.company_id,
+          month: row.month,
+          checked_at: row.employee_name || "",
+          generated_at: row.designation || "",
+          employee_count: Number(row.present_salary || 0),
+          snapshot_json: row.comment || "",
+          created_at: row.created_at || "",
+        }))
+        .sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
+    },
+
+    async getPayrollReportByIdCompany(id, companyId) {
+      const snap = await col("payroll_entries").doc(String(id)).get();
+      if (!snap.exists) return null;
+      const row = snap.data() || {};
+      if (Number(row.company_id) !== Number(companyId) || String(row.employee_id || "") !== PAYROLL_REPORT_ROW_ID) return null;
+      return {
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+        created_at: row.created_at || "",
+      };
+    },
+
+    async getPayrollReportByMonthCompany(month, companyId) {
+      const rows = await this.listPayrollReportsByCompany(companyId);
+      return rows.find((row) => String(row.month || "") === String(month)) || null;
+    },
+
+    async markPayrollChecked(month, companyId, checkedAt) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      if (existing?.id) {
+        await col("payroll_entries").doc(String(existing.id)).set({
+          employee_name: checkedAt,
+          updated_at: nowIso(),
+        }, { merge: true });
+        return { id: existing.id };
+      }
+
+      const id = await getCounter("payroll_entries");
+      await col("payroll_entries").doc(String(id)).set({
+        id,
+        company_id: Number(companyId),
+        month,
+        employee_id: PAYROLL_REPORT_ROW_ID,
+        employee_name: checkedAt,
+        designation: "",
+        present_salary: 0,
+        increment: 0,
+        old_advance_taken: 0,
+        extra_advance_added: 0,
+        deduction_entered: 0,
+        days_absent: 0,
+        comment: "",
+        position_index: 999999,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      });
+      return { id };
+    },
+
+    async savePayrollReportSnapshot(month, companyId, payload) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      const reportId = existing?.id || await getCounter("payroll_entries");
+      await col("payroll_entries").doc(String(reportId)).set({
+        id: Number(reportId),
+        company_id: Number(companyId),
+        month,
+        employee_id: PAYROLL_REPORT_ROW_ID,
+        employee_name: payload?.checkedAt || existing?.checked_at || "",
+        designation: payload?.generatedAt || "",
+        present_salary: Number(payload?.employeeCount || 0),
+        comment: JSON.stringify(payload?.snapshot || {}),
+        position_index: 999999,
+        created_at: existing?.created_at || nowIso(),
+        updated_at: nowIso(),
+      }, { merge: true });
+      return { id: reportId };
+    },
   };
 }
 
 function createSupabaseStore() {
   const baseUrl = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const requestTimeoutMs = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 8000));
   const nowIso = () => new Date().toISOString();
 
   if (!baseUrl || !serviceRoleKey) {
     throw new Error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  async function fetchWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error(`Supabase request timed out after ${requestTimeoutMs}ms.`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async function supabaseRest(table, {
@@ -1280,7 +1527,7 @@ function createSupabaseStore() {
       });
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method,
       headers: {
         apikey: serviceRoleKey,
@@ -1757,6 +2004,7 @@ function createSupabaseStore() {
       return supabaseRest("payroll_entries", {
         query: {
           select: "*",
+          employee_id: `neq.${PAYROLL_REPORT_ROW_ID}`,
           order: "company_id.asc,month.asc,position_index.asc,id.asc",
         },
         allowEmpty: true,
@@ -1769,6 +2017,7 @@ function createSupabaseStore() {
           select: "*",
           month: `eq.${month}`,
           company_id: `eq.${Number(companyId)}`,
+          employee_id: `neq.${PAYROLL_REPORT_ROW_ID}`,
           order: "position_index.asc,id.asc",
         },
         allowEmpty: true,
@@ -1807,6 +2056,142 @@ function createSupabaseStore() {
           updated_at: nowIso(),
         }],
       });
+    },
+
+    async listPayrollReportsByCompany(companyId) {
+      return supabaseRest("payroll_entries", {
+        query: {
+          select: "*",
+          company_id: `eq.${Number(companyId)}`,
+          employee_id: `eq.${PAYROLL_REPORT_ROW_ID}`,
+          order: "month.desc,id.desc",
+        },
+        allowEmpty: true,
+      }).then((rows) => rows.map((row) => ({
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      })));
+    },
+
+    async getPayrollReportByIdCompany(id, companyId) {
+      return maybeSingle("payroll_entries", {
+        select: "*",
+        id: `eq.${Number(id)}`,
+        company_id: `eq.${Number(companyId)}`,
+        employee_id: `eq.${PAYROLL_REPORT_ROW_ID}`,
+      }).then((row) => (!row ? null : {
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      }));
+    },
+
+    async getPayrollReportByMonthCompany(month, companyId) {
+      return maybeSingle("payroll_entries", {
+        select: "*",
+        month: `eq.${month}`,
+        company_id: `eq.${Number(companyId)}`,
+        employee_id: `eq.${PAYROLL_REPORT_ROW_ID}`,
+      }).then((row) => (!row ? null : {
+        id: row.id,
+        company_id: row.company_id,
+        month: row.month,
+        checked_at: row.employee_name || "",
+        generated_at: row.designation || "",
+        employee_count: Number(row.present_salary || 0),
+        snapshot_json: row.comment || "",
+      }));
+    },
+
+    async markPayrollChecked(month, companyId, checkedAt) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      if (existing?.id) {
+        await supabaseRest("payroll_entries", {
+          method: "PATCH",
+          query: { id: `eq.${Number(existing.id)}` },
+          body: {
+            employee_name: checkedAt,
+            updated_at: nowIso(),
+          },
+        });
+        return { id: existing.id };
+      }
+
+      const id = await nextNumericId("payroll_entries");
+      await supabaseRest("payroll_entries", {
+        method: "POST",
+        body: [{
+          id,
+          company_id: Number(companyId),
+          month,
+          employee_id: PAYROLL_REPORT_ROW_ID,
+          employee_name: checkedAt,
+          designation: "",
+          present_salary: 0,
+          increment: 0,
+          old_advance_taken: 0,
+          extra_advance_added: 0,
+          deduction_entered: 0,
+          days_absent: 0,
+          comment: "",
+          position_index: 999999,
+          updated_at: nowIso(),
+        }],
+      });
+      return { id };
+    },
+
+    async savePayrollReportSnapshot(month, companyId, payload) {
+      const existing = await this.getPayrollReportByMonthCompany(month, companyId);
+      const body = {
+        employee_name: payload?.checkedAt || existing?.checked_at || "",
+        designation: payload?.generatedAt || "",
+        present_salary: Number(payload?.employeeCount || 0),
+        comment: JSON.stringify(payload?.snapshot || {}),
+        position_index: 999999,
+        updated_at: nowIso(),
+      };
+
+      if (existing?.id) {
+        await supabaseRest("payroll_entries", {
+          method: "PATCH",
+          query: { id: `eq.${Number(existing.id)}` },
+          body,
+        });
+        return { id: existing.id };
+      }
+
+      const id = await nextNumericId("payroll_entries");
+      await supabaseRest("payroll_entries", {
+        method: "POST",
+        body: [{
+          id,
+          company_id: Number(companyId),
+          month,
+          employee_id: PAYROLL_REPORT_ROW_ID,
+          employee_name: payload?.checkedAt || "",
+          designation: payload?.generatedAt || "",
+          present_salary: Number(payload?.employeeCount || 0),
+          increment: 0,
+          old_advance_taken: 0,
+          extra_advance_added: 0,
+          deduction_entered: 0,
+          days_absent: 0,
+          comment: JSON.stringify(payload?.snapshot || {}),
+          position_index: 999999,
+          updated_at: nowIso(),
+        }],
+      });
+      return { id };
     },
   };
 }

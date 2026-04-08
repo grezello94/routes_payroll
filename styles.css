@@ -1083,12 +1083,24 @@ td.read {
   gap: 6px;
 }
 
+.active-report-row {
+  background: rgba(47, 78, 196, 0.08);
+}
+
 .mini {
   min-height: 40px;
   font-size: 0.9rem;
   min-width: 132px;
   padding: 0 16px;
   border-radius: 10px;
+}
+
+.icon-mini {
+  min-width: 44px;
+  width: 44px;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 .kpi-card {

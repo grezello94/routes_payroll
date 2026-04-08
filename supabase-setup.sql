@@ -71,9 +71,23 @@ create table if not exists public.payroll_entries (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.payroll_reports (
+  id bigint primary key,
+  company_id bigint not null references public.companies(id) on delete cascade,
+  month text not null,
+  checked_at text not null default '',
+  generated_at text not null default '',
+  employee_count integer not null default 0,
+  snapshot_json text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (company_id, month)
+);
+
 create index if not exists idx_designation_company_position on public.designation_presets(company_id, position_index);
 create index if not exists idx_employees_company_position on public.employees(company_id, position_index);
 create index if not exists idx_payroll_company_month_position on public.payroll_entries(company_id, month, position_index);
+create index if not exists idx_payroll_reports_company_month on public.payroll_reports(company_id, month);
 
 insert into public.companies (id, name, name_lc, logo_data_url)
 values (1, 'Routes Payroll', 'routes payroll', '')
