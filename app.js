@@ -55,10 +55,14 @@ const SELECTORS = {
   backupBtn: document.getElementById("backupBtn"),
   restoreInput: document.getElementById("restoreInput"),
   logoutBtn: document.getElementById("logoutBtn"),
+  dashboardSummaryCards: document.getElementById("dashboardSummaryCards"),
+  dashboardHighlightsBody: document.getElementById("dashboardHighlightsBody"),
+  dashboardActivityBody: document.getElementById("dashboardActivityBody"),
   metricEmployees: document.getElementById("metricEmployees"),
   metricGross: document.getElementById("metricGross"),
   metricNet: document.getElementById("metricNet"),
   metricAdvance: document.getElementById("metricAdvance"),
+  dashboardInsightsSection: document.getElementById("dashboardInsightsSection"),
   installBtn: document.getElementById("installBtn"),
   actionMenu: document.getElementById("actionMenu"),
   railButtons: Array.from(document.querySelectorAll("[data-rail-action]")),
@@ -90,6 +94,7 @@ const SELECTORS = {
   settingsMessage: document.getElementById("settingsMessage"),
   leaveResumeReportBody: document.getElementById("leaveResumeReportBody"),
   reportsMessage: document.getElementById("reportsMessage"),
+  reportsSummaryCards: document.getElementById("reportsSummaryCards"),
   generatedPayrollBody: document.getElementById("generatedPayrollBody"),
   generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
   generatedPayrollEmployeesBody: document.getElementById("generatedPayrollEmployeesBody"),
@@ -512,12 +517,14 @@ async function loadEmployees() {
     renderEmployeeTable();
     renderLeaveResumeReport();
     renderDesignationSuggestions();
+    renderDashboardInsights();
   } catch (error) {
     employeeMaster = [];
     window.allPayrollRecords = [];
     renderEmployeeTable();
     renderLeaveResumeReport();
     renderDesignationSuggestions();
+    renderDashboardInsights();
     setEmployeeMessage(employeeApiErrorMessage(error));
   }
 }
@@ -618,6 +625,11 @@ function renderLeaveResumeReport() {
         : status === "terminated"
           ? "Terminated"
           : "Working";
+      const badgeClass = status === "leave"
+        ? "status-pill leave"
+        : status === "terminated"
+          ? "status-pill terminated"
+          : "status-pill working";
 
       return `
         <tr>
@@ -626,7 +638,7 @@ function renderLeaveResumeReport() {
             <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
-          <td>${escapeHtml(statusLabel)}</td>
+          <td><span class="${badgeClass}">${escapeHtml(statusLabel)}</span></td>
           <td>${escapeHtml(employee.leaveFrom || "-")}</td>
           <td>${escapeHtml(employee.leaveTo || "-")}</td>
           <td>${escapeHtml(employee.terminatedOn || "-")}</td>
@@ -645,6 +657,151 @@ function setPayrollWorkflowMessage(message) {
   if (SELECTORS.payrollWorkflowMessage) {
     SELECTORS.payrollWorkflowMessage.textContent = message || "";
   }
+}
+
+function renderDashboardInsights() {
+  if (SELECTORS.dashboardSummaryCards) {
+    const currentMonth = getSelectedMonth();
+    const currentMonthLabel = formatMonth(currentMonth);
+    const visibleEmployees = currentRecords.filter((record) => isPayrollActiveStatus(record.employeeStatus)).length;
+    const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave").length;
+    const terminated = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "terminated").length;
+    const generatedCurrentMonth = payrollReports.find((report) => String(report.month) === String(currentMonth)) || null;
+    const latestReport = payrollReports[0] || null;
+
+    const summaryCards = [
+      {
+        label: "Current Payroll Month",
+        value: currentMonthLabel || "-",
+        note: generatedCurrentMonth?.generatedAt
+          ? `Generated ${formatDateTime(generatedCurrentMonth.generatedAt)}`
+          : "No saved payroll report yet",
+        tone: "blue",
+      },
+      {
+        label: "Saved Payroll Months",
+        value: String(payrollReports.length),
+        note: latestReport ? `Latest: ${formatMonth(latestReport.month)}` : "No reports generated",
+        tone: "violet",
+      },
+      {
+        label: "Employees On Leave",
+        value: String(onLeave),
+        note: `${terminated} terminated record(s) on file`,
+        tone: "amber",
+      },
+      {
+        label: "Active In Register",
+        value: String(visibleEmployees),
+        note: `${employeeMaster.length} total employee profile(s)`,
+        tone: "green",
+      },
+    ];
+
+    SELECTORS.dashboardSummaryCards.innerHTML = summaryCards.map((card) => `
+      <article class="dashboard-stat-card tone-${card.tone}">
+        <p>${escapeHtml(card.label)}</p>
+        <strong>${escapeHtml(card.value)}</strong>
+        <span>${escapeHtml(card.note)}</span>
+      </article>
+    `).join("");
+  }
+
+  if (SELECTORS.dashboardHighlightsBody) {
+    const currentMonth = getSelectedMonth();
+    const report = payrollReports.find((item) => String(item.month) === String(currentMonth)) || null;
+    const computed = currentRecords.map((record) => computePayroll(record, currentMonth));
+    const net = computed.reduce((sum, item) => sum + item.netSalary, 0);
+    const gross = computed.reduce((sum, item) => sum + item.grossSalary, 0);
+    const advance = computed.reduce((sum, item) => sum + item.advanceRemained, 0);
+    const blockedCount = currentRecords.filter((record) => isPayrollBlocked(record, currentMonth)).length;
+
+    const highlights = [
+      {
+        title: "Payroll Status",
+        detail: report?.generatedAt
+          ? `${report.employeeCount || 0} payslip(s) saved for ${formatMonth(currentMonth)}`
+          : `No generated payroll saved yet for ${formatMonth(currentMonth)}`,
+      },
+      {
+        title: "Gross vs Net",
+        detail: `${formatCurrency(gross)} gross payroll and ${formatCurrency(net)} net payout`,
+      },
+      {
+        title: "Advance Exposure",
+        detail: `${formatCurrency(advance)} remains pending as employee advances`,
+      },
+      {
+        title: "Locked or Inactive Records",
+        detail: `${blockedCount} record(s) are currently blocked from payroll payout`,
+      },
+    ];
+
+    SELECTORS.dashboardHighlightsBody.innerHTML = highlights.map((item) => `
+      <div class="dashboard-list-item">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.detail)}</span>
+      </div>
+    `).join("");
+  }
+
+  if (SELECTORS.dashboardActivityBody) {
+    const items = payrollReports.slice(0, 4);
+    SELECTORS.dashboardActivityBody.innerHTML = items.length
+      ? items.map((report, index) => `
+        <div class="dashboard-list-item">
+          <strong>${escapeHtml(`${index === 0 ? "Latest report" : "Saved report"} • ${formatMonth(report.month)}`)}</strong>
+          <span>${escapeHtml(`${report.employeeCount || 0} employee payslip(s) • checked ${formatDateTime(report.checkedAt) || "-"} • generated ${formatDateTime(report.generatedAt) || "-"}`)}</span>
+        </div>
+      `).join("")
+      : `
+        <div class="dashboard-list-item empty-dashboard-item">
+          <strong>No payroll reports generated yet</strong>
+          <span>Generate employee payslips from Payroll to build a month-wise report timeline here.</span>
+        </div>
+      `;
+  }
+}
+
+function renderReportsSummary() {
+  if (!SELECTORS.reportsSummaryCards) return;
+  const openReport = payrollReports.find((report) => Number(report.id) === Number(activePayrollReportId)) || null;
+  const totalPayslips = payrollReports.reduce((sum, report) => sum + Number(report.employeeCount || 0), 0);
+  const latestReport = payrollReports[0] || null;
+  const summaryCards = [
+    {
+      label: "Generated Months",
+      value: String(payrollReports.length),
+      note: latestReport ? `Latest month: ${formatMonth(latestReport.month)}` : "No month generated yet",
+      tone: "blue",
+    },
+    {
+      label: "Saved Payslips",
+      value: String(totalPayslips),
+      note: "Employee payslips captured across generated reports",
+      tone: "green",
+    },
+    {
+      label: "Current Open Report",
+      value: openReport ? formatMonth(openReport.month) : "None",
+      note: openReport ? `${openReport.employeeCount || 0} employee(s) in active view` : "Open a generated payroll month below",
+      tone: "violet",
+    },
+    {
+      label: "Last Generated",
+      value: latestReport?.generatedAt ? formatDateTime(latestReport.generatedAt) : "-",
+      note: latestReport ? "Most recent payroll snapshot" : "Waiting for first generated report",
+      tone: "amber",
+    },
+  ];
+
+  SELECTORS.reportsSummaryCards.innerHTML = summaryCards.map((card) => `
+    <article class="dashboard-stat-card compact tone-${card.tone}">
+      <p>${escapeHtml(card.label)}</p>
+      <strong>${escapeHtml(card.value)}</strong>
+      <span>${escapeHtml(card.note)}</span>
+    </article>
+  `).join("");
 }
 
 function getCurrentMonthPayrollReport() {
@@ -711,13 +868,22 @@ function renderGeneratedPayrollReports() {
   SELECTORS.generatedPayrollBody.innerHTML = payrollReports
     .map((report) => {
       const activeClass = Number(report.id) === Number(activePayrollReportId) ? "active-report-row" : "";
+      const isActive = Number(report.id) === Number(activePayrollReportId);
       return `
         <tr class="${activeClass}">
-          <td>Payroll Generated for the month of ${escapeHtml(formatMonth(report.month))}</td>
+          <td>
+            <div class="report-month-title">Payroll Generated for the month of ${escapeHtml(formatMonth(report.month))}</div>
+            <div class="report-month-sub">Saved monthly payroll snapshot</div>
+          </td>
           <td>${escapeHtml(formatDateTime(report.checkedAt) || "-")}</td>
           <td>${escapeHtml(formatDateTime(report.generatedAt) || "-")}</td>
-          <td>${escapeHtml(String(report.employeeCount || 0))}</td>
-          <td><button type="button" class="mini ghost" data-report-id="${report.id}">Open</button></td>
+          <td><span class="report-count-pill">${escapeHtml(String(report.employeeCount || 0))}</span></td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="mini ghost" data-report-id="${report.id}" data-report-action="open" aria-pressed="${isActive ? "true" : "false"}">${isActive ? "Opened" : "Open"}</button>
+              <button type="button" class="mini ghost" data-report-id="${report.id}" data-report-action="excel">Excel</button>
+            </div>
+          </td>
         </tr>
       `;
     })
@@ -740,9 +906,9 @@ function renderGeneratedPayrollReports() {
       return `
         <tr>
           <td>${escapeHtml(record.employeeId || "-")}</td>
-          <td>${escapeHtml(record.employeeName || "-")}</td>
+          <td><div class="emp-list-name">${escapeHtml(record.employeeName || "-")}</div></td>
           <td>${escapeHtml(record.designation || "-")}</td>
-          <td>${escapeHtml(formatCurrency(calc.netSalary))}</td>
+          <td><span class="report-net-salary">${escapeHtml(formatCurrency(calc.netSalary))}</span></td>
           <td>
             <div class="row-actions">
               <button type="button" class="mini ghost icon-mini" title="View Payslip" aria-label="View Payslip" data-report-index="${index}" data-action="preview">&#128065;</button>
@@ -984,7 +1150,16 @@ function wireAppActions() {
     if (!button) return;
     const reportId = Number(button.dataset.reportId);
     if (!Number.isInteger(reportId) || reportId <= 0) return;
-    await openPayrollReport(reportId);
+    try {
+      if (button.dataset.reportAction === "excel") {
+        await downloadPayrollReportExcel(reportId);
+        return;
+      }
+      await openPayrollReport(reportId);
+      SELECTORS.generatedPayrollDetailTitle?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      showAppMessage(error.message);
+    }
   });
 
   SELECTORS.generatedPayrollEmployeesBody?.addEventListener("click", (event) => {
@@ -1543,6 +1718,7 @@ function setWorkspace(view) {
   const settingsView = view === "settings";
 
   SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
+  SELECTORS.dashboardInsightsSection?.classList.toggle("hidden", !dashboardView);
   SELECTORS.employeesSection?.classList.toggle("hidden", !employeesView);
   SELECTORS.payrollSection?.classList.toggle("hidden", !payrollView);
   SELECTORS.reportsSection?.classList.toggle("hidden", !reportsView);
@@ -1800,11 +1976,13 @@ async function loadMonthRecords() {
     renderPayrollTable();
     setSaveStatus("All changes saved.");
     renderPayrollWorkflow();
+    renderDashboardInsights();
   } catch (error) {
     currentRecords = [];
     activePayrollEmployeeId = "";
     renderPayrollTable();
     renderPayrollWorkflow();
+    renderDashboardInsights();
     showAppMessage(error.message);
   }
 }
@@ -1827,12 +2005,16 @@ async function loadPayrollReports(preferredReportId = activePayrollReportId) {
     } else {
       activePayrollReportSnapshot = null;
       renderGeneratedPayrollReports();
+      renderReportsSummary();
+      renderDashboardInsights();
     }
   } catch (error) {
     payrollReports = [];
     activePayrollReportId = null;
     activePayrollReportSnapshot = null;
     renderGeneratedPayrollReports();
+    renderReportsSummary();
+    renderDashboardInsights();
     showAppMessage(error.message);
   }
 }
@@ -1841,11 +2023,9 @@ async function openPayrollReport(reportId, skipListRender = false) {
   const response = await apiRequest(`/api/payroll-reports/${reportId}?companyId=${getSelectedCompanyId()}`);
   activePayrollReportId = Number(response.report?.id || reportId);
   activePayrollReportSnapshot = response.snapshot || null;
-  if (!skipListRender) {
-    renderGeneratedPayrollReports();
-  } else {
-    renderGeneratedPayrollReports();
-  }
+  renderGeneratedPayrollReports();
+  renderReportsSummary();
+  renderDashboardInsights();
 }
 
 function createEmptyEmployee(records) {
@@ -2156,6 +2336,7 @@ function updateMetrics(computedRecords) {
   SELECTORS.metricGross.textContent = formatCurrency(gross);
   SELECTORS.metricNet.textContent = formatCurrency(net);
   SELECTORS.metricAdvance.textContent = formatCurrency(advance);
+  renderDashboardInsights();
 }
 
 function scheduleSave(immediate) {
@@ -2221,38 +2402,82 @@ function openPayslip(record, month, companyOverride = null) {
 }
 
 function renderPayslipCard(record, calc, month, company) {
+  const monthSheet = formatPayslipMonth(month);
+  const comment = String(record.comment || "").trim() || "No comment added for this payroll month.";
+  const status = formatStatusLabel(record.employeeStatus || "working");
+  const absenceSummary = calc.daysAbsent > 0
+    ? `${formatNumberValue(calc.daysAbsent)} day(s) absent • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
+    : "No absence deduction applied";
+
   return `
-    <article class="payslip-card">
-      <header class="payslip-brand">
-        <div class="payslip-brand-row">
-          ${company.logoDataUrl ? `<img src="${company.logoDataUrl}" alt="${escapeHtml(company.name)} logo" class="payslip-logo" />` : ""}
+    <article class="payslip-sheet">
+      <header class="payslip-sheet-header">
+        <div class="payslip-sheet-brand">
           <div>
-            <p class="eyebrow">Routes Payroll Payslip</p>
-            <h4>${escapeHtml(company.name || "Company")}</h4>
+            <h2>${escapeHtml(company.name || "Company")}</h2>
+            <p>Official Payroll Statement</p>
+          </div>
+          ${company.logoDataUrl ? `<img src="${company.logoDataUrl}" alt="${escapeHtml(company.name)} logo" class="payslip-sheet-logo" />` : ""}
+        </div>
+        <div class="payslip-sheet-period">
+          <span class="payslip-label">Month Sheet</span>
+          <strong>${escapeHtml(monthSheet)}</strong>
+        </div>
+      </header>
+      <section class="payslip-identity">
+        <div>
+          <span class="payslip-label">Employee Name</span>
+          <strong>${escapeHtml(record.employeeName || "Employee Name")}</strong>
+        </div>
+        <div>
+          <span class="payslip-label">Designation</span>
+          <strong>${escapeHtml(record.designation || "Designation")}</strong>
+        </div>
+        <div>
+          <span class="payslip-label">Employee ID</span>
+          <strong>${escapeHtml(record.employeeId || "-")}</strong>
+        </div>
+      </section>
+      <section class="payslip-financials">
+        <div class="payslip-panel payslip-panel-addition">
+          <h3>ADDITION</h3>
+          <div class="payslip-lines">
+            <div class="payslip-line"><span>Present Salary (₹)</span><strong>${formatPayslipAmount(calc.presentSalary)}</strong></div>
+            <div class="payslip-line"><span>Increment (₹)</span><strong class="amount-green">${formatPayslipAmount(calc.increment)}</strong></div>
+            <div class="payslip-line payslip-line-total"><span>Gross Salary (₹)</span><strong class="amount-underline">${formatPayslipAmount(calc.grossSalary)}</strong></div>
           </div>
         </div>
-        <h3>${escapeHtml(record.employeeName || "Employee Name")}</h3>
-        <p>${escapeHtml(record.designation || "Designation")}</p>
-      </header>
-      <dl>
-        <div><dt>Company</dt><dd>${escapeHtml(company.name || "-")}</dd></div>
-        <div><dt>Year-Month</dt><dd>${escapeHtml(formatMonth(month))}</dd></div>
-        <div><dt>Employee ID</dt><dd>${escapeHtml(record.employeeId || "-")}</dd></div>
-        <div><dt>Status</dt><dd>${escapeHtml(String(record.employeeStatus || "working"))}</dd></div>
-        <div><dt>Present Salary</dt><dd>${formatCurrency(calc.presentSalary)}</dd></div>
-        <div><dt>Increment</dt><dd>${formatCurrency(calc.increment)}</dd></div>
-        <div><dt>Gross Salary</dt><dd>${formatCurrency(calc.grossSalary)}</dd></div>
-        <div><dt>Old Advance Taken</dt><dd>${formatCurrency(calc.oldAdvanceTaken)}</dd></div>
-        <div><dt>Extra Advance Added</dt><dd>${formatCurrency(calc.extraAdvanceAdded)}</dd></div>
-        <div><dt>Total Advance</dt><dd>${formatCurrency(calc.totalAdvance)}</dd></div>
-        <div><dt>Deduction Entered</dt><dd>${formatCurrency(calc.deductionEntered)}</dd></div>
-        <div><dt>Days Absent</dt><dd>${calc.daysAbsent} / 30</dd></div>
-        <div><dt>Prorated Absence Deduction</dt><dd>${formatCurrency(calc.proratedAbsenceDeduction)}</dd></div>
-        <div><dt>Deduction Applied</dt><dd>${formatCurrency(calc.deductionApplied)}</dd></div>
-        <div><dt>Advance Remained</dt><dd>${formatCurrency(calc.advanceRemained)}</dd></div>
-        <div><dt>Salary In Hand</dt><dd class="money-net">${formatCurrency(calc.netSalary)}</dd></div>
-        <div><dt>Comment</dt><dd>${escapeHtml(record.comment || "-")}</dd></div>
-      </dl>
+        <div class="payslip-panel payslip-panel-deduction">
+          <h3>DEDUCTIONS</h3>
+          <div class="payslip-lines">
+            <div class="payslip-line"><span>Old Advance Taken (₹)</span><strong>${formatPayslipAmount(calc.oldAdvanceTaken)}</strong></div>
+            <div class="payslip-line"><span>Extra Advance Added (₹)</span><strong>${formatPayslipAmount(calc.extraAdvanceAdded)}</strong></div>
+            <div class="payslip-line"><span>Total Advance (₹)</span><strong>${formatPayslipAmount(calc.totalAdvance)}</strong></div>
+            <div class="payslip-line payslip-line-highlight"><span>Deduction Applied (₹)</span><strong class="amount-red">${formatPayslipAmount(calc.deductionApplied)}</strong></div>
+            <div class="payslip-line payslip-line-total"><span>Advance Remained (₹)</span><strong class="amount-red-large">${formatPayslipAmount(calc.advanceRemained)}</strong></div>
+          </div>
+        </div>
+      </section>
+      <section class="payslip-note-strip">
+        <div>
+          <span class="payslip-label">Payroll Notes</span>
+          <p>${escapeHtml(`Status: ${status} • Deduction Entered: ${formatCurrency(calc.deductionEntered)} • ${absenceSummary}`)}</p>
+        </div>
+      </section>
+      <footer class="payslip-footer">
+        <div class="payslip-comment">
+          <span class="payslip-label">Comment</span>
+          <p>${escapeHtml(comment)}</p>
+        </div>
+        <div class="payslip-net">
+          <span class="payslip-label">Salary In Hand (Net Salary ₹)</span>
+          <div class="payslip-net-box">${formatPayslipAmount(calc.netSalary)}</div>
+        </div>
+      </footer>
+      <div class="payslip-signoff">
+        <span>Prepared By: System</span>
+        <div class="payslip-signature">Employer Signature</div>
+      </div>
     </article>
   `;
 }
@@ -2300,22 +2525,16 @@ function printCurrentPayslip() {
         <meta charset="utf-8" />
         <title>Payslip - ${escapeHtml(activePayslip.record.employeeName || "")}</title>
         <style>
-          body { font-family: "Segoe UI", Tahoma, sans-serif; margin: 24px; color: #111; }
-          h1 { margin: 0 0 4px; color: #111; }
-          p { margin: 0 0 18px; color: #444; }
-          table { width: 100%; border-collapse: collapse; }
-          td { border-bottom: 1px solid #ddd; padding: 8px 0; }
-          td:last-child { font-weight: 600; text-align: right; }
-          .net { color: #0d8a53; font-size: 1.1rem; }
+          ${getPayslipPrintStyles()}
         </style>
       </head>
       <body>
-        <h1>Routes Payroll Payslip</h1>
-        <p>${escapeHtml(activePayslip.company?.name || "Company")}</p>
-        <p>${escapeHtml(formatMonth(activePayslip.month))}</p>
-        <table>
-          ${buildPrintRows(activePayslip)}
-        </table>
+        ${renderPayslipCard(
+          activePayslip.record,
+          activePayslip.calc,
+          activePayslip.month,
+          activePayslip.company
+        )}
       </body>
     </html>
   `;
@@ -2331,37 +2550,337 @@ function printCurrentPayslip() {
   printWindow.print();
 }
 
-function buildPrintRows(data) {
-  const { record, calc, company } = data;
-  const rows = [
-    ["Company", escapeHtml(company?.name || "-")],
-    ["Employee ID", escapeHtml(record.employeeId || "-")],
-    ["Employee Name", escapeHtml(record.employeeName || "-")],
-    ["Designation", escapeHtml(record.designation || "-")],
-    ["Status", escapeHtml(record.employeeStatus || "working")],
-    ["Present Salary", formatCurrency(calc.presentSalary)],
-    ["Increment", formatCurrency(calc.increment)],
-    ["Gross Salary", formatCurrency(calc.grossSalary)],
-    ["Old Advance Taken", formatCurrency(calc.oldAdvanceTaken)],
-    ["Extra Advance Added", formatCurrency(calc.extraAdvanceAdded)],
-    ["Total Advance", formatCurrency(calc.totalAdvance)],
-    ["Deduction Entered", formatCurrency(calc.deductionEntered)],
-    ["Days Absent", `${calc.daysAbsent} / 30`],
-    ["Prorated Absence Deduction", formatCurrency(calc.proratedAbsenceDeduction)],
-    ["Deduction Applied", formatCurrency(calc.deductionApplied)],
-    ["Advance Remained", formatCurrency(calc.advanceRemained)],
-    ["Salary In Hand", `<span class="net">${formatCurrency(calc.netSalary)}</span>`],
-    ["Comment", escapeHtml(record.comment || "-")],
-  ];
-
-  return rows.map(([left, right]) => `<tr><td>${left}</td><td>${right}</td></tr>`).join("");
-}
-
 function downloadCurrentPayslipText() {
   if (!ensureActivePayslip()) return;
   const text = getPayslipText(activePayslip);
   const name = slugify(activePayslip.record.employeeName || activePayslip.record.employeeId || "employee");
   downloadBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), `payslip-${name}-${activePayslip.month}.txt`);
+}
+
+function formatPayslipMonth(month) {
+  const raw = String(month || "");
+  if (!raw.includes("-")) return raw;
+  const [year, monthPart] = raw.split("-");
+  const date = new Date(Number(year), Number(monthPart) - 1, 1);
+  if (Number.isNaN(date.getTime())) return raw;
+  return `${date.toLocaleDateString("en-IN", { month: "short" })}_${year}`;
+}
+
+function formatNumberValue(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "0";
+  const hasFraction = Math.abs(num % 1) > 0.0001;
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: hasFraction ? 2 : 0,
+  }).format(num);
+}
+
+function formatPayslipAmount(value) {
+  return formatNumberValue(value);
+}
+
+function formatStatusLabel(status) {
+  const raw = String(status || "working").trim().toLowerCase();
+  if (!raw) return "Working";
+  return raw.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getPayslipPrintStyles() {
+  return `
+    @page {
+      size: A5 portrait;
+      margin: 8mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #111827;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body {
+      padding: 0;
+    }
+
+    .payslip-sheet {
+      width: 100%;
+      min-height: calc(210mm - 16mm);
+      padding: 9mm;
+      border: 1px solid #d8e0ea;
+      border-radius: 3mm;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .payslip-sheet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 8mm;
+      padding-bottom: 6mm;
+      border-bottom: 1px solid #e7edf3;
+      margin-bottom: 7mm;
+    }
+
+    .payslip-sheet-brand {
+      display: flex;
+      align-items: center;
+      gap: 4mm;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .payslip-sheet-logo {
+      width: 13mm;
+      height: 13mm;
+      object-fit: cover;
+      border-radius: 2mm;
+      border: 1px solid #d8e0ea;
+      flex-shrink: 0;
+    }
+
+    .payslip-sheet-brand h2 {
+      margin: 0;
+      font-size: 8.8mm;
+      line-height: 1.02;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #17223b;
+      text-transform: uppercase;
+    }
+
+    .payslip-sheet-brand p {
+      margin: 1mm 0 0;
+      font-size: 3.4mm;
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    .payslip-sheet-period {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .payslip-sheet-period strong {
+      display: block;
+      margin-top: 1mm;
+      font-size: 5.8mm;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    .payslip-label {
+      display: block;
+      margin-bottom: 1.2mm;
+      font-size: 2.8mm;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .payslip-identity {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6mm;
+      margin-bottom: 8mm;
+    }
+
+    .payslip-identity strong {
+      display: block;
+      font-size: 4.2mm;
+      line-height: 1.25;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .payslip-financials {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8mm;
+      margin-bottom: 7mm;
+    }
+
+    .payslip-panel h3 {
+      margin: 0 0 3mm;
+      padding-bottom: 1.2mm;
+      font-size: 4mm;
+      line-height: 1.2;
+      font-weight: 800;
+      border-bottom: 0.45mm solid #111827;
+    }
+
+    .payslip-panel-addition h3 {
+      color: #047857;
+      border-color: #0f9f78;
+    }
+
+    .payslip-panel-deduction h3 {
+      color: #b91c1c;
+      border-color: #ef4444;
+    }
+
+    .payslip-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8mm;
+    }
+
+    .payslip-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 4mm;
+      padding: 2.4mm 0;
+      border-bottom: 1px solid #eef2f7;
+    }
+
+    .payslip-line span {
+      font-size: 3.6mm;
+      line-height: 1.3;
+      color: #64748b;
+    }
+
+    .payslip-line strong {
+      font-size: 4mm;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #111827;
+      text-align: right;
+    }
+
+    .payslip-line-total {
+      border-bottom: none;
+      padding-top: 3.5mm;
+    }
+
+    .payslip-line-total span {
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .payslip-line-total strong {
+      font-size: 5.4mm;
+      font-weight: 800;
+    }
+
+    .payslip-line-highlight {
+      background: #f8fafc;
+      padding-left: 2mm;
+      padding-right: 2mm;
+    }
+
+    .payslip-line-highlight span,
+    .amount-red {
+      color: #ef2b24;
+      font-weight: 700;
+    }
+
+    .amount-green {
+      color: #06a168;
+    }
+
+    .amount-underline {
+      padding-bottom: 0.6mm;
+      border-bottom: 0.5mm solid #111827;
+    }
+
+    .amount-red-large {
+      color: #c81e1e;
+      font-size: 5.8mm;
+      font-weight: 800;
+    }
+
+    .payslip-note-strip {
+      margin-top: auto;
+      padding-top: 4mm;
+      border-top: 1.2mm double #dce5ef;
+    }
+
+    .payslip-note-strip p {
+      margin: 0;
+      font-size: 3.1mm;
+      line-height: 1.45;
+      color: #5b708c;
+    }
+
+    .payslip-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8mm;
+      margin-top: 7mm;
+    }
+
+    .payslip-comment {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .payslip-comment p {
+      margin: 0;
+      padding-left: 3mm;
+      border-left: 0.5mm solid #d8e0ea;
+      font-size: 3.4mm;
+      line-height: 1.45;
+      color: #64748b;
+      font-style: italic;
+    }
+
+    .payslip-net {
+      width: 43mm;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .payslip-net-box {
+      display: inline-block;
+      margin-top: 1.5mm;
+      min-width: 36mm;
+      padding: 2.8mm 4.5mm;
+      border: 0.6mm solid #17223b;
+      border-radius: 1.6mm;
+      font-size: 8.5mm;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      color: #202226;
+      text-align: center;
+      background: #ffffff;
+    }
+
+    .payslip-signoff {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 11mm;
+      font-size: 2.9mm;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #8ca0bf;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .payslip-signature {
+      width: 38mm;
+      padding-top: 1.6mm;
+      border-top: 1px solid #cbd5e1;
+      text-align: center;
+    }
+  `;
 }
 
 async function shareCurrentPayslipWeb() {
@@ -2457,6 +2976,412 @@ function makeCsv(records, month) {
   });
 
   return [headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
+}
+
+async function fetchPayrollReportSnapshot(reportId) {
+  const report = payrollReports.find((item) => Number(item.id) === Number(reportId)) || null;
+  if (Number(activePayrollReportId) === Number(reportId) && activePayrollReportSnapshot) {
+    return {
+      report,
+      snapshot: activePayrollReportSnapshot,
+    };
+  }
+
+  const response = await apiRequest(`/api/payroll-reports/${reportId}?companyId=${getSelectedCompanyId()}`);
+  return {
+    report: response.report || report,
+    snapshot: response.snapshot || null,
+  };
+}
+
+async function downloadPayrollReportExcel(reportId) {
+  const payload = await fetchPayrollReportSnapshot(reportId);
+  const report = payload.report || {};
+  const fallbackMonth = String(report.month || "");
+  const snapshot = payload.snapshot && typeof payload.snapshot === "object"
+    ? payload.snapshot
+    : { company: getActiveCompany(), month: fallbackMonth, records: [] };
+
+  const workbook = makeDetailedPayrollReportSpreadsheet(snapshot, report);
+  const companyName = snapshot.company?.name || getActiveCompany().name || "company";
+  const month = String(snapshot.month || fallbackMonth || "payroll-report");
+  downloadBlob(
+    new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" }),
+    `generated-payroll-${slugify(companyName)}-${month}.xls`
+  );
+  showAppMessage(`Detailed Excel exported for ${formatMonth(month)}.`);
+}
+
+function summarizePayrollSnapshot(snapshot, report = {}) {
+  const month = String(snapshot?.month || report?.month || getSelectedMonth());
+  const company = snapshot?.company || getActiveCompany();
+  const records = Array.isArray(snapshot?.records) ? snapshot.records : [];
+  const computed = records.map((record) => ({
+    record,
+    calc: computePayroll(record, month),
+  }));
+
+  const totals = computed.reduce((acc, item) => {
+    acc.presentSalary += item.calc.presentSalary;
+    acc.increment += item.calc.increment;
+    acc.grossSalary += item.calc.grossSalary;
+    acc.oldAdvanceTaken += item.calc.oldAdvanceTaken;
+    acc.extraAdvanceAdded += item.calc.extraAdvanceAdded;
+    acc.totalAdvance += item.calc.totalAdvance;
+    acc.deductionEntered += item.calc.deductionEntered;
+    acc.proratedAbsenceDeduction += item.calc.proratedAbsenceDeduction;
+    acc.deductionApplied += item.calc.deductionApplied;
+    acc.advanceRemained += item.calc.advanceRemained;
+    acc.netSalary += item.calc.netSalary;
+    acc.daysAbsent += item.calc.daysAbsent;
+    return acc;
+  }, {
+    presentSalary: 0,
+    increment: 0,
+    grossSalary: 0,
+    oldAdvanceTaken: 0,
+    extraAdvanceAdded: 0,
+    totalAdvance: 0,
+    deductionEntered: 0,
+    proratedAbsenceDeduction: 0,
+    deductionApplied: 0,
+    advanceRemained: 0,
+    netSalary: 0,
+    daysAbsent: 0,
+  });
+
+  const statusCounts = new Map();
+  const designationCounts = new Map();
+  for (const item of computed) {
+    const statusKey = String(item.record.employeeStatus || "working").trim().toLowerCase() || "working";
+    statusCounts.set(statusKey, (statusCounts.get(statusKey) || 0) + 1);
+
+    const designationKey = String(item.record.designation || "Unassigned").trim() || "Unassigned";
+    designationCounts.set(designationKey, (designationCounts.get(designationKey) || 0) + 1);
+  }
+
+  const statusRows = Array.from(statusCounts.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([status, count]) => ({
+      status: status.replace(/\b\w/g, (char) => char.toUpperCase()),
+      count,
+    }));
+
+  const designationRows = Array.from(designationCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([designation, count]) => ({ designation, count }));
+
+  const topNetRows = computed
+    .slice()
+    .sort((a, b) => b.calc.netSalary - a.calc.netSalary || String(a.record.employeeName || "").localeCompare(String(b.record.employeeName || "")))
+    .slice(0, 10);
+
+  return {
+    month,
+    company,
+    records,
+    computed,
+    totals,
+    statusRows,
+    designationRows,
+    topNetRows,
+    checkedAt: report?.checkedAt || "",
+    generatedAt: report?.generatedAt || "",
+  };
+}
+
+function makeDetailedPayrollReportSpreadsheet(snapshot, report = {}) {
+  const summary = summarizePayrollSnapshot(snapshot, report);
+  const monthLabel = formatMonth(summary.month);
+  const generatedAt = formatDateTime(summary.generatedAt) || formatDateTime(new Date().toISOString());
+  const checkedAt = formatDateTime(summary.checkedAt) || "-";
+  const companyName = summary.company?.name || "Company";
+  const records = summary.records;
+  const computed = summary.computed;
+
+  const summaryRows = [
+    `<Row ss:Height="30"><Cell ss:StyleID="rTitle"><Data ss:Type="String">${escapeXml(`${companyName} - Generated Payroll Report`)}</Data></Cell><Cell ss:StyleID="rTitleFill"/><Cell ss:StyleID="rTitleFill"/><Cell ss:StyleID="rTitleFill"/><Cell ss:StyleID="rTitleFill"/><Cell ss:StyleID="rTitleFill"/></Row>`,
+    `<Row ss:Height="22"><Cell ss:StyleID="rSubtitle" ss:MergeAcross="5"><Data ss:Type="String">${escapeXml(`Detailed monthly payroll workbook for ${monthLabel}`)}</Data></Cell></Row>`,
+    `<Row ss:Height="8"></Row>`,
+    `<Row>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Company</Data></Cell>
+      <Cell ss:StyleID="rMetaValue"><Data ss:Type="String">${escapeXml(companyName)}</Data></Cell>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Payroll Month</Data></Cell>
+      <Cell ss:StyleID="rMetaValue"><Data ss:Type="String">${escapeXml(monthLabel)}</Data></Cell>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Employees</Data></Cell>
+      <Cell ss:StyleID="rMetaValueNumber"><Data ss:Type="Number">${records.length}</Data></Cell>
+    </Row>`,
+    `<Row>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Checked At</Data></Cell>
+      <Cell ss:StyleID="rMetaValue"><Data ss:Type="String">${escapeXml(checkedAt)}</Data></Cell>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Generated At</Data></Cell>
+      <Cell ss:StyleID="rMetaValue"><Data ss:Type="String">${escapeXml(generatedAt)}</Data></Cell>
+      <Cell ss:StyleID="rMetaLabel"><Data ss:Type="String">Workbook Created</Data></Cell>
+      <Cell ss:StyleID="rMetaValue"><Data ss:Type="String">${escapeXml(new Date().toLocaleString("en-IN"))}</Data></Cell>
+    </Row>`,
+    `<Row ss:Height="10"></Row>`,
+    `<Row><Cell ss:StyleID="rSection" ss:MergeAcross="5"><Data ss:Type="String">Monthly Totals</Data></Cell></Row>`,
+    `<Row>
+      <Cell ss:StyleID="rKpiBlueLabel"><Data ss:Type="String">Gross Salary</Data></Cell>
+      <Cell ss:StyleID="rKpiBlueValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.grossSalary)}</Data></Cell>
+      <Cell ss:StyleID="rKpiGreenLabel"><Data ss:Type="String">Net Salary</Data></Cell>
+      <Cell ss:StyleID="rKpiGreenValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.netSalary)}</Data></Cell>
+      <Cell ss:StyleID="rKpiGoldLabel"><Data ss:Type="String">Advance Remaining</Data></Cell>
+      <Cell ss:StyleID="rKpiGoldValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.advanceRemained)}</Data></Cell>
+    </Row>`,
+    `<Row>
+      <Cell ss:StyleID="rKpiPurpleLabel"><Data ss:Type="String">Present Salary</Data></Cell>
+      <Cell ss:StyleID="rKpiPurpleValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.presentSalary)}</Data></Cell>
+      <Cell ss:StyleID="rKpiSkyLabel"><Data ss:Type="String">Increment</Data></Cell>
+      <Cell ss:StyleID="rKpiSkyValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.increment)}</Data></Cell>
+      <Cell ss:StyleID="rKpiRedLabel"><Data ss:Type="String">Total Deductions</Data></Cell>
+      <Cell ss:StyleID="rKpiRedValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.deductionApplied + summary.totals.proratedAbsenceDeduction)}</Data></Cell>
+    </Row>`,
+    `<Row>
+      <Cell ss:StyleID="rKpiSlateLabel"><Data ss:Type="String">Total Advance</Data></Cell>
+      <Cell ss:StyleID="rKpiSlateValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.totalAdvance)}</Data></Cell>
+      <Cell ss:StyleID="rKpiSlateLabel"><Data ss:Type="String">Absence Deduction</Data></Cell>
+      <Cell ss:StyleID="rKpiSlateValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.proratedAbsenceDeduction)}</Data></Cell>
+      <Cell ss:StyleID="rKpiSlateLabel"><Data ss:Type="String">Total Days Absent</Data></Cell>
+      <Cell ss:StyleID="rKpiSlateValue"><Data ss:Type="Number">${toFixedNumber(summary.totals.daysAbsent)}</Data></Cell>
+    </Row>`,
+    `<Row ss:Height="10"></Row>`,
+    `<Row><Cell ss:StyleID="rSection" ss:MergeAcross="2"><Data ss:Type="String">Employee Status Mix</Data></Cell><Cell/><Cell ss:StyleID="rSection" ss:MergeAcross="2"><Data ss:Type="String">Designation Breakdown</Data></Cell></Row>`,
+    ...buildPairedSummaryRows(
+      summary.statusRows.map((item) => [xmlCellString(item.status, "rSummaryLabel"), xmlCellNumber(item.count, "rSummaryCount"), xmlCellBlank("rSummarySpacer")]),
+      summary.designationRows.slice(0, 12).map((item) => [xmlCellString(item.designation, "rSummaryLabel"), xmlCellNumber(item.count, "rSummaryCount"), xmlCellBlank("rSummarySpacer")])
+    ),
+    `<Row ss:Height="10"></Row>`,
+    `<Row><Cell ss:StyleID="rSection" ss:MergeAcross="5"><Data ss:Type="String">Top Net Salary Earners</Data></Cell></Row>`,
+    `<Row>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Employee ID</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Employee Name</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Designation</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Status</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Net Salary</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Advance Remaining</Data></Cell>
+    </Row>`,
+    ...(summary.topNetRows.length
+      ? summary.topNetRows.map((item, index) => {
+        const rowStyle = index % 2 === 0 ? "rData" : "rDataAlt";
+        return `<Row>
+          ${xmlCellString(item.record.employeeId || "", rowStyle)}
+          ${xmlCellString(item.record.employeeName || "", rowStyle)}
+          ${xmlCellString(item.record.designation || "", rowStyle)}
+          ${xmlCellString(item.record.employeeStatus || "working", rowStyle)}
+          ${xmlCellNumber(item.calc.netSalary, "rMoneyNet")}
+          ${xmlCellNumber(item.calc.advanceRemained, "rMoneyGold")}
+        </Row>`;
+      }).join("")
+      : `<Row><Cell ss:StyleID="rEmpty" ss:MergeAcross="5"><Data ss:Type="String">No generated payroll records available for this month.</Data></Cell></Row>`),
+  ].join("");
+
+  const detailRows = computed.map((item, index) => {
+    const rowStyle = index % 2 === 0 ? "rData" : "rDataAlt";
+    return `<Row>
+      ${xmlCellString(item.record.employeeId || "", rowStyle)}
+      ${xmlCellString(item.record.employeeName || "", rowStyle)}
+      ${xmlCellString(item.record.designation || "", rowStyle)}
+      ${xmlCellString(item.record.employeeStatus || "working", rowStyle)}
+      ${xmlCellString(item.record.leaveFrom || "-", rowStyle)}
+      ${xmlCellString(item.record.leaveTo || "-", rowStyle)}
+      ${xmlCellString(item.record.terminatedOn || "-", rowStyle)}
+      ${xmlCellNumber(item.calc.presentSalary, "rMoneyBlue")}
+      ${xmlCellNumber(item.calc.increment, "rMoneyPurple")}
+      ${xmlCellNumber(item.calc.grossSalary, "rMoneyGreen")}
+      ${xmlCellNumber(item.calc.oldAdvanceTaken, "rMoneyGold")}
+      ${xmlCellNumber(item.calc.extraAdvanceAdded, "rMoneyGold")}
+      ${xmlCellNumber(item.calc.totalAdvance, "rMoneyGoldStrong")}
+      ${xmlCellNumber(item.calc.deductionEntered, "rMoneyRed")}
+      ${xmlCellNumber(item.calc.daysAbsent, "rNumber")}
+      ${xmlCellNumber(item.calc.proratedAbsenceDeduction, "rMoneyRed")}
+      ${xmlCellNumber(item.calc.deductionApplied, "rMoneyRedStrong")}
+      ${xmlCellNumber(item.calc.advanceRemained, "rMoneyGoldStrong")}
+      ${xmlCellNumber(item.calc.netSalary, "rMoneyNet")}
+      ${xmlCellString(item.record.comment || "", rowStyle)}
+    </Row>`;
+  }).join("");
+
+  const detailSheetRows = `
+    <Row ss:Height="28"><Cell ss:StyleID="rTitle" ss:MergeAcross="19"><Data ss:Type="String">${escapeXml(`${companyName} - Employee Payroll Details`)}</Data></Cell></Row>
+    <Row ss:Height="22"><Cell ss:StyleID="rSubtitle" ss:MergeAcross="19"><Data ss:Type="String">${escapeXml(`Detailed employee-level payroll for ${monthLabel}`)}</Data></Cell></Row>
+    <Row ss:Height="8"></Row>
+    <Row ss:Height="34">
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Employee ID</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Employee Name</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Designation</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Status</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Leave From</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Resumed On</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Terminated On</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderBlue"><Data ss:Type="String">Present Salary</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderPurple"><Data ss:Type="String">Increment</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGreen"><Data ss:Type="String">Gross Salary</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGold"><Data ss:Type="String">Old Advance</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGold"><Data ss:Type="String">Extra Advance</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGold"><Data ss:Type="String">Total Advance</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderRed"><Data ss:Type="String">Deduction Entered</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderAmber"><Data ss:Type="String">Days Absent</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderRed"><Data ss:Type="String">Absence Deduction</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderRed"><Data ss:Type="String">Deduction Applied</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGold"><Data ss:Type="String">Advance Remaining</Data></Cell>
+      <Cell ss:StyleID="rTableHeaderGreen"><Data ss:Type="String">Net Salary</Data></Cell>
+      <Cell ss:StyleID="rTableHeader"><Data ss:Type="String">Comment</Data></Cell>
+    </Row>
+    ${detailRows || `<Row><Cell ss:StyleID="rEmpty" ss:MergeAcross="19"><Data ss:Type="String">No generated payroll rows found for this month.</Data></Cell></Row>`}
+    <Row ss:Height="4"></Row>
+    <Row>
+      <Cell ss:StyleID="rTotalsLabel" ss:MergeAcross="6"><Data ss:Type="String">Monthly Totals</Data></Cell>
+      ${xmlCellNumber(summary.totals.presentSalary, "rTotalsBlue")}
+      ${xmlCellNumber(summary.totals.increment, "rTotalsPurple")}
+      ${xmlCellNumber(summary.totals.grossSalary, "rTotalsGreen")}
+      ${xmlCellNumber(summary.totals.oldAdvanceTaken, "rTotalsGold")}
+      ${xmlCellNumber(summary.totals.extraAdvanceAdded, "rTotalsGold")}
+      ${xmlCellNumber(summary.totals.totalAdvance, "rTotalsGoldStrong")}
+      ${xmlCellNumber(summary.totals.deductionEntered, "rTotalsRed")}
+      ${xmlCellNumber(summary.totals.daysAbsent, "rTotalsNumber")}
+      ${xmlCellNumber(summary.totals.proratedAbsenceDeduction, "rTotalsRed")}
+      ${xmlCellNumber(summary.totals.deductionApplied, "rTotalsRedStrong")}
+      ${xmlCellNumber(summary.totals.advanceRemained, "rTotalsGoldStrong")}
+      ${xmlCellNumber(summary.totals.netSalary, "rTotalsGreen")}
+      ${xmlCellBlank("rTotalsComment")}
+    </Row>
+  `;
+
+  const financeRows = `
+    <Row ss:Height="28"><Cell ss:StyleID="rTitle" ss:MergeAcross="5"><Data ss:Type="String">${escapeXml(`${companyName} - Finance Summary`)}</Data></Cell></Row>
+    <Row ss:Height="22"><Cell ss:StyleID="rSubtitle" ss:MergeAcross="5"><Data ss:Type="String">${escapeXml(`Payroll reconciliation for ${monthLabel}`)}</Data></Cell></Row>
+    <Row ss:Height="8"></Row>
+    <Row><Cell ss:StyleID="rSection" ss:MergeAcross="5"><Data ss:Type="String">Totals Reconciliation</Data></Cell></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Present Salary</Data></Cell><Cell ss:StyleID="rSummaryMoneyBlue"><Data ss:Type="Number">${toFixedNumber(summary.totals.presentSalary)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Deduction Entered</Data></Cell><Cell ss:StyleID="rSummaryMoneyRed"><Data ss:Type="Number">${toFixedNumber(summary.totals.deductionEntered)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Increment</Data></Cell><Cell ss:StyleID="rSummaryMoneyPurple"><Data ss:Type="Number">${toFixedNumber(summary.totals.increment)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Absence Deduction</Data></Cell><Cell ss:StyleID="rSummaryMoneyRed"><Data ss:Type="Number">${toFixedNumber(summary.totals.proratedAbsenceDeduction)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Gross Salary</Data></Cell><Cell ss:StyleID="rSummaryMoneyGreen"><Data ss:Type="Number">${toFixedNumber(summary.totals.grossSalary)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Deduction Applied</Data></Cell><Cell ss:StyleID="rSummaryMoneyRedStrong"><Data ss:Type="Number">${toFixedNumber(summary.totals.deductionApplied)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Old Advance</Data></Cell><Cell ss:StyleID="rSummaryMoneyGold"><Data ss:Type="Number">${toFixedNumber(summary.totals.oldAdvanceTaken)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Advance Remaining</Data></Cell><Cell ss:StyleID="rSummaryMoneyGold"><Data ss:Type="Number">${toFixedNumber(summary.totals.advanceRemained)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Extra Advance</Data></Cell><Cell ss:StyleID="rSummaryMoneyGold"><Data ss:Type="Number">${toFixedNumber(summary.totals.extraAdvanceAdded)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Net Salary</Data></Cell><Cell ss:StyleID="rSummaryMoneyGreenStrong"><Data ss:Type="Number">${toFixedNumber(summary.totals.netSalary)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+    <Row><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Total Advance</Data></Cell><Cell ss:StyleID="rSummaryMoneyGoldStrong"><Data ss:Type="Number">${toFixedNumber(summary.totals.totalAdvance)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/><Cell ss:StyleID="rSummaryLabel"><Data ss:Type="String">Average Net Salary</Data></Cell><Cell ss:StyleID="rSummaryMoneyGreen"><Data ss:Type="Number">${toFixedNumber(records.length ? summary.totals.netSalary / records.length : 0)}</Data></Cell><Cell ss:StyleID="rSummarySpacer"/></Row>
+  `;
+
+  const summaryColumns = [150, 170, 140, 170, 150, 160];
+  const detailColumns = [90, 150, 130, 95, 90, 90, 95, 100, 90, 100, 100, 100, 105, 110, 80, 115, 110, 115, 105, 180];
+  const financeColumns = [180, 140, 18, 180, 140, 18];
+
+  return `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Author>Routes Payroll</Author>
+    <Created>${new Date().toISOString()}</Created>
+    <Company>${escapeXml(companyName)}</Company>
+  </DocumentProperties>
+  <ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
+    <WindowHeight>12800</WindowHeight>
+    <WindowWidth>26000</WindowWidth>
+    <ProtectStructure>False</ProtectStructure>
+    <ProtectWindows>False</ProtectWindows>
+  </ExcelWorkbook>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Borders/><Font ss:FontName="Calibri" ss:Size="11" ss:Color="#0F172A"/><Interior/><NumberFormat/><Protection/></Style>
+    <Style ss:ID="rTitle"><Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#123A63" ss:Pattern="Solid"/><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0C2743"/></Borders></Style>
+    <Style ss:ID="rTitleFill"><Interior ss:Color="#123A63" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#0C2743"/></Borders></Style>
+    <Style ss:ID="rSubtitle"><Font ss:FontName="Calibri" ss:Size="11" ss:Italic="1" ss:Color="#334155"/><Interior ss:Color="#EEF5FB" ss:Pattern="Solid"/><Alignment ss:Horizontal="Left" ss:Vertical="Center"/></Style>
+    <Style ss:ID="rSection"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#123A63"/><Interior ss:Color="#E7F0F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C3D4E5"/></Borders></Style>
+    <Style ss:ID="rMetaLabel"><Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#F5F8FC" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDE7F0"/></Borders></Style>
+    <Style ss:ID="rMetaValue"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5EDF5"/></Borders></Style>
+    <Style ss:ID="rMetaValueNumber"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5EDF5"/></Borders></Style>
+    <Style ss:ID="rKpiBlueLabel"><Font ss:Bold="1" ss:Color="#0F4C81"/><Interior ss:Color="#EAF3FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CFDEEF"/></Borders></Style>
+    <Style ss:ID="rKpiBlueValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F4C81"/><Interior ss:Color="#F5FAFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CFDEEF"/></Borders></Style>
+    <Style ss:ID="rKpiGreenLabel"><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#EAF8F1" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CCE9DB"/></Borders></Style>
+    <Style ss:ID="rKpiGreenValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#F4FCF7" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CCE9DB"/></Borders></Style>
+    <Style ss:ID="rKpiGoldLabel"><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF5DB" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F2DDAB"/></Borders></Style>
+    <Style ss:ID="rKpiGoldValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF9EB" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F2DDAB"/></Borders></Style>
+    <Style ss:ID="rKpiPurpleLabel"><Font ss:Bold="1" ss:Color="#5B3FA3"/><Interior ss:Color="#F1EBFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DCD0FB"/></Borders></Style>
+    <Style ss:ID="rKpiPurpleValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#5B3FA3"/><Interior ss:Color="#F8F5FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DCD0FB"/></Borders></Style>
+    <Style ss:ID="rKpiSkyLabel"><Font ss:Bold="1" ss:Color="#0A6B8E"/><Interior ss:Color="#E7F7FD" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C7E5F2"/></Borders></Style>
+    <Style ss:ID="rKpiSkyValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0A6B8E"/><Interior ss:Color="#F3FBFE" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C7E5F2"/></Borders></Style>
+    <Style ss:ID="rKpiRedLabel"><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FDEFF1" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F1CBD1"/></Borders></Style>
+    <Style ss:ID="rKpiRedValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FFF7F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F1CBD1"/></Borders></Style>
+    <Style ss:ID="rKpiSlateLabel"><Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#F6F8FB" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/></Borders></Style>
+    <Style ss:ID="rKpiSlateValue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2EC"/></Borders></Style>
+    <Style ss:ID="rSummaryLabel"><Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryCount"><NumberFormat ss:Format="#,##0"/><Font ss:Bold="1" ss:Color="#123A63"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummarySpacer"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="rSummaryMoneyBlue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F4C81"/><Interior ss:Color="#F6FAFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyPurple"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#5B3FA3"/><Interior ss:Color="#FBF9FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyGreen"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#F5FCF8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyGreenStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#EAF8F1" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CCE9DB"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyGold"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF9EF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyGoldStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF4D6" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F2DDAB"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyRed"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FFF7F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rSummaryMoneyRedStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FDEFF1" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#F1CBD1"/></Borders></Style>
+    <Style ss:ID="rTableHeader"><Font ss:Bold="1" ss:Color="#123A63"/><Interior ss:Color="#EAF1F8" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderBlue"><Font ss:Bold="1" ss:Color="#0F4C81"/><Interior ss:Color="#EAF3FF" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderPurple"><Font ss:Bold="1" ss:Color="#5B3FA3"/><Interior ss:Color="#F1EBFF" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderGreen"><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#EAF8F1" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderGold"><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF5DB" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderRed"><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FDEFF1" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rTableHeaderAmber"><Font ss:Bold="1" ss:Color="#9A5B13"/><Interior ss:Color="#FFF4E5" ss:Pattern="Solid"/><Alignment ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D6E5"/></Borders></Style>
+    <Style ss:ID="rData"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rDataAlt"><Interior ss:Color="#FBFDFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rNumber"><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyBlue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#0F4C81"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyPurple"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#5B3FA3"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyGreen"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#F5FCF8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyGold"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#8A5A00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyGoldStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF8E8" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyRed"><NumberFormat ss:Format="#,##0.00"/><Font ss:Color="#A61B29"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyRedStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FFF4F6" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+    <Style ss:ID="rMoneyNet"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#EAF8F1" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CCE9DB"/></Borders></Style>
+    <Style ss:ID="rTotalsLabel"><Font ss:Bold="1" ss:Color="#123A63"/><Interior ss:Color="#EAF1F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsBlue"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F4C81"/><Interior ss:Color="#F5FAFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsPurple"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#5B3FA3"/><Interior ss:Color="#FBF9FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsGreen"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#0F6B46"/><Interior ss:Color="#EDF9F1" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsGold"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFFAEE" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsGoldStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#8A5A00"/><Interior ss:Color="#FFF2CE" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsRed"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FFF7F8" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsRedStrong"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#A61B29"/><Interior ss:Color="#FDEFF1" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsNumber"><NumberFormat ss:Format="#,##0.00"/><Font ss:Bold="1" ss:Color="#334155"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rTotalsComment"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFD0E0"/></Borders></Style>
+    <Style ss:ID="rEmpty"><Font ss:Bold="1" ss:Color="#64748B"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders></Style>
+  </Styles>
+  <Worksheet ss:Name="Summary">
+    <Table>
+      ${summaryColumns.map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`).join("")}
+      ${summaryRows}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane><ActivePane>2</ActivePane><Panes><Pane><Number>3</Number></Pane></Panes></WorksheetOptions>
+  </Worksheet>
+  <Worksheet ss:Name="Employee Details">
+    <Table>
+      ${detailColumns.map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`).join("")}
+      ${detailSheetRows}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane><ActivePane>2</ActivePane><Panes><Pane><Number>3</Number></Pane></Panes></WorksheetOptions>
+  </Worksheet>
+  <Worksheet ss:Name="Finance Summary">
+    <Table>
+      ${financeColumns.map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`).join("")}
+      ${financeRows}
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane><ActivePane>2</ActivePane><Panes><Pane><Number>3</Number></Pane></Panes></WorksheetOptions>
+  </Worksheet>
+</Workbook>`;
+}
+
+function buildPairedSummaryRows(leftRows, rightRows) {
+  const total = Math.max(leftRows.length, rightRows.length);
+  const rows = [];
+  for (let index = 0; index < total; index += 1) {
+    const left = leftRows[index] || [xmlCellBlank("rSummaryLabel"), xmlCellBlank("rSummaryCount"), xmlCellBlank("rSummarySpacer")];
+    const right = rightRows[index] || [xmlCellBlank("rSummaryLabel"), xmlCellBlank("rSummaryCount"), xmlCellBlank("rSummarySpacer")];
+    rows.push(`<Row>${left.join("")}${right.join("")}</Row>`);
+  }
+  if (!rows.length) {
+    rows.push(`<Row><Cell ss:StyleID="rEmpty" ss:MergeAcross="5"><Data ss:Type="String">No summary data available.</Data></Cell></Row>`);
+  }
+  return rows;
 }
 
 function makeExcelSpreadsheet(records, month) {
@@ -2655,6 +3580,11 @@ function xmlCellString(value, styleId) {
 function xmlCellNumber(value, styleId) {
   const style = styleId ? ` ss:StyleID="${styleId}"` : "";
   return `<Cell${style}><Data ss:Type="Number">${toFixedNumber(value)}</Data></Cell>`;
+}
+
+function xmlCellBlank(styleId) {
+  const style = styleId ? ` ss:StyleID="${styleId}"` : "";
+  return `<Cell${style}/>`;
 }
 
 function toFixedNumber(value) {
