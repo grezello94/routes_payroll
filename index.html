@@ -385,6 +385,17 @@
                 <button id="importLegacyBtn" type="button">Analyze & Import</button>
                 <p id="importLegacySummary" class="settings-inline-summary"></p>
               </article>
+
+              <article class="settings-card">
+                <h3>Monthly Emergency Backup</h3>
+                <p>Creates one server-side JSON backup on the last calendar day of each month while the app is running, so you have an emergency recovery file ready.</p>
+                <div id="backupStatusSummary" class="settings-inline-summary">Loading monthly backup status...</div>
+                <div class="settings-inline">
+                  <button id="refreshBackupStatusBtn" type="button" class="ghost">Refresh Status</button>
+                  <button id="downloadLatestBackupBtn" type="button" class="ghost">Download Latest Backup</button>
+                </div>
+                <div id="backupRecentList" class="designation-list"></div>
+              </article>
             </div>
 
             <p id="settingsMessage" class="status-msg"></p>
@@ -465,6 +476,32 @@
               </div>
             </article>
 
+            <article class="settings-card">
+              <div class="error-log-head">
+                <div>
+                  <h3>Error Log</h3>
+                  <p>Automatic app error history with timestamps so issues do not disappear after the popup closes.</p>
+                </div>
+                <div class="error-log-actions">
+                  <span id="errorLogCount" class="error-log-count">0 entries</span>
+                  <button id="clearErrorLogsBtn" class="mini ghost" type="button">Clear Logs</button>
+                </div>
+              </div>
+              <div class="employee-list-wrap">
+                <table>
+                  <thead>
+                    <tr class="detail-row">
+                      <th>When</th>
+                      <th>Source</th>
+                      <th>Message</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="errorLogBody"></tbody>
+                </table>
+              </div>
+            </article>
+
             <p id="reportsMessage" class="status-msg"></p>
           </section>
 
@@ -477,7 +514,6 @@
                 <span><i class="dot gross"></i>Gross</span>
                 <span><i class="dot deduction"></i>Deductions</span>
               </p>
-              <p id="payrollWorkflowMessage" class="status-msg"></p>
             </div>
             <div id="payrollBody" class="payroll-cards"></div>
           </section>
@@ -497,7 +533,7 @@
         <div id="payslipPreview" class="payslip-preview"></div>
         <div class="dialog-actions">
           <button id="printPayslipBtn">Print / Save PDF</button>
-          <button id="downloadPayslipBtn" class="ghost">Download TXT</button>
+          <button id="downloadPayslipBtn" class="ghost">Save PDF</button>
           <button id="shareWebBtn" class="ghost">Share</button>
           <button id="shareWhatsappBtn" class="ghost">WhatsApp</button>
           <button id="shareMessengerBtn" class="ghost">Messenger</button>
@@ -528,6 +564,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260408f"></script>
+    <script src="app.js?v=20260410b"></script>
   </body>
 </html>

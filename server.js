@@ -1,4 +1,5 @@
 const express = require("express");
+const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
@@ -117,6 +118,138 @@ function fallbackCompanies() {
       logo_data_url: "",
     },
   ];
+}
+
+const MONTHLY_BACKUP_DIR = path.join(__dirname, "data", "monthly-backups");
+
+function ensureMonthlyBackupDir() {
+  fs.mkdirSync(MONTHLY_BACKUP_DIR, { recursive: true });
+}
+
+function monthIsoFromDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isLastCalendarDay(date) {
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  return date.getDate() === lastDay;
+}
+
+function nextScheduledBackupDate(date = new Date()) {
+  const candidate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  if (date.getDate() <= candidate.getDate() && !isLastCalendarDay(date)) {
+    return candidate;
+  }
+  return new Date(date.getFullYear(), date.getMonth() + 2, 0);
+}
+
+function parseBackupFilename(fileName) {
+  const match = String(fileName || "").match(/^monthly-backup-(\d{4}-\d{2})-(.+)\.json$/);
+  if (!match) return null;
+  return {
+    month: match[1],
+    stamp: match[2],
+  };
+}
+
+function listMonthlyBackupFiles() {
+  ensureMonthlyBackupDir();
+  return fs.readdirSync(MONTHLY_BACKUP_DIR)
+    .filter((fileName) => fileName.endsWith(".json"))
+    .map((fileName) => {
+      const parsed = parseBackupFilename(fileName);
+      if (!parsed) return null;
+      const fullPath = path.join(MONTHLY_BACKUP_DIR, fileName);
+      const stats = fs.statSync(fullPath);
+      return {
+        fileName,
+        fullPath,
+        month: parsed.month,
+        createdAt: stats.mtime.toISOString(),
+        sizeBytes: Number(stats.size || 0),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+async function getSystemBackupPayload() {
+  const companies = await store.listCompaniesById();
+  const rows = await store.listPayrollEntriesAll();
+  const employees = [];
+  const designations = [];
+  for (const company of companies) {
+    // eslint-disable-next-line no-await-in-loop
+    const companyEmployees = await store.listEmployeesByCompany(company.id);
+    employees.push(...companyEmployees.map(dbRowToEmployee));
+    // eslint-disable-next-line no-await-in-loop
+    const companyDesignations = await store.listDesignationPresets(company.id);
+    designations.push(...companyDesignations.map(dbRowToDesignation));
+  }
+
+  return {
+    companies: companies.map((company) => ({
+      id: company.id,
+      name: company.name,
+      logoDataUrl: company.logo_data_url || "",
+    })),
+    employees,
+    designations,
+    entries: rows.map(dbRowToRecord),
+  };
+}
+
+async function ensureMonthlyEmergencyBackup({ force = false } = {}) {
+  const now = new Date();
+  const currentMonth = monthIsoFromDate(now);
+  const recentFiles = listMonthlyBackupFiles();
+  const currentMonthBackup = recentFiles.find((item) => item.month === currentMonth) || null;
+  const dueToday = isLastCalendarDay(now);
+
+  if (!force && !dueToday) {
+    return {
+      createdThisCheck: false,
+      hasCurrentMonthBackup: Boolean(currentMonthBackup),
+      latestBackup: recentFiles[0] || null,
+      recentBackups: recentFiles.slice(0, 12),
+      isLastDayOfMonth: false,
+      nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
+    };
+  }
+
+  if (!force && currentMonthBackup) {
+    return {
+      createdThisCheck: false,
+      hasCurrentMonthBackup: true,
+      latestBackup: recentFiles[0] || null,
+      recentBackups: recentFiles.slice(0, 12),
+      isLastDayOfMonth: dueToday,
+      nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
+    };
+  }
+
+  const payload = await getSystemBackupPayload();
+  ensureMonthlyBackupDir();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  const fileName = `monthly-backup-${currentMonth}-${stamp}.json`;
+  const fullPath = path.join(MONTHLY_BACKUP_DIR, fileName);
+  const backupEnvelope = {
+    kind: "routes-payroll-monthly-emergency-backup",
+    createdAt: now.toISOString(),
+    backupMonth: currentMonth,
+    provider: store.provider,
+    payload,
+  };
+  fs.writeFileSync(fullPath, JSON.stringify(backupEnvelope, null, 2), "utf8");
+  const updatedFiles = listMonthlyBackupFiles();
+  return {
+    createdThisCheck: true,
+    hasCurrentMonthBackup: true,
+    latestBackup: updatedFiles[0] || null,
+    recentBackups: updatedFiles.slice(0, 12),
+    isLastDayOfMonth: dueToday,
+    nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
+  };
 }
 
 function authProvider() {
@@ -522,7 +655,7 @@ function normalizeRecord(record, index) {
     oldAdvanceTaken: Math.max(0, toNumber(record.oldAdvanceTaken)),
     extraAdvanceAdded: Math.max(0, toNumber(record.extraAdvanceAdded)),
     deductionEntered: Math.max(0, toNumber(record.deductionEntered)),
-    daysAbsent: clamp(toNumber(record.daysAbsent), 0, 30),
+    daysAbsent: clamp(toNumber(record.daysAbsent), 0, 31),
     comment: sanitizeText(record.comment, 350),
     positionIndex: Number.isFinite(Number(record.positionIndex)) ? Number(record.positionIndex) : index,
   };
@@ -626,23 +759,10 @@ function parseSnapshotJson(value) {
 }
 
 async function buildPayrollReportSnapshot(month, companyId) {
-  const [company, rows, employees] = await Promise.all([
+  const [company, records] = await Promise.all([
     store.getCompanyById(companyId),
-    store.listPayrollByMonthCompany(month, companyId),
-    store.listEmployeesByCompany(companyId),
+    listMergedPayrollMonthRecords(month, companyId),
   ]);
-  const employeeById = new Map(employees.map((employee) => [String(employee.employee_id || ""), employee]));
-  const records = rows.map((row) => {
-    const record = dbRowToRecord(row);
-    const employee = employeeById.get(String(row.employee_id || ""));
-    return {
-      ...record,
-      employeeStatus: employee?.status || "working",
-      leaveFrom: employee?.leave_from || "",
-      leaveTo: employee?.leave_to || "",
-      terminatedOn: employee?.terminated_on || "",
-    };
-  });
 
   return {
     company: {
@@ -655,6 +775,66 @@ async function buildPayrollReportSnapshot(month, companyId) {
   };
 }
 
+async function listMergedPayrollMonthRecords(month, companyId) {
+  const [rows, employees] = await Promise.all([
+    store.listPayrollByMonthCompany(month, companyId),
+    store.listEmployeesByCompany(companyId),
+  ]);
+  const employeeByEmployeeId = new Map(
+    employees.map((employee) => [String(employee.employee_id || ""), employee])
+  );
+  const prevMonth = previousMonthIso(month);
+  const previousRows = prevMonth ? await store.listPayrollByMonthCompany(prevMonth, companyId) : [];
+  const previousByEmployeeId = new Map(previousRows.map((row) => [String(row.employee_id || ""), row]));
+  const byEmployeeId = new Map(rows.map((row) => [String(row.employee_id || ""), row]));
+  const records = [];
+
+  employees.forEach((employee, index) => {
+    const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
+    const previous = previousByEmployeeId.get(String(employee.employee_id || "")) || null;
+    const carriedAdvance = previous ? advanceRemainedFromPayrollRow(previous) : null;
+    records.push({
+      id: linked?.id || null,
+      companyId,
+      month,
+      employeeId: employee.employee_id,
+      employeeName: employee.employee_name,
+      joiningDate: employee.joining_date || "",
+      designation: employee.designation || "",
+      presentSalary: Number(employee.base_salary || 0),
+      increment: linked?.increment ?? 0,
+      oldAdvanceTaken: linked?.old_advance_taken ?? (carriedAdvance ?? Number(employee.opening_advance || 0)),
+      extraAdvanceAdded: linked?.extra_advance_added ?? 0,
+      deductionEntered: linked?.deduction_entered ?? 0,
+      daysAbsent: linked?.days_absent ?? 0,
+      comment: linked?.comment || "",
+      positionIndex: Number(employee.position_index ?? index),
+      employeeStatus: employee.status || "working",
+      leaveFrom: employee.leave_from || "",
+      leaveTo: employee.leave_to || "",
+      terminatedOn: employee.terminated_on || "",
+    });
+    byEmployeeId.delete(String(employee.employee_id || ""));
+  });
+
+  for (const extra of byEmployeeId.values()) {
+    const linkedEmployee = employeeByEmployeeId.get(String(extra.employee_id || ""));
+    if (!linkedEmployee) {
+      continue;
+    }
+    records.push({
+      ...dbRowToRecord(extra),
+      joiningDate: linkedEmployee?.joining_date || "",
+      employeeStatus: linkedEmployee?.status || "working",
+      leaveFrom: linkedEmployee?.leave_from || "",
+      leaveTo: linkedEmployee?.leave_to || "",
+      terminatedOn: linkedEmployee?.terminated_on || "",
+    });
+  }
+
+  return records;
+}
+
 async function buildPayrollReportRecord(month, companyId, employeeId) {
   const snapshot = await buildPayrollReportSnapshot(month, companyId);
   const record = (snapshot.records || []).find((item) => String(item.employeeId || "") === String(employeeId || ""));
@@ -663,6 +843,32 @@ async function buildPayrollReportRecord(month, companyId, employeeId) {
     company: snapshot.company,
     month: snapshot.month,
     record,
+  };
+}
+
+async function ensurePayrollCheckedForMonth(month, companyId) {
+  const snapshot = await buildPayrollReportSnapshot(month, companyId);
+  if (!Array.isArray(snapshot.records) || snapshot.records.length === 0) {
+    const error = new Error("No payroll rows found for this month.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+  if (existing?.checked_at) {
+    return {
+      checkedAt: String(existing.checked_at || ""),
+      reportId: existing.id,
+      snapshot,
+    };
+  }
+
+  const checkedAt = new Date().toISOString();
+  const result = await store.markPayrollChecked(month, companyId, checkedAt);
+  return {
+    checkedAt,
+    reportId: result.id,
+    snapshot,
   };
 }
 
@@ -1351,31 +1557,34 @@ app.delete("/api/settings/designations/:id", authMiddleware, async (req, res) =>
 
 app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
   try {
-    const companies = await store.listCompaniesById();
-    const rows = await store.listPayrollEntriesAll();
-    const employees = [];
-    const designations = [];
-    for (const company of companies) {
-      // eslint-disable-next-line no-await-in-loop
-      const companyEmployees = await store.listEmployeesByCompany(company.id);
-      employees.push(...companyEmployees.map(dbRowToEmployee));
-      // eslint-disable-next-line no-await-in-loop
-      const companyDesignations = await store.listDesignationPresets(company.id);
-      designations.push(...companyDesignations.map(dbRowToDesignation));
-    }
-
-    res.json({
-      companies: companies.map((company) => ({
-        id: company.id,
-        name: company.name,
-        logoDataUrl: company.logo_data_url || "",
-      })),
-      employees,
-      designations,
-      entries: rows.map(dbRowToRecord),
-    });
+    res.json(await getSystemBackupPayload());
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch payroll backup data." });
+  }
+});
+
+app.get("/api/system-backups/status", authMiddleware, async (_req, res) => {
+  try {
+    const status = await ensureMonthlyEmergencyBackup();
+    res.json(status);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch monthly backup status." });
+  }
+});
+
+app.get("/api/system-backups/latest", authMiddleware, async (_req, res) => {
+  try {
+    const recent = listMonthlyBackupFiles();
+    const latest = recent[0];
+    if (!latest) {
+      res.status(404).json({ error: "No monthly emergency backup found yet." });
+      return;
+    }
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="${latest.fileName}"`);
+    res.sendFile(latest.fullPath);
+  } catch {
+    res.status(500).json({ error: "Failed to download monthly backup." });
   }
 });
 
@@ -1453,21 +1662,12 @@ app.post("/api/payroll-reports/generate", authMiddleware, async (req, res) => {
   if (!companyId) return;
 
   try {
-    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
-    if (!existing?.checked_at) {
-      res.status(400).json({ error: "Mark payroll as checked before generating payslips." });
-      return;
-    }
-
-    const snapshot = await buildPayrollReportSnapshot(month, companyId);
-    if (!Array.isArray(snapshot.records) || snapshot.records.length === 0) {
-      res.status(400).json({ error: "No payroll rows found for this month." });
-      return;
-    }
+    const ensured = await ensurePayrollCheckedForMonth(month, companyId);
+    const snapshot = ensured.snapshot;
 
     const generatedAt = new Date().toISOString();
     const saved = await store.savePayrollReportSnapshot(month, companyId, {
-      checkedAt: String(existing.checked_at || ""),
+      checkedAt: ensured.checkedAt,
       generatedAt,
       employeeCount: snapshot.records.length,
       snapshot,
@@ -1498,14 +1698,15 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
   if (!companyId) return;
 
   try {
-    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+    const ensured = await ensurePayrollCheckedForMonth(month, companyId);
     const payload = await buildPayrollReportRecord(month, companyId, employeeId);
     if (!payload?.record) {
       res.status(404).json({ error: "Payroll record not found for this employee." });
       return;
     }
 
-    const existingSnapshot = parseSnapshotJson(existing.snapshot_json);
+    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+    const existingSnapshot = parseSnapshotJson(existing?.snapshot_json);
     const existingRecords = Array.isArray(existingSnapshot.records) ? existingSnapshot.records : [];
     const mergedByEmployee = new Map(existingRecords.map((record) => [String(record.employeeId || ""), record]));
     mergedByEmployee.set(String(payload.record.employeeId || ""), payload.record);
@@ -1518,7 +1719,7 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
     };
     const generatedAt = new Date().toISOString();
     const saved = await store.savePayrollReportSnapshot(month, companyId, {
-      checkedAt: String(existing?.checked_at || ""),
+      checkedAt: ensured.checkedAt,
       generatedAt,
       employeeCount: records.length,
       snapshot,
@@ -1529,7 +1730,11 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
       snapshot,
       generatedEmployeeId: payload.record.employeeId,
     });
-  } catch {
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Failed to generate payslip for this employee." });
   }
 });
@@ -1633,63 +1838,7 @@ app.get("/api/payroll/:month", authMiddleware, async (req, res) => {
   if (!companyId) return;
 
   try {
-    const rows = await store.listPayrollByMonthCompany(month, companyId);
-    const employees = await store.listEmployeesByCompany(companyId);
-    const employeeByEmployeeId = new Map(
-      employees.map((employee) => [String(employee.employee_id || ""), employee])
-    );
-    const prevMonth = previousMonthIso(month);
-    const previousRows = prevMonth ? await store.listPayrollByMonthCompany(prevMonth, companyId) : [];
-    const previousByEmployeeId = new Map(previousRows.map((row) => [String(row.employee_id || ""), row]));
-    const byEmployeeId = new Map(rows.map((row) => [String(row.employee_id || ""), row]));
-    const records = [];
-
-    employees.forEach((employee, index) => {
-      const status = normalizeEmploymentStatus(employee.status);
-      if (status === "terminated" || status === "leave") {
-        return;
-      }
-      const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
-      const previous = previousByEmployeeId.get(String(employee.employee_id || "")) || null;
-      const carriedAdvance = previous ? advanceRemainedFromPayrollRow(previous) : null;
-      records.push({
-        id: linked?.id || null,
-        companyId,
-        month,
-        employeeId: employee.employee_id,
-        employeeName: employee.employee_name,
-        designation: employee.designation || "",
-        presentSalary: Number(employee.base_salary || 0),
-        increment: linked?.increment ?? 0,
-        oldAdvanceTaken: linked?.old_advance_taken ?? (carriedAdvance ?? Number(employee.opening_advance || 0)),
-        extraAdvanceAdded: linked?.extra_advance_added ?? 0,
-        deductionEntered: linked?.deduction_entered ?? 0,
-        daysAbsent: linked?.days_absent ?? 0,
-        comment: linked?.comment || "",
-        positionIndex: Number(employee.position_index ?? index),
-        employeeStatus: employee.status || "working",
-        leaveFrom: employee.leave_from || "",
-        leaveTo: employee.leave_to || "",
-        terminatedOn: employee.terminated_on || "",
-      });
-      byEmployeeId.delete(String(employee.employee_id || ""));
-    });
-
-    for (const extra of byEmployeeId.values()) {
-      const linkedEmployee = employeeByEmployeeId.get(String(extra.employee_id || ""));
-      const status = normalizeEmploymentStatus(linkedEmployee?.status || extra.employee_status);
-      if (!linkedEmployee || status === "terminated" || status === "leave") {
-        continue;
-      }
-      records.push({
-        ...dbRowToRecord(extra),
-        employeeStatus: linkedEmployee?.status || "working",
-        leaveFrom: linkedEmployee?.leave_from || "",
-        leaveTo: linkedEmployee?.leave_to || "",
-        terminatedOn: linkedEmployee?.terminated_on || "",
-      });
-    }
-
+    const records = await listMergedPayrollMonthRecords(month, companyId);
     res.json({ records });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch payroll month data." });

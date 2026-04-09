@@ -1,6 +1,7 @@
 const STORAGE_KEYS = {
   authToken: "routes_payroll_auth_token_v1",
   payrollMonthMode: "routes_payroll_month_mode_v1",
+  errorLogs: "routes_payroll_error_logs_v1",
 };
 
 const SELECTORS = {
@@ -87,6 +88,10 @@ const SELECTORS = {
   legacyImportInput: document.getElementById("legacyImportInput"),
   importLegacyBtn: document.getElementById("importLegacyBtn"),
   importLegacySummary: document.getElementById("importLegacySummary"),
+  backupStatusSummary: document.getElementById("backupStatusSummary"),
+  refreshBackupStatusBtn: document.getElementById("refreshBackupStatusBtn"),
+  downloadLatestBackupBtn: document.getElementById("downloadLatestBackupBtn"),
+  backupRecentList: document.getElementById("backupRecentList"),
   changePasswordForm: document.getElementById("changePasswordForm"),
   newPasswordInput: document.getElementById("newPasswordInput"),
   confirmPasswordInput: document.getElementById("confirmPasswordInput"),
@@ -95,6 +100,9 @@ const SELECTORS = {
   leaveResumeReportBody: document.getElementById("leaveResumeReportBody"),
   reportsMessage: document.getElementById("reportsMessage"),
   reportsSummaryCards: document.getElementById("reportsSummaryCards"),
+  errorLogBody: document.getElementById("errorLogBody"),
+  errorLogCount: document.getElementById("errorLogCount"),
+  clearErrorLogsBtn: document.getElementById("clearErrorLogsBtn"),
   generatedPayrollBody: document.getElementById("generatedPayrollBody"),
   generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
   generatedPayrollEmployeesBody: document.getElementById("generatedPayrollEmployeesBody"),
@@ -130,6 +138,8 @@ let serverReconnectInFlight = false;
 let payrollReports = [];
 let activePayrollReportId = null;
 let activePayrollReportSnapshot = null;
+let errorLogs = readStoredErrorLogs();
+let backupStatus = null;
 
 init();
 
@@ -139,7 +149,9 @@ async function init() {
   wireEmployeeManagement();
   wireAppActions();
   wireSettingsActions();
+  wireGlobalErrorLogging();
   setDefaultMonth();
+  renderErrorLogs();
   registerServiceWorker();
   wireInstallPrompt();
   await updateAuthView();
@@ -584,7 +596,7 @@ function renderEmployeeTable() {
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
           <td>${formatCurrency(Number(employee.baseSalary || 0))}</td>
-          <td>${formatCurrency(advanceRemainedDisplay)}</td>
+          <td><span class="${advanceRemainedDisplay > 0 ? "advance-remained-alert" : ""}">${formatCurrency(advanceRemainedDisplay)}</span></td>
           <td><span class="${statusClass}">${statusLabel}</span></td>
           <td>${escapeHtml(employee.leaveFrom || "-")}</td>
           <td>${escapeHtml(employee.leaveTo || "-")}</td>
@@ -657,6 +669,209 @@ function setPayrollWorkflowMessage(message) {
   if (SELECTORS.payrollWorkflowMessage) {
     SELECTORS.payrollWorkflowMessage.textContent = message || "";
   }
+}
+
+function readStoredErrorLogs() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.errorLogs);
+    const parsed = JSON.parse(String(raw || "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistErrorLogs() {
+  try {
+    localStorage.setItem(STORAGE_KEYS.errorLogs, JSON.stringify(errorLogs.slice(0, 200)));
+  } catch {
+    // Ignore storage quota issues for logging.
+  }
+}
+
+function formatLogDetails(context) {
+  if (!context || typeof context !== "object") return "";
+  const fields = [];
+  if (context.status) fields.push(`Status ${context.status}`);
+  if (context.url) fields.push(String(context.url));
+  if (context.action) fields.push(String(context.action));
+  if (context.detail) fields.push(String(context.detail));
+  return fields.join(" • ");
+}
+
+function recordAppError(message, source = "app", context = {}) {
+  const text = String(message || "").trim();
+  if (!text) return;
+
+  const now = new Date().toISOString();
+  const fingerprint = text;
+  const latest = errorLogs[0];
+  if (latest && latest.fingerprint === fingerprint) {
+    const delta = Date.parse(now) - Date.parse(latest.createdAt || 0);
+    if (Number.isFinite(delta) && delta >= 0 && delta < 8000) {
+      latest.createdAt = now;
+      latest.count = Number(latest.count || 1) + 1;
+      latest.source = source || latest.source || "app";
+      latest.context = { ...(latest.context || {}), ...(context || {}) };
+      persistErrorLogs();
+      renderErrorLogs();
+      return;
+    }
+  }
+
+  errorLogs.unshift({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    fingerprint,
+    createdAt: now,
+    source,
+    message: text,
+    context,
+    count: 1,
+  });
+  errorLogs = errorLogs.slice(0, 200);
+  persistErrorLogs();
+  renderErrorLogs();
+}
+
+function renderErrorLogs() {
+  if (!SELECTORS.errorLogBody || !SELECTORS.errorLogCount) return;
+  const entries = Array.isArray(errorLogs) ? errorLogs : [];
+  SELECTORS.errorLogCount.textContent = `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`;
+
+  if (!entries.length) {
+    SELECTORS.errorLogBody.innerHTML = `
+      <tr><td colspan="4" class="empty">No errors logged yet. App and API issues will appear here automatically.</td></tr>
+    `;
+    return;
+  }
+
+  SELECTORS.errorLogBody.innerHTML = entries
+    .map((entry) => `
+      <tr>
+        <td>
+          <div class="error-log-time">${escapeHtml(formatDateTime(entry.createdAt || ""))}</div>
+          ${Number(entry.count || 1) > 1 ? `<div class="error-log-repeat">${escapeHtml(`${entry.count} times`)}</div>` : ""}
+        </td>
+        <td><span class="error-log-source">${escapeHtml(String(entry.source || "app"))}</span></td>
+        <td><div class="error-log-message">${escapeHtml(String(entry.message || ""))}</div></td>
+        <td><div class="error-log-detail">${escapeHtml(formatLogDetails(entry.context)) || "-"}</div></td>
+      </tr>
+    `)
+    .join("");
+}
+
+function formatBackupScheduleDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function renderBackupStatus() {
+  if (!SELECTORS.backupStatusSummary || !SELECTORS.backupRecentList) return;
+  const status = backupStatus;
+  if (!status) {
+    SELECTORS.backupStatusSummary.textContent = "Monthly backup status is not loaded yet.";
+    SELECTORS.backupRecentList.innerHTML = '<p class="empty">No backup status loaded.</p>';
+    return;
+  }
+
+  const latest = status.latestBackup || null;
+  const latestText = latest
+    ? `Latest backup: ${formatDateTime(latest.createdAt)} (${latest.month}).`
+    : "No monthly backup file has been created yet.";
+  const scheduleText = status.isLastDayOfMonth
+    ? (status.createdThisCheck ? "Auto backup ran during this check." : status.hasCurrentMonthBackup ? "This month's backup is already complete." : "Backup is due today and will run when refresh is triggered.")
+    : `Next scheduled backup date: ${formatBackupScheduleDate(status.nextScheduledDate)}.`;
+  SELECTORS.backupStatusSummary.textContent = `${latestText} ${scheduleText}`;
+
+  const recent = Array.isArray(status.recentBackups) ? status.recentBackups : [];
+  if (!recent.length) {
+    SELECTORS.backupRecentList.innerHTML = '<p class="empty">No monthly backup files yet.</p>';
+    return;
+  }
+
+  SELECTORS.backupRecentList.innerHTML = recent
+    .map((item) => `
+      <div class="designation-item">
+        <span>${escapeHtml(`${item.month} • ${formatDateTime(item.createdAt)}`)}</span>
+        <small>${escapeHtml(String(item.fileName || ""))}</small>
+      </div>
+    `)
+    .join("");
+}
+
+async function loadBackupStatus() {
+  try {
+    const response = await apiRequest("/api/system-backups/status");
+    backupStatus = response || null;
+    renderBackupStatus();
+  } catch (error) {
+    backupStatus = null;
+    renderBackupStatus();
+    recordAppError(error.message, "backup");
+  }
+}
+
+async function downloadLatestEmergencyBackup() {
+  try {
+    const response = await fetch("/api/system-backups/latest", {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Request failed (${response.status}).`);
+    }
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const filename = match?.[1] || `routes-payroll-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const blob = await response.blob();
+    downloadBlob(blob, filename);
+    showAppMessage("Monthly emergency backup downloaded.");
+  } catch (error) {
+    showAppMessage(error.message || "Failed to download latest backup.");
+  }
+}
+
+function clearErrorLogs() {
+  errorLogs = [];
+  try {
+    localStorage.removeItem(STORAGE_KEYS.errorLogs);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+  renderErrorLogs();
+}
+
+function isErrorLikeMessage(message) {
+  const text = String(message || "").toLowerCase();
+  if (!text) return false;
+  return text.includes("failed")
+    || text.includes("error")
+    || text.includes("invalid")
+    || text.includes("not found")
+    || text.includes("not reachable")
+    || text.includes("blocked")
+    || text.includes("timed out")
+    || text.includes("quota")
+    || text.includes("denied");
+}
+
+function wireGlobalErrorLogging() {
+  window.addEventListener("error", (event) => {
+    recordAppError(event?.message || "Unexpected browser error.", "browser", {
+      detail: event?.filename ? `${event.filename}:${event.lineno || 0}` : "",
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event?.reason;
+    const message = reason?.message || String(reason || "Unhandled promise rejection.");
+    recordAppError(message, "browser", {
+      detail: "Unhandled promise rejection",
+    });
+  });
 }
 
 function renderDashboardInsights() {
@@ -912,7 +1127,7 @@ function renderGeneratedPayrollReports() {
           <td>
             <div class="row-actions">
               <button type="button" class="mini ghost icon-mini" title="View Payslip" aria-label="View Payslip" data-report-index="${index}" data-action="preview">&#128065;</button>
-              <button type="button" class="mini ghost icon-mini" title="Download Payslip" aria-label="Download Payslip" data-report-index="${index}" data-action="download">&#8681;</button>
+              <button type="button" class="mini ghost icon-mini" title="Save Payslip PDF" aria-label="Save Payslip PDF" data-report-index="${index}" data-action="download">&#8681;</button>
               <button type="button" class="mini icon-mini" title="Print or Save PDF" aria-label="Print or Save PDF" data-report-index="${index}" data-action="print">&#128424;</button>
             </div>
           </td>
@@ -925,6 +1140,7 @@ function renderGeneratedPayrollReports() {
 }
 
 function setEmployeeMessage(message) {
+  if (!SELECTORS.employeeMessage) return;
   applyStatusTone(SELECTORS.employeeMessage, message);
   SELECTORS.employeeMessage.textContent = message || "";
 }
@@ -977,6 +1193,11 @@ function settingsApiErrorMessage(error) {
 function wireAppActions() {
   wireRailActions();
   wireCompanyActions();
+
+  SELECTORS.clearErrorLogsBtn?.addEventListener("click", () => {
+    clearErrorLogs();
+    showAppMessage("Error logs cleared.");
+  });
 
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
@@ -1137,7 +1358,7 @@ function wireAppActions() {
 
   SELECTORS.closePayslipBtn.addEventListener("click", () => SELECTORS.payslipDialog.close());
   SELECTORS.printPayslipBtn.addEventListener("click", printCurrentPayslip);
-  SELECTORS.downloadPayslipBtn.addEventListener("click", downloadCurrentPayslipText);
+  SELECTORS.downloadPayslipBtn.addEventListener("click", downloadCurrentPayslipPdf);
   SELECTORS.shareWhatsappBtn.addEventListener("click", shareCurrentPayslipWhatsapp);
   SELECTORS.shareMessengerBtn.addEventListener("click", shareCurrentPayslipMessenger);
   SELECTORS.shareWebBtn.addEventListener("click", shareCurrentPayslipWeb);
@@ -1177,12 +1398,21 @@ function wireAppActions() {
       return;
     }
     if (button.dataset.action === "download") {
-      downloadCurrentPayslipText();
+      downloadCurrentPayslipPdf();
     }
   });
 }
 
 function wireSettingsActions() {
+  SELECTORS.refreshBackupStatusBtn?.addEventListener("click", async () => {
+    await loadBackupStatus();
+    showAppMessage("Monthly backup status refreshed.");
+  });
+
+  SELECTORS.downloadLatestBackupBtn?.addEventListener("click", async () => {
+    await downloadLatestEmergencyBackup();
+  });
+
   SELECTORS.verifyEmailBtn?.addEventListener("click", async () => {
     const button = SELECTORS.verifyEmailBtn;
     try {
@@ -1505,6 +1735,11 @@ function wireSettingsActions() {
         setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... ${safePercent}%${label ? ` (${label})` : ""}`);
       });
 
+      const latestImportedMonth = analyzed.months?.length ? analyzed.months[analyzed.months.length - 1] : "";
+      if (latestImportedMonth && SELECTORS.monthPicker) {
+        SELECTORS.monthPicker.value = latestImportedMonth;
+      }
+
       await Promise.all([
         loadDesignationPresets(),
         loadEmployees(),
@@ -1702,6 +1937,7 @@ function wireRailActions() {
       if (action === "settings") {
         setWorkspace("settings");
         SELECTORS.settingsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        loadBackupStatus();
         setTimeout(() => {
           SELECTORS.designationPresetInput?.focus();
         }, 220);
@@ -1817,6 +2053,7 @@ async function switchToApp() {
     loadMonthRecords(),
     loadDesignationPresets(),
     loadPayrollReports(),
+    loadBackupStatus(),
   ]);
   setWorkspace("dashboard");
   SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
@@ -2103,12 +2340,47 @@ function daysBeforeResumeInMonth(record, month) {
   if (!resumedOn) return 0;
   const { start, end } = monthBounds(month);
   if (resumedOn <= start) return 0;
-  if (resumedOn > end) return 30;
-  return clamp(resumedOn.getDate() - 1, 0, 30);
+  const monthDays = end.getDate();
+  if (resumedOn > end) return monthDays;
+  return clamp(resumedOn.getDate() - 1, 0, monthDays);
+}
+
+function payrollMonthDayCount(month) {
+  return monthBounds(month).end.getDate();
+}
+
+function daysWorkedFromDateInMonth(date, month) {
+  if (!date) return 0;
+  const { start, end } = monthBounds(month);
+  if (date > end) return 0;
+  const effectiveStart = date < start ? start : date;
+  return clamp(end.getDate() - effectiveStart.getDate() + 1, 0, end.getDate());
+}
+
+function systemWorkedDaysInMonth(record, month) {
+  const status = String(record.employeeStatus || "working").toLowerCase();
+  if (status === "leave" || status === "terminated") return 0;
+
+  const monthDays = payrollMonthDayCount(month);
+  const joiningDate = parseIsoDate(record.joiningDate);
+  const resumedOn = status === "resumed" ? parseIsoDate(record.leaveTo) : null;
+  const candidateDates = [];
+
+  if (joiningDate) candidateDates.push(joiningDate);
+  if (resumedOn) candidateDates.push(resumedOn);
+
+  if (candidateDates.length === 0) return monthDays;
+
+  let workedDays = monthDays;
+  for (const candidate of candidateDates) {
+    workedDays = Math.min(workedDays, daysWorkedFromDateInMonth(candidate, month));
+  }
+  return clamp(workedDays, 0, monthDays);
 }
 
 function computePayroll(record, month = getSelectedMonth()) {
   const blocked = isPayrollBlocked(record, month);
+  const monthDays = payrollMonthDayCount(month);
   const presentSalary = blocked ? 0 : toMoney(record.presentSalary);
   const increment = blocked ? 0 : toMoney(record.increment);
   const grossSalary = presentSalary + increment;
@@ -2118,16 +2390,20 @@ function computePayroll(record, month = getSelectedMonth()) {
   const totalAdvance = oldAdvanceTaken + extraAdvanceAdded;
 
   const deductionEntered = blocked ? 0 : Math.max(0, toMoney(record.deductionEntered));
-  const manualDaysAbsent = blocked ? 0 : toMoney(record.daysAbsent);
-  const resumedDaysAbsent = blocked ? 0 : daysBeforeResumeInMonth(record, month);
-  const daysAbsent = clamp(manualDaysAbsent + resumedDaysAbsent, 0, 30);
-  const proratedAbsenceDeduction = (daysAbsent / 30) * grossSalary;
+  const systemWorkedDays = blocked ? 0 : systemWorkedDaysInMonth(record, month);
+  const autoDaysAbsent = blocked ? monthDays : Math.max(0, monthDays - systemWorkedDays);
+  const manualDaysAbsent = blocked ? 0 : clamp(toMoney(record.daysAbsent), 0, systemWorkedDays);
+  const workedDays = blocked ? 0 : clamp(systemWorkedDays - manualDaysAbsent, 0, monthDays);
+  const daysAbsent = clamp(monthDays - workedDays, 0, monthDays);
+  const payableSalary = monthDays > 0 ? (workedDays / monthDays) * grossSalary : 0;
+  const proratedAbsenceDeduction = Math.max(0, grossSalary - payableSalary);
   const deductionApplied = Math.min(deductionEntered, totalAdvance);
   const advanceRemained = totalAdvance - deductionApplied;
-  const netSalary = grossSalary - deductionApplied - proratedAbsenceDeduction;
+  const netSalary = payableSalary - deductionApplied;
 
   return {
     blocked,
+    monthDays,
     presentSalary,
     increment,
     grossSalary,
@@ -2135,7 +2411,12 @@ function computePayroll(record, month = getSelectedMonth()) {
     extraAdvanceAdded,
     totalAdvance,
     deductionEntered,
+    systemWorkedDays,
+    autoDaysAbsent,
+    manualDaysAbsent,
+    workedDays,
     daysAbsent,
+    payableSalary,
     proratedAbsenceDeduction,
     deductionApplied,
     advanceRemained,
@@ -2156,14 +2437,13 @@ function renderPayrollTable() {
   })();
   const allowOverride = isFirstMonth || isCurrentMonth;
   const visibleRecords = currentRecords
-    .map((record, index) => ({ record, index }))
-    .filter((item) => isPayrollActiveStatus(item.record.employeeStatus));
+    .map((record, index) => ({ record, index }));
   const visibleCount = visibleRecords.length;
 
   if (visibleCount === 0) {
     SELECTORS.payrollBody.innerHTML = `
       <div class="empty">
-        No employees for ${formatMonth(month)}. Add employees from Employee Management.
+        No payroll records for ${formatMonth(month)}. Add employees from Employee Management.
       </div>
     `;
     updateMetrics([]);
@@ -2176,14 +2456,30 @@ function renderPayrollTable() {
   activePayrollEmployeeId = record.employeeId || "";
   const calc = computePayroll(record, month);
   const status = String(record.employeeStatus || "working").toLowerCase();
-  const statusLabel = status === "leave" ? "On Leave" : "Working";
-  const badgeClass = status === "leave" ? "status-pill leave" : "status-pill working";
-  const statusBoxClass = status === "leave" ? "status-box leave" : "status-box active";
+  const statusLabel = status === "leave"
+    ? "On Leave"
+    : status === "terminated"
+      ? "Terminated"
+      : status === "resumed"
+        ? "Resumed"
+        : "Working";
+  const badgeClass = status === "leave"
+    ? "status-pill leave"
+    : status === "terminated"
+      ? "status-pill terminated"
+      : "status-pill working";
+  const statusBoxClass = status === "leave"
+    ? "status-box leave"
+    : status === "terminated"
+      ? "status-box terminated"
+      : "status-box active";
   const statusDetail = status === "leave"
     ? `Leave: ${record.leaveFrom || "-"} to ${record.leaveTo || "-"}`
+    : status === "terminated"
+      ? `Terminated on: ${record.terminatedOn || "-"}`
     : status === "resumed"
       ? `Resumed on: ${record.leaveTo || "-"}`
-    : "";
+      : "";
   const employeeOptions = visibleRecords
     .map((item) => {
       const selected = String(item.record.employeeId) === String(record.employeeId) ? "selected" : "";
@@ -2211,7 +2507,7 @@ function renderPayrollTable() {
                 <input data-field="designation" value="${escapeHtml(record.designation || "")}" readonly />
               </label>
               <label>Status
-                <div class="${statusBoxClass}">${status === "leave" ? "ON LEAVE" : "ACTIVE ✓"}</div>
+                <div class="${statusBoxClass}">${escapeHtml(statusLabel.toUpperCase())}</div>
               </label>
             </div>
             ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
@@ -2260,9 +2556,17 @@ function renderPayrollTable() {
                 <input class="field-deduction" data-field="deductionEntered" type="number" min="0" step="0.01" value="${toRaw(record.deductionEntered)}" ${allowOverride ? "" : "readonly"} />
                 ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
               </label>
-              <label>Days Absent (out of 30)
-                <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="30" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
+              <label>Worked Days (out of ${calc.monthDays})
+                <input type="text" class="locked-field" value="${formatNumberValue(calc.workedDays)}" readonly />
+                <span class="field-note">System calculated from joining/resume date and manual absences.</span>
+              </label>
+              <label>Manual Days Absent (out of ${calc.systemWorkedDays})
+                <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="${calc.systemWorkedDays}" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
                 ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+              </label>
+              <label>Salary For Worked Days (₹)
+                <input type="text" class="locked-field" value="${formatCurrency(calc.payableSalary)}" readonly />
+                <span class="field-note">Based on ${formatNumberValue(calc.workedDays)} of ${calc.monthDays} calendar day(s).</span>
               </label>
               <label>Prorated Absence Deduction (₹)
                 <input type="text" class="locked-field" value="${formatCurrency(calc.proratedAbsenceDeduction)}" readonly />
@@ -2273,13 +2577,16 @@ function renderPayrollTable() {
                 <span class="field-note">Locked (system calculated)</span>
               </label>
             </div>
+            ${(calc.autoDaysAbsent > 0 || status === "resumed")
+              ? `<p class="status-note">${escapeHtml(`System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) for this month before joining/resume. Manual absence is added separately.`)}</p>`
+              : ""}
           </section>
 
           <section class="payroll-stack-section">
             <h3>Summary</h3>
             <div class="payroll-fields">
               <label>Advance Remained (₹)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.advanceRemained)}" readonly />
+                <input type="text" class="locked-field ${calc.advanceRemained > 0 ? "advance-remained-input" : ""}" value="${formatCurrency(calc.advanceRemained)}" readonly />
                 <span class="field-note">Locked (system calculated)</span>
               </label>
               <label>Salary In Hand (Net Salary ₹)
@@ -2306,7 +2613,7 @@ function renderPayrollTable() {
 
           <div class="kpi-card amber">
             <p>Advance Remained</p>
-            <strong>${formatCurrency(calc.advanceRemained)}</strong>
+            <strong class="${calc.advanceRemained > 0 ? "advance-remained-alert" : ""}">${formatCurrency(calc.advanceRemained)}</strong>
           </div>
         </aside>
       </div>
@@ -2406,7 +2713,7 @@ function renderPayslipCard(record, calc, month, company) {
   const comment = String(record.comment || "").trim() || "No comment added for this payroll month.";
   const status = formatStatusLabel(record.employeeStatus || "working");
   const absenceSummary = calc.daysAbsent > 0
-    ? `${formatNumberValue(calc.daysAbsent)} day(s) absent • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
+    ? `${formatNumberValue(calc.workedDays)} day(s) worked out of ${calc.monthDays} • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
     : "No absence deduction applied";
 
   return `
@@ -2507,7 +2814,9 @@ function getPayslipText(data) {
     `Extra Advance Added: ${formatCurrency(calc.extraAdvanceAdded)}`,
     `Total Advance: ${formatCurrency(calc.totalAdvance)}`,
     `Deduction Entered: ${formatCurrency(calc.deductionEntered)}`,
-    `Days Absent: ${calc.daysAbsent} / 30`,
+    `Worked Days: ${calc.workedDays} / ${calc.monthDays}`,
+    `Total Days Absent: ${calc.daysAbsent} / ${calc.monthDays}`,
+    `Salary For Worked Days: ${formatCurrency(calc.payableSalary)}`,
     `Prorated Absence Deduction: ${formatCurrency(calc.proratedAbsenceDeduction)}`,
     `Deduction Applied: ${formatCurrency(calc.deductionApplied)}`,
     `Advance Remained: ${formatCurrency(calc.advanceRemained)}`,
@@ -2518,7 +2827,46 @@ function getPayslipText(data) {
 
 function printCurrentPayslip() {
   if (!ensureActivePayslip()) return;
-  const html = `
+  const printWindow = openPayslipPrintWindow();
+  if (!printWindow) {
+    showAppMessage("Pop-up blocked. Allow pop-ups to print.");
+    return;
+  }
+  triggerPayslipPrint(printWindow);
+}
+
+function downloadCurrentPayslipPdf() {
+  if (!ensureActivePayslip()) return;
+  const printWindow = openPayslipPrintWindow();
+  if (!printWindow) {
+    showAppMessage("Pop-up blocked. Allow pop-ups to save PDF.");
+    return;
+  }
+  showAppMessage("Choose Save as PDF in the print dialog.");
+  triggerPayslipPrint(printWindow);
+}
+
+function openPayslipPrintWindow() {
+  const html = buildPayslipPrintDocument();
+  const printWindow = window.open("", "_blank", "width=900,height=800");
+  if (!printWindow) {
+    return null;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  return printWindow;
+}
+
+function triggerPayslipPrint(printWindow) {
+  printWindow.focus();
+  window.setTimeout(() => {
+    printWindow.print();
+  }, 180);
+}
+
+function buildPayslipPrintDocument() {
+  if (!activePayslip) return "";
+  return `
     <!doctype html>
     <html>
       <head>
@@ -2538,16 +2886,6 @@ function printCurrentPayslip() {
       </body>
     </html>
   `;
-
-  const printWindow = window.open("", "_blank", "width=900,height=800");
-  if (!printWindow) {
-    showAppMessage("Pop-up blocked. Allow pop-ups to print.");
-    return;
-  }
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
 }
 
 function downloadCurrentPayslipText() {
@@ -2942,7 +3280,11 @@ function makeCsv(records, month) {
     "Extra Advance Added (₹)",
     "Total Advance (₹)",
     "Deduction Entered (₹)",
-    "Days Absent (out of 30)",
+    "Worked Days",
+    "Payroll Month Days",
+    "Manual Days Absent",
+    "Total Days Absent",
+    "Salary For Worked Days (₹)",
     "Prorated Absence Deduction (₹)",
     "Deduction Applied (Advance only)",
     "Advance Remained (₹)",
@@ -2951,7 +3293,7 @@ function makeCsv(records, month) {
   ];
 
   const rows = records.map((record) => {
-    const calc = computePayroll(record);
+    const calc = computePayroll(record, month);
     return [
       company.name || "",
       month,
@@ -2966,7 +3308,11 @@ function makeCsv(records, month) {
       calc.extraAdvanceAdded,
       calc.totalAdvance,
       calc.deductionEntered,
+      calc.workedDays,
+      calc.monthDays,
+      calc.manualDaysAbsent,
       calc.daysAbsent,
+      calc.payableSalary,
       calc.proratedAbsenceDeduction,
       calc.deductionApplied,
       calc.advanceRemained,
@@ -3386,7 +3732,7 @@ function buildPairedSummaryRows(leftRows, rightRows) {
 
 function makeExcelSpreadsheet(records, month) {
   const company = getActiveCompany();
-  const computed = records.map((record) => ({ record, calc: computePayroll(record) }));
+  const computed = records.map((record) => ({ record, calc: computePayroll(record, month) }));
   const totals = computed.reduce((acc, item) => {
     acc.gross += item.calc.grossSalary;
     acc.net += item.calc.netSalary;
@@ -3413,7 +3759,11 @@ function makeExcelSpreadsheet(records, month) {
     ["Extra Advance Added (INR)", "sHeaderAdvance"],
     ["Total Advance (INR)", "sHeaderAdvance"],
     ["Deduction Entered (INR)", "sHeaderDeduction"],
-    ["Days Absent", "sHeaderAbsent"],
+    ["Worked Days", "sHeaderAbsent"],
+    ["Month Days", "sHeaderAbsent"],
+    ["Manual Days Absent", "sHeaderAbsent"],
+    ["Total Days Absent", "sHeaderAbsent"],
+    ["Salary For Worked Days (INR)", "sHeaderGross"],
     ["Prorated Absence Deduction (INR)", "sHeaderDeduction"],
     ["Deduction Applied (INR)", "sHeaderDeduction"],
     ["Advance Remained (INR)", "sHeaderAdvance"],
@@ -3437,7 +3787,11 @@ function makeExcelSpreadsheet(records, month) {
       ${xmlCellNumber(item.calc.extraAdvanceAdded, "sMoneyAdvance")}
       ${xmlCellNumber(item.calc.totalAdvance, "sMoneyAdvanceStrong")}
       ${xmlCellNumber(item.calc.deductionEntered, "sMoneyDeduction")}
+      ${xmlCellNumber(item.calc.workedDays, "sNum")}
+      ${xmlCellNumber(item.calc.monthDays, "sNum")}
+      ${xmlCellNumber(item.calc.manualDaysAbsent, "sNum")}
       ${xmlCellNumber(item.calc.daysAbsent, "sNum")}
+      ${xmlCellNumber(item.calc.payableSalary, "sMoneyGross")}
       ${xmlCellNumber(item.calc.proratedAbsenceDeduction, "sMoneyDeduction")}
       ${xmlCellNumber(item.calc.deductionApplied, "sMoneyDeductionStrong")}
       ${xmlCellNumber(item.calc.advanceRemained, "sMoneyAdvanceStrong")}
@@ -3449,7 +3803,7 @@ function makeExcelSpreadsheet(records, month) {
 
   const worksheetRows = `
     <Row ss:Height="30">
-      <Cell ss:StyleID="sTitle" ss:MergeAcross="16"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>
+      <Cell ss:StyleID="sTitle" ss:MergeAcross="20"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>
     </Row>
     <Row>
       <Cell ss:StyleID="sMetaLabel"><Data ss:Type="String">Month</Data></Cell>
@@ -3606,6 +3960,15 @@ function setImportSummary(message) {
   SELECTORS.importLegacySummary.textContent = String(message || "");
 }
 
+function excelSerialToDate(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  const utcDays = Math.floor(raw - 25569);
+  const utcValue = utcDays * 86400;
+  const date = new Date(utcValue * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 async function parseLegacyPayrollFile(file) {
   const name = String(file?.name || "").toLowerCase();
   if (name.endsWith(".csv")) {
@@ -3748,6 +4111,13 @@ function parseMoney(value) {
 }
 
 function parseMonthFromImport(value) {
+  if (typeof value === "number") {
+    const serialDate = excelSerialToDate(value);
+    if (serialDate) {
+      return `${serialDate.getUTCFullYear()}-${String(serialDate.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+  }
+
   const raw = String(value || "").trim();
   if (!raw) return getSelectedMonth();
   if (/^\d{4}-\d{2}$/.test(raw)) return raw;
@@ -3755,6 +4125,25 @@ function parseMonthFromImport(value) {
   if (/^\d{2}[-/]\d{4}$/.test(raw)) {
     const [m, y] = raw.split(/[-/]/);
     return `${y}-${m}`;
+  }
+  const namedMonthMatch = raw.match(/^([a-z]{3,9})[\s,_/-]+(\d{4})$/i);
+  if (namedMonthMatch) {
+    const monthMap = {
+      january: "01", jan: "01",
+      february: "02", feb: "02",
+      march: "03", mar: "03",
+      april: "04", apr: "04",
+      may: "05",
+      june: "06", jun: "06",
+      july: "07", jul: "07",
+      august: "08", aug: "08",
+      september: "09", sept: "09", sep: "09",
+      october: "10", oct: "10",
+      november: "11", nov: "11",
+      december: "12", dec: "12",
+    };
+    const month = monthMap[namedMonthMatch[1].toLowerCase()];
+    if (month) return `${namedMonthMatch[2]}-${month}`;
   }
   const date = new Date(raw);
   if (!Number.isNaN(date.getTime())) {
@@ -3764,6 +4153,13 @@ function parseMonthFromImport(value) {
 }
 
 function parseIsoFromImport(value) {
+  if (typeof value === "number") {
+    const serialDate = excelSerialToDate(value);
+    if (serialDate) {
+      return `${serialDate.getUTCFullYear()}-${String(serialDate.getUTCMonth() + 1).padStart(2, "0")}-${String(serialDate.getUTCDate()).padStart(2, "0")}`;
+    }
+  }
+
   const raw = String(value || "").trim();
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
@@ -3776,7 +4172,9 @@ function isLikelyEmployeeId(value) {
   const raw = String(value || "").trim();
   if (!raw) return false;
   if (raw.length > 24) return false;
-  return /[a-z]/i.test(raw) && /\d/.test(raw);
+  if (/^\d{1,12}$/.test(raw)) return true;
+  if (/^[a-z0-9][a-z0-9/_-]{1,23}$/i.test(raw) && /\d/.test(raw)) return true;
+  return false;
 }
 
 function isLikelyPersonName(value) {
@@ -3785,6 +4183,11 @@ function isLikelyPersonName(value) {
   if (raw.length < 2 || raw.length > 80) return false;
   if (/\d{3,}/.test(raw)) return false;
   return /^[a-z .'-]+$/i.test(raw);
+}
+
+function isSpreadsheetErrorValue(value) {
+  const raw = String(value || "").trim().toUpperCase();
+  return raw === "#REF!" || raw === "#VALUE!" || raw === "#NAME?" || raw === "#N/A" || raw === "#NULL!";
 }
 
 function isLikelyMonthValue(value) {
@@ -3925,26 +4328,42 @@ function pickCellFromSchema(row, schema, field) {
   return String(value || "").trim() === "" ? "" : value;
 }
 
+function makeFallbackEmployeeId(employeeName, usedIds, rowIndex) {
+  const base = slugify(employeeName || `employee-${rowIndex + 1}`) || `employee-${rowIndex + 1}`;
+  let candidate = `imp-${base}`;
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `imp-${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
 function analyzeLegacyRows(rows) {
   const payrollRecords = [];
   const designationSet = new Set();
   const employeeMap = new Map();
+  const earliestMonthByEmployee = new Map();
   const monthSet = new Set();
   const { schema: detectedHeaders, inferenceNotes } = buildImportSchema(rows);
-  let skippedMissingEmployeeId = 0;
+  const usedEmployeeIds = new Set();
   let skippedMissingEmployeeName = 0;
   let defaultedMonthCount = 0;
+  let generatedEmployeeIdCount = 0;
 
-  for (const row of rows) {
-    const employeeId = String(pickCellFromSchema(row, detectedHeaders, "employeeId") || "").trim();
+  rows.forEach((row, rowIndex) => {
+    let employeeId = String(pickCellFromSchema(row, detectedHeaders, "employeeId") || "").trim();
     const employeeName = String(pickCellFromSchema(row, detectedHeaders, "employeeName") || "").trim();
-    if (!employeeId) {
-      skippedMissingEmployeeId += 1;
-      continue;
-    }
-    if (!employeeName) {
+    if (!employeeName || isSpreadsheetErrorValue(employeeName) || isSpreadsheetErrorValue(employeeId)) {
       skippedMissingEmployeeName += 1;
-      continue;
+      return;
+    }
+    if (!employeeId) {
+      employeeId = makeFallbackEmployeeId(employeeName, usedEmployeeIds, rowIndex);
+      generatedEmployeeIdCount += 1;
+    } else {
+      usedEmployeeIds.add(employeeId);
     }
 
     const designation = String(pickCellFromSchema(row, detectedHeaders, "designation") || "").trim();
@@ -3964,6 +4383,10 @@ function analyzeLegacyRows(rows) {
 
     if (designation) designationSet.add(designation);
     monthSet.add(month);
+    const previousEarliestMonth = earliestMonthByEmployee.get(employeeId);
+    if (!previousEarliestMonth || String(month).localeCompare(previousEarliestMonth) < 0) {
+      earliestMonthByEmployee.set(employeeId, month);
+    }
 
     payrollRecords.push({
       month,
@@ -3980,10 +4403,12 @@ function analyzeLegacyRows(rows) {
     });
 
     if (!employeeMap.has(employeeId)) {
+      const importedJoiningDate = parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "joiningDate"));
+      const fallbackJoiningDate = `${String(month || getSelectedMonth())}-01`;
       employeeMap.set(employeeId, {
         employeeId,
         employeeName,
-        joiningDate: parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "joiningDate")) || new Date().toISOString().slice(0, 10),
+        joiningDate: importedJoiningDate || fallbackJoiningDate,
         birthDate: parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "birthDate")),
         baseSalary: presentSalary,
         openingAdvance: oldAdvanceTaken,
@@ -3991,18 +4416,22 @@ function analyzeLegacyRows(rows) {
         mobileNumber: String(pickCellFromSchema(row, detectedHeaders, "mobileNumber") || "").trim(),
         status: "working",
       });
+    } else {
+      const existingEmployee = employeeMap.get(employeeId);
+      const importedJoiningDate = parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "joiningDate"));
+      const earliestMonth = earliestMonthByEmployee.get(employeeId) || month || getSelectedMonth();
+      if (existingEmployee && !existingEmployee.joiningDate) {
+        existingEmployee.joiningDate = importedJoiningDate || `${String(earliestMonth)}-01`;
+      }
     }
-  }
+  });
 
   const reasons = [];
-  if (!detectedHeaders.employeeId) {
+  if (!detectedHeaders.employeeId && generatedEmployeeIdCount === 0) {
     reasons.push("Could not detect an Employee ID column.");
   }
   if (!detectedHeaders.employeeName) {
     reasons.push("Could not detect an Employee Name column.");
-  }
-  if (rows.length > 0 && payrollRecords.length === 0 && skippedMissingEmployeeId > 0) {
-    reasons.push(`Skipped ${skippedMissingEmployeeId} row(s) because Employee ID was empty or not recognized.`);
   }
   if (rows.length > 0 && payrollRecords.length === 0 && skippedMissingEmployeeName > 0) {
     reasons.push(`Skipped ${skippedMissingEmployeeName} row(s) because Employee Name was empty or not recognized.`);
@@ -4015,8 +4444,8 @@ function analyzeLegacyRows(rows) {
   if (defaultedMonthCount > 0) {
     warnings.push(`${defaultedMonthCount} row(s) did not include a month, so the selected app month was used.`);
   }
-  if (skippedMissingEmployeeId > 0) {
-    warnings.push(`${skippedMissingEmployeeId} row(s) were skipped due to missing Employee ID.`);
+  if (generatedEmployeeIdCount > 0) {
+    warnings.push(`${generatedEmployeeIdCount} employee ID(s) were generated because the legacy sheet did not include usable IDs.`);
   }
   if (skippedMissingEmployeeName > 0) {
     warnings.push(`${skippedMissingEmployeeName} row(s) were skipped due to missing Employee Name.`);
@@ -4032,9 +4461,9 @@ function analyzeLegacyRows(rows) {
       detectedHeaders,
       reasons,
       warnings,
-      skippedMissingEmployeeId,
       skippedMissingEmployeeName,
       defaultedMonthCount,
+      generatedEmployeeIdCount,
       inferenceNotes,
     },
   };
@@ -4069,32 +4498,68 @@ async function importLegacyAnalysis(analyzed, onProgress = () => {}) {
   const existingEmployeesResp = await apiRequest(`/api/employees?companyId=${companyId}`);
   const existingEmployees = Array.isArray(existingEmployeesResp.employees) ? existingEmployeesResp.employees : [];
   const byEmployeeId = new Map(existingEmployees.map((emp) => [String(emp.employeeId || ""), emp]));
+  const byEmployeeName = new Map();
+  for (const emp of existingEmployees) {
+    const key = String(emp.employeeName || "").trim().toLowerCase();
+    if (!key) continue;
+    const bucket = byEmployeeName.get(key) || [];
+    bucket.push(emp);
+    byEmployeeName.set(key, bucket);
+  }
+  const employeeIdRemap = new Map();
 
   for (const incoming of analyzed.employees) {
-    const existing = byEmployeeId.get(String(incoming.employeeId || ""));
+    const incomingEmployeeId = String(incoming.employeeId || "");
+    let existing = byEmployeeId.get(incomingEmployeeId);
+    if (!existing) {
+      const nameKey = String(incoming.employeeName || "").trim().toLowerCase();
+      const nameMatches = byEmployeeName.get(nameKey) || [];
+      if (nameMatches.length === 1) {
+        existing = nameMatches[0];
+        employeeIdRemap.set(incomingEmployeeId, String(existing.employeeId || incomingEmployeeId));
+      }
+    }
+
+    const resolvedEmployeeId = String(existing?.employeeId || incomingEmployeeId);
+    if (resolvedEmployeeId && resolvedEmployeeId !== incomingEmployeeId) {
+      employeeIdRemap.set(incomingEmployeeId, resolvedEmployeeId);
+    }
+
     const payload = {
       companyId,
-      employeeId: incoming.employeeId,
-      employeeName: incoming.employeeName,
-      joiningDate: incoming.joiningDate,
-      birthDate: incoming.birthDate,
-      baseSalary: incoming.baseSalary,
-      openingAdvance: incoming.openingAdvance,
-      designation: incoming.designation,
-      mobileNumber: incoming.mobileNumber,
-      status: incoming.status,
+      employeeId: resolvedEmployeeId,
+      employeeName: incoming.employeeName || existing?.employeeName || "",
+      joiningDate: incoming.joiningDate || existing?.joiningDate || "",
+      birthDate: incoming.birthDate || existing?.birthDate || "",
+      baseSalary: Number(incoming.baseSalary || 0) > 0 ? incoming.baseSalary : Number(existing?.baseSalary || 0),
+      openingAdvance: Number(incoming.openingAdvance || 0) > 0 ? incoming.openingAdvance : Number(existing?.openingAdvance || 0),
+      designation: incoming.designation || existing?.designation || "Staff",
+      mobileNumber: incoming.mobileNumber || existing?.mobileNumber || "",
+      status: incoming.status || existing?.status || "working",
       leaveFrom: "",
       leaveTo: "",
       terminatedOn: "",
-      notes: "",
+      notes: existing?.notes || "",
     };
 
     if (existing) {
       // eslint-disable-next-line no-await-in-loop
       await apiRequest(`/api/employees/${existing.id}`, { method: "PUT", body: payload });
+      byEmployeeId.set(String(payload.employeeId || ""), {
+        ...existing,
+        ...payload,
+      });
     } else {
       // eslint-disable-next-line no-await-in-loop
-      await apiRequest("/api/employees", { method: "POST", body: payload });
+      const createdResp = await apiRequest("/api/employees", { method: "POST", body: payload });
+      const createdEmployee = createdResp?.employee || payload;
+      byEmployeeId.set(String(createdEmployee.employeeId || payload.employeeId || ""), createdEmployee);
+      const nameKey = String(createdEmployee.employeeName || payload.employeeName || "").trim().toLowerCase();
+      if (nameKey) {
+        const bucket = byEmployeeName.get(nameKey) || [];
+        bucket.push(createdEmployee);
+        byEmployeeName.set(nameKey, bucket);
+      }
     }
     reportProgress(`employee: ${incoming.employeeName}`);
   }
@@ -4120,16 +4585,17 @@ async function importLegacyAnalysis(analyzed, onProgress = () => {}) {
 
     // For each employee in this month
     for (const [employeeId, row] of incomingMap.entries()) {
-      const existing = map.get(String(employeeId));
+      const resolvedEmployeeId = String(employeeIdRemap.get(String(employeeId)) || employeeId);
+      const existing = map.get(resolvedEmployeeId);
       // Always use the imported value for this month if present
       let oldAdvanceTaken = row.oldAdvanceTaken;
       // If missing or blank, carry forward from previous month
-      if ((oldAdvanceTaken === undefined || oldAdvanceTaken === null || oldAdvanceTaken === "") && lastAdvanceByEmployee.has(employeeId)) {
-        oldAdvanceTaken = lastAdvanceByEmployee.get(employeeId);
+      if ((oldAdvanceTaken === undefined || oldAdvanceTaken === null || oldAdvanceTaken === "") && lastAdvanceByEmployee.has(resolvedEmployeeId)) {
+        oldAdvanceTaken = lastAdvanceByEmployee.get(resolvedEmployeeId);
       }
       const merged = {
         ...(existing || {}),
-        employeeId: row.employeeId,
+        employeeId: resolvedEmployeeId,
         employeeName: row.employeeName,
         designation: row.designation || existing?.designation || "",
         presentSalary: row.presentSalary,
@@ -4144,8 +4610,8 @@ async function importLegacyAnalysis(analyzed, onProgress = () => {}) {
       const totalAdvance = Number(oldAdvanceTaken) + Number(row.extraAdvanceAdded);
       const deductionApplied = Math.min(Number(row.deductionEntered), totalAdvance);
       const advanceRemained = totalAdvance - deductionApplied;
-      lastAdvanceByEmployee.set(employeeId, advanceRemained);
-      map.set(String(employeeId), merged);
+      lastAdvanceByEmployee.set(resolvedEmployeeId, advanceRemained);
+      map.set(resolvedEmployeeId, merged);
     }
 
     const finalRecords = Array.from(map.values()).map((item, index) => ({
@@ -4187,7 +4653,9 @@ async function apiRequest(url, options = {}, withAuth = true) {
     });
   } catch {
     startServerReconnectPolling();
-    throw new Error("Server is not reachable. Start backend with `npm start` or double-click `start-routes-payroll.command`.");
+    const message = "Server is not reachable. Start backend with `npm start` or double-click `start-routes-payroll.command`.";
+    recordAppError(message, "api", { url, action: options.method || "GET" });
+    throw new Error(message);
   }
 
   const contentType = response.headers.get("content-type") || "";
@@ -4199,6 +4667,7 @@ async function apiRequest(url, options = {}, withAuth = true) {
 
   if (!response.ok) {
     const message = payload?.error || `Request failed (${response.status}).`;
+    recordAppError(message, "api", { url, status: response.status, action: options.method || "GET" });
     if (response.status === 401 && withAuth) {
       setToken("");
       updateAuthView();
@@ -4221,6 +4690,7 @@ function setToken(token) {
 }
 
 function setSaveStatus(message) {
+  if (!SELECTORS.saveStatus) return;
   applyStatusTone(SELECTORS.saveStatus, message);
   SELECTORS.saveStatus.textContent = message;
 }
@@ -4298,11 +4768,16 @@ function escapeXml(value) {
 }
 
 function showAuthMessage(message) {
+  if (!SELECTORS.authMessage) return;
   applyStatusTone(SELECTORS.authMessage, message);
   SELECTORS.authMessage.textContent = message;
 }
 
 function showAppMessage(message) {
+  if (!SELECTORS.appMessage) return;
+  if (isErrorLikeMessage(message)) {
+    recordAppError(message, "ui");
+  }
   applyStatusTone(SELECTORS.appMessage, message);
   SELECTORS.appMessage.textContent = message;
   if (message) {
@@ -4315,6 +4790,7 @@ function showAppMessage(message) {
 }
 
 function applyStatusTone(element, message) {
+  if (!element?.classList) return;
   element.classList.remove("status-info", "status-success", "status-error");
   if (!message) return;
 

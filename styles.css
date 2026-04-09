@@ -965,6 +965,12 @@ button:active {
   border-color: #f4deb0;
 }
 
+.status-box.terminated {
+  color: #a61b29;
+  background: #fdeef1;
+  border-color: #f2c8cf;
+}
+
 .status-note {
   margin: 8px 0 0;
   font-size: 0.92rem;
@@ -976,6 +982,15 @@ button:active {
   font-size: 0.75rem;
   font-weight: 800;
   color: #2563eb;
+}
+
+.advance-remained-alert {
+  color: #c81e1e !important;
+  font-weight: 800;
+}
+
+.advance-remained-input {
+  color: #c81e1e !important;
 }
 
 .strong-line {
@@ -2375,6 +2390,62 @@ textarea {
 
 #reportsSection .employee-list-wrap .icon-mini[data-action="print"] {
   color: #1f2937;
+}
+
+.error-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.error-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.error-log-count {
+  color: #61748f;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.error-log-source {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #234f92;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.error-log-time {
+  font-weight: 700;
+  color: #21324b;
+}
+
+.error-log-repeat {
+  margin-top: 4px;
+  color: #8b5e0a;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.error-log-message {
+  color: #b42318;
+  font-weight: 700;
+}
+
+.error-log-detail {
+  color: #61748f;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .report-month-title {

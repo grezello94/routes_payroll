@@ -2,10 +2,8 @@ node_modules/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/monthly-backups/*.json
 npm-debug.log*
-firebase-service-account.json
-n/Firestore keys
-*.json
 payroll-backup.json
 firebase-service-account.json
 routespayroll-firebase-adminsdk*.json
