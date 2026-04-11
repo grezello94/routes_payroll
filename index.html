@@ -8,6 +8,371 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css?v=20260408f" />
+    <style id="responsive-overrides">
+      /* Mobile and Tablet Responsive Adjustments */
+      @media (max-width: 850px) {
+        .app-view {
+          flex-direction: column !important;
+        }
+        .side-rail {
+          position: fixed !important;
+          bottom: 0;
+          left: 0;
+          width: 100% !important;
+          height: calc(65px + env(safe-area-inset-bottom)) !important;
+          padding-bottom: env(safe-area-inset-bottom) !important;
+          flex-direction: row !important;
+          justify-content: space-around;
+          align-items: center;
+          background-color: rgba(17, 17, 17, 0.85) !important;
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+          border-right: none !important;
+          z-index: 1000;
+        }
+        .rail-btn {
+          flex: 1;
+          height: 100%;
+          border-radius: 0 !important;
+          margin: 0 !important;
+          transition: background-color 0.2s ease, transform 0.1s ease !important;
+        }
+        .rail-btn:active {
+          transform: scale(0.92) !important;
+        }
+        .app-main {
+          padding: 15px 15px calc(85px + env(safe-area-inset-bottom)) 15px !important;
+          width: 100% !important;
+          height: auto !important;
+          overflow-y: visible !important;
+        }
+        .topbar {
+          flex-direction: column !important;
+          align-items: stretch !important;
+          gap: 15px;
+        }
+        .toolbar {
+          flex-wrap: wrap !important;
+          justify-content: flex-start;
+          gap: 10px;
+        }
+        .toolbar > * {
+          flex: 1 1 auto;
+        }
+        .metrics {
+          grid-template-columns: 1fr 1fr !important;
+        }
+        .dashboard-insights, .settings-grid {
+          grid-template-columns: 1fr !important;
+        }
+        .dashboard-summary-cards {
+          grid-template-columns: 1fr 1fr !important;
+        }
+        .payroll-modern-grid {
+          flex-direction: column !important;
+        }
+        .employee-list-wrap, .table-wrap {
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch;
+        }
+        table {
+          min-width: 700px !important; 
+        }
+        .dialog-content {
+          width: 95vw !important;
+          max-width: none !important;
+          padding: 15px !important;
+        }
+        .payslip-identity, .payslip-financials {
+          grid-template-columns: 1fr !important;
+        }
+        .payslip-footer {
+          flex-direction: column !important;
+          gap: 15px !important;
+        }
+        .payslip-net {
+          width: 100% !important;
+          text-align: left !important;
+        }
+        .dialog-actions {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 10px !important;
+        }
+        .dialog-actions button {
+          width: 100% !important;
+          margin: 0 !important;
+        }
+        .auth-card {
+          width: 95% !important;
+          margin: 20px auto !important;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .metrics, .dashboard-summary-cards {
+          grid-template-columns: 1fr !important;
+        }
+        .dialog-actions {
+          grid-template-columns: 1fr !important;
+        }
+        .toolbar {
+          flex-direction: column !important;
+        }
+      }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style id="modern-ui-overrides">
+      :root {
+        --primary: #4f46e5;
+        --primary-hover: #4338ca;
+        --bg-color: #f8fafc;
+        --surface: #ffffff;
+        --text-main: #0f172a;
+        --text-muted: #64748b;
+        --border: #e2e8f0;
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --radius: 12px;
+      }
+      
+      body {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        background-color: var(--bg-color) !important;
+        color: var(--text-main) !important;
+      }
+
+      h1, h2, h3, h4 {
+        color: #1e293b !important;
+        letter-spacing: -0.02em !important;
+      }
+
+      /* Modern Buttons */
+      button {
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+        cursor: pointer !important;
+      }
+      button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle) {
+        background-color: var(--primary) !important;
+        color: white !important;
+        border: 1px solid var(--primary) !important;
+        box-shadow: var(--shadow-sm) !important;
+      }
+      button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle):hover {
+        background-color: var(--primary-hover) !important;
+        border-color: var(--primary-hover) !important;
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md) !important;
+      }
+      button.ghost {
+        background-color: transparent !important;
+        color: var(--text-muted) !important;
+        border: 1px solid var(--border) !important;
+      }
+      button.ghost:hover {
+        background-color: #f1f5f9 !important;
+        color: var(--text-main) !important;
+      }
+      button.danger {
+        background-color: #fef2f2 !important;
+        color: #dc2626 !important;
+        border: 1px solid #fecaca !important;
+      }
+      button.danger:hover {
+        background-color: #fee2e2 !important;
+      }
+
+      /* Forms & Inputs */
+      input, select, textarea {
+        border-radius: 8px !important;
+        border: 1px solid var(--border) !important;
+        padding: 10px 12px !important;
+        background-color: #f8fafc !important;
+        color: var(--text-main) !important;
+        transition: all 0.2s ease !important;
+        font-family: inherit !important;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none !important;
+        border-color: var(--primary) !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15) !important;
+      }
+
+      /* Cards & Panels */
+      .panel, .settings-card, .dashboard-panel, .payroll-entry-card, .auth-card, .metrics article, .dashboard-stat-card {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        box-shadow: var(--shadow-sm) !important;
+        transition: box-shadow 0.2s ease !important;
+      }
+      .panel:hover, .settings-card:hover, .dashboard-panel:hover, .payroll-entry-card:hover, .metrics article:hover, .dashboard-stat-card:hover {
+        box-shadow: var(--shadow-md) !important;
+      }
+
+      /* Floating Topbar */
+      .topbar {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        box-shadow: var(--shadow-sm) !important;
+        margin: 16px 0 24px 0 !important;
+        padding: 16px 24px !important;
+      }
+
+      /* Clean Tables */
+      .table-wrap, .employee-list-wrap {
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        overflow: hidden !important;
+        background: var(--surface) !important;
+        box-shadow: var(--shadow-sm) !important;
+      }
+      table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+      }
+      th {
+        background-color: #f1f5f9 !important;
+        color: var(--text-muted) !important;
+        text-transform: uppercase !important;
+        font-size: 0.75rem !important;
+        letter-spacing: 0.05em !important;
+        padding: 14px 16px !important;
+        font-weight: 600 !important;
+        border-bottom: 1px solid var(--border) !important;
+      }
+      td {
+        padding: 14px 16px !important;
+        border-bottom: 1px solid var(--border) !important;
+        vertical-align: middle !important;
+      }
+      tr:last-child td { border-bottom: none !important; }
+      tr:hover td { background-color: #f8fafc !important; }
+
+      /* Soft Status Pills */
+      .status-pill {
+        border-radius: 9999px !important;
+        padding: 4px 10px !important;
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        display: inline-block !important;
+      }
+      .status-pill.working { background: #dcfce7 !important; color: #166534 !important; border: 1px solid #bbf7d0 !important; }
+      .status-pill.leave { background: #fef9c3 !important; color: #854d0e !important; border: 1px solid #fef08a !important; }
+      .status-pill.terminated { background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fecaca !important; }
+
+      /* Dark Desktop Side Nav */
+      @media (min-width: 851px) {
+        .side-rail {
+          background: #0f172a !important;
+          border-right: 1px solid #1e293b !important;
+        }
+        .rail-btn { color: #94a3b8 !important; border-radius: 10px !important; margin: 6px !important; font-size: 1.25rem !important; }
+        .rail-btn.active { background: #1e293b !important; color: #38bdf8 !important; box-shadow: inset 0 0 0 1px #334155 !important; }
+        .rail-btn:hover:not(.active) { background: #1e293b !important; color: #f8fafc !important; }
+      }
+
+      /* 1. App & Onboarding Entrance Animations */
+      @keyframes fadeSlideUp {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .app-main, .auth-card {
+        animation: fadeSlideUp 0.5s ease-out forwards !important;
+      }
+      .auth-card {
+        border: none !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+        border-radius: 16px !important;
+      }
+
+      /* 2. Glassmorphism Dialogs & Modals */
+      dialog {
+        border: none !important;
+        border-radius: 16px !important;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+      }
+      dialog::backdrop {
+        background: rgba(15, 23, 42, 0.6) !important;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+
+      /* 3. Custom Sleek Scrollbars */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+      /* 4. Beautiful Empty States */
+      .empty {
+        padding: 40px 20px !important;
+        color: #64748b !important;
+        background: #f8fafc !important;
+        border: 2px dashed #cbd5e1 !important;
+        border-radius: 12px !important;
+        font-weight: 500 !important;
+      }
+      td.empty { border-bottom: none !important; display: table-cell !important; }
+
+      /* 5. Crisp Form Labels */
+      form label, .payroll-fields label {
+        font-weight: 600 !important;
+        color: #334155 !important;
+      }
+
+      /* 6. Dashboard KPI Cards */
+      .kpi-metrics-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .kpi-metric-card {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px;
+        border-radius: var(--radius);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .kpi-metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+      }
+      .kpi-icon {
+        font-size: 1.8rem;
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        flex-shrink: 0;
+      }
+      .kpi-metric-card.primary .kpi-icon { background: #e0e7ff; color: #1d4ed8; }
+      .kpi-metric-card.success .kpi-icon { background: #dcfce7; color: #15803d; }
+      .kpi-metric-card.warning .kpi-icon { background: #fef9c3; color: #a16207; }
+      .kpi-metric-card.alert .kpi-icon { background: #fee2e2; color: #b91c1c; }
+      .kpi-data p { margin: 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+      .kpi-data strong { margin: 4px 0; font-size: 1.5rem; font-weight: 800; color: var(--text-main); display: block; line-height: 1.2; }
+      .kpi-data span { margin: 0; font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
+
+      @media (max-width: 1024px) {
+        .kpi-metrics-row { grid-template-columns: repeat(2, 1fr) !important; }
+      }
+      @media (max-width: 480px) {
+        .kpi-metrics-row { grid-template-columns: 1fr !important; }
+      }
+    </style>
   </head>
   <body>
     <main class="shell">
@@ -150,22 +515,38 @@
             </div>
           </header>
 
-          <section id="metricsSection" class="metrics">
-            <article>
-              <p>Total Employees</p>
-              <strong id="metricEmployees">0</strong>
+          <section id="metricsSection" class="metrics kpi-metrics-row">
+            <article class="kpi-metric-card primary">
+              <div class="kpi-icon">👥</div>
+              <div class="kpi-data">
+                <p>Payable Employees</p>
+                <strong id="metricEmployees">0</strong>
+                <span>For selected month</span>
+              </div>
             </article>
-            <article>
-              <p>Gross Payroll</p>
-              <strong id="metricGross">₹0.00</strong>
+            <article class="kpi-metric-card success">
+              <div class="kpi-icon">💰</div>
+              <div class="kpi-data">
+                <p>Estimated Net Payout</p>
+                <strong id="metricNet">₹0.00</strong>
+                <span>After deductions</span>
+              </div>
             </article>
-            <article>
-              <p>Net Payout</p>
-              <strong id="metricNet">₹0.00</strong>
+            <article class="kpi-metric-card warning">
+              <div class="kpi-icon">📉</div>
+              <div class="kpi-data">
+                <p>Gross Payroll Liability</p>
+                <strong id="metricGross">₹0.00</strong>
+                <span>Before deductions</span>
+              </div>
             </article>
-            <article>
-              <p>Advance Remained</p>
-              <strong id="metricAdvance">₹0.00</strong>
+            <article class="kpi-metric-card alert">
+              <div class="kpi-icon">⚠️</div>
+              <div class="kpi-data">
+                <p>Advance Exposure</p>
+                <strong id="metricAdvance">₹0.00</strong>
+                <span>Pending recovery</span>
+              </div>
             </article>
           </section>
 

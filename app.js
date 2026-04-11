@@ -543,10 +543,14 @@ function renderEmployeeTable() {
   // Advance Remained is the carried balance left after the latest month's deduction is applied.
   const payrollByEmployee = {};
   const companyId = getSelectedCompanyId && getSelectedCompanyId();
+  const activeMonth = getSelectedMonth();
   if (window.allPayrollRecords) {
     for (const rec of window.allPayrollRecords) {
       if (!rec.employeeId) continue;
       if (companyId && Number(rec.companyId || rec.company_id || 1) !== Number(companyId)) continue;
+      // Strictly ignore any future months beyond the currently selected month dropdown
+      if (String(rec.month || "") > String(activeMonth)) continue;
+
       if (!payrollByEmployee[rec.employeeId] || (rec.month > payrollByEmployee[rec.employeeId].month)) {
         payrollByEmployee[rec.employeeId] = rec;
       }
@@ -875,7 +879,7 @@ function renderDashboardInsights() {
   if (SELECTORS.dashboardSummaryCards) {
     const currentMonth = getSelectedMonth();
     const currentMonthLabel = formatMonth(currentMonth);
-    const visibleEmployees = currentRecords.filter((record) => isPayrollActiveStatus(record.employeeStatus)).length;
+        const activeHeadcount = employeeMaster.filter((employee) => isPayrollActiveStatus(employee.status)).length;
     const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave").length;
     const terminated = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "terminated").length;
     const generatedCurrentMonth = payrollReports.find((report) => String(report.month) === String(currentMonth)) || null;
@@ -903,8 +907,8 @@ function renderDashboardInsights() {
         tone: "amber",
       },
       {
-        label: "Active In Register",
-        value: String(visibleEmployees),
+            label: "Active In Company",
+            value: String(activeHeadcount),
         note: `${employeeMaster.length} total employee profile(s)`,
         tone: "green",
       },
@@ -1208,10 +1212,13 @@ function wireAppActions() {
     activePayrollReportSnapshot = null;
     await loadMonthRecords();
     await loadPayrollReports();
+    renderEmployeeTable();
   });
 
   SELECTORS.addEmployeeBtn.addEventListener("click", async () => {
     setWorkspace("employees");
+    syncCurrentRecordsToAllPayroll();
+    renderEmployeeTable();
     SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "employees"));
     SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     setTimeout(() => SELECTORS.employeeNameInput?.focus(), 240);
@@ -1919,6 +1926,8 @@ function wireRailActions() {
 
       if (action === "employees") {
         setWorkspace("employees");
+        syncCurrentRecordsToAllPayroll();
+        renderEmployeeTable();
         SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         setTimeout(() => {
           SELECTORS.employeeNameInput?.focus();
@@ -2700,7 +2709,8 @@ function renderPayrollTable() {
     </article>
   `;
 
-  updateMetrics(currentRecords.map((record) => computePayroll(record)));
+  const visibleRecordsForMetrics = currentRecords.filter((record) => isPayrollVisibleForMonth(record, month));
+  updateMetrics(visibleRecordsForMetrics.map((record) => computePayroll(record, month)));
 }
 
 function updateMetrics(computedRecords) {
@@ -2743,6 +2753,36 @@ async function flushPendingSave() {
   }
 }
 
+function syncCurrentRecordsToAllPayroll() {
+  if (!window.allPayrollRecords) window.allPayrollRecords = [];
+  const month = getSelectedMonth();
+  const companyId = getSelectedCompanyId();
+  
+  for (const rec of currentRecords) {
+    if (!rec.employeeId) continue;
+    const calc = computePayroll(rec, month);
+    const existingIdx = window.allPayrollRecords.findIndex(
+      (r) => String(r.month) === String(month) && 
+             String(r.employeeId) === String(rec.employeeId) && 
+             Number(r.companyId || r.company_id || 1) === Number(companyId)
+    );
+    
+    const updatedRec = {
+      ...rec,
+      companyId,
+      month,
+      advanceRemained: calc.advanceRemained,
+      presentSalary: calc.presentSalary
+    };
+    
+    if (existingIdx >= 0) {
+      window.allPayrollRecords[existingIdx] = updatedRec;
+    } else {
+      window.allPayrollRecords.push(updatedRec);
+    }
+  }
+}
+
 async function persistRecords() {
   if (saveInFlight) {
     saveQueued = true;
@@ -2751,6 +2791,7 @@ async function persistRecords() {
 
   saveInFlight = true;
   const month = getSelectedMonth();
+  syncCurrentRecordsToAllPayroll();
 
   try {
     await apiRequest(payrollMonthUrl(month), {
@@ -5026,6 +5067,7 @@ async function apiRequest(url, options = {}, withAuth = true) {
   if (withAuth && authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
+  headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
 
   let response;
   try {
