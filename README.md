@@ -200,6 +200,13 @@ That creates these tables:
 - `designation_presets`
 - `employees`
 - `payroll_entries`
+- `payroll_reports`
+
+Important:
+
+- if any of these tables are missing, Supabase startup can fail or some features may fall back to compatibility mode
+- `payroll_reports` is used for generated payroll report snapshots
+- if your older Supabase project does not have `payroll_reports`, the app will still fall back to legacy report storage, but you should still run the latest [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql)
 
 ### 4. Create `.env.local`
 
@@ -240,6 +247,73 @@ The launcher loads `.env.local` automatically.
 ```text
 http://127.0.0.1:5501
 ```
+
+## Deploy To Vercel
+
+This repo is now configured so Vercel can run the Express app through a serverless entrypoint.
+
+Files added for deployment:
+
+- [vercel.json](/Users/grezello/Desktop/routes_payroll/vercel.json)
+- [api/index.js](/Users/grezello/Desktop/routes_payroll/api/index.js)
+
+### Recommended production backend
+
+Use `Supabase` on Vercel.
+
+Why:
+
+- Vercel functions are stateless
+- local SQLite files are not persistent there
+- backup files written by the app are temporary on Vercel
+
+The app now writes monthly emergency backups to `/tmp` on Vercel so requests do not fail, but `/tmp` is ephemeral and should not be treated as durable storage.
+
+### Vercel environment variables
+
+Set these in the Vercel project settings:
+
+```text
+DB_PROVIDER=supabase
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+JWT_SECRET=replace-this-with-a-long-random-secret
+```
+
+Optional mail settings if you use email verification or password reset:
+
+```text
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+SMTP_SECURE=false
+```
+
+Optional:
+
+```text
+SUPABASE_REQUEST_TIMEOUT_MS=8000
+FIREBASE_WEB_API_KEY=your-firebase-web-api-key
+```
+
+### Deploy steps
+
+1. Push this project to GitHub.
+2. Import the GitHub repo into Vercel.
+3. Add the environment variables above in Vercel.
+4. Deploy.
+
+If Vercel asks for build settings, the defaults are fine for this project.
+
+### After deploy
+
+- open the deployed URL
+- register or sign in
+- confirm `GET /api/health` returns a healthy response
+- verify Supabase tables were created from [supabase-setup.sql](/Users/grezello/Desktop/routes_payroll/supabase-setup.sql)
 
 ## Local Run Commands
 

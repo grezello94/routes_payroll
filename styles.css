@@ -2518,6 +2518,7 @@ textarea {
   color: #4a6384;
   font-weight: 700;
   font-size: 0.92rem;
+  white-space: pre-line;
 }
 
 #verifyEmailBtn {

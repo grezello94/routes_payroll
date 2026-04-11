@@ -9,3 +9,5 @@ firebase-service-account.json
 routespayroll-firebase-adminsdk*.json
 verify-firestore*.json
 .env.local
+.vercel/
+.vercel
