@@ -684,7 +684,14 @@ function createSqliteStore(baseDir) {
     },
 
     async deletePayrollByMonthCompany(month, companyId) {
-      await run("DELETE FROM payroll_entries WHERE month = ? AND company_id = ?", [month, companyId]);
+      await run("DELETE FROM payroll_entries WHERE month = ? AND company_id = ? AND employee_id <> ?", [month, companyId, PAYROLL_REPORT_ROW_ID]);
+    },
+
+    async replacePayrollRecords(month, companyId, records) {
+      await this.deletePayrollByMonthCompany(month, companyId);
+      for (const record of records) {
+        await this.insertPayrollRecord(month, companyId, record);
+      }
     },
 
     async insertPayrollRecord(month, companyId, record) {
@@ -714,15 +721,39 @@ function createSqliteStore(baseDir) {
     },
 
     async listPayrollReportsByCompany(companyId) {
-      const rows = await all(
+      const newRows = await all(
         `SELECT id, company_id, month, checked_at, generated_at, employee_count, snapshot_json
          FROM payroll_reports
          WHERE company_id = ?
          ORDER BY month DESC, id DESC`,
         [companyId]
       );
-      if (rows.length) {
-        return rows.map((row) => ({
+      
+      const legacyRows = await all(
+        `SELECT id, company_id, month, employee_name, designation, present_salary, comment
+         FROM payroll_entries
+         WHERE company_id = ? AND employee_id = ?
+         ORDER BY month DESC, id DESC`,
+        [companyId, PAYROLL_REPORT_ROW_ID]
+      );
+
+      const merged = new Map();
+      
+      for (const row of legacyRows) {
+        merged.set(row.month, {
+          id: row.id,
+          company_id: row.company_id,
+          month: row.month,
+          checked_at: row.employee_name || "",
+          generated_at: row.designation || "",
+          employee_count: Number(row.present_salary || 0),
+          snapshot_json: row.comment || "",
+          legacy: true,
+        });
+      }
+
+      for (const row of newRows) {
+        merged.set(row.month, {
           id: row.id,
           company_id: row.company_id,
           month: row.month,
@@ -731,24 +762,10 @@ function createSqliteStore(baseDir) {
           employee_count: Number(row.employee_count || 0),
           snapshot_json: row.snapshot_json || "",
           legacy: false,
-        }));
+        });
       }
-      return all(
-        `SELECT id, company_id, month, employee_name, designation, present_salary, comment
-         FROM payroll_entries
-         WHERE company_id = ? AND employee_id = ?
-         ORDER BY month DESC, id DESC`,
-        [companyId, PAYROLL_REPORT_ROW_ID]
-      ).then((legacyRows) => legacyRows.map((row) => ({
-        id: row.id,
-        company_id: row.company_id,
-        month: row.month,
-        checked_at: row.employee_name || "",
-        generated_at: row.designation || "",
-        employee_count: Number(row.present_salary || 0),
-        snapshot_json: row.comment || "",
-        legacy: true,
-      })));
+
+      return Array.from(merged.values()).sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
     },
 
     async getPayrollReportByIdCompany(id, companyId) {
@@ -1426,6 +1443,13 @@ function createFirebaseStore(baseDir) {
       }
     },
 
+    async replacePayrollRecords(month, companyId, records) {
+      await this.deletePayrollByMonthCompany(month, companyId);
+      for (const record of records) {
+        await this.insertPayrollRecord(month, companyId, record);
+      }
+    },
+
     async insertPayrollRecord(month, companyId, record) {
       const id = await getCounter("payroll_entries");
       await col("payroll_entries").doc(String(id)).set({
@@ -1462,12 +1486,10 @@ function createFirebaseStore(baseDir) {
           snapshot_json: row.snapshot_json || "",
           created_at: row.created_at || "",
           legacy: false,
-        }))
-        .sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
-      if (reports.length) return reports;
+        }));
 
       const legacySnapshot = await col("payroll_entries").get();
-      return legacySnapshot.docs
+      const legacyReports = legacySnapshot.docs
         .map((docSnap) => docSnap.data() || {})
         .filter((row) => Number(row.company_id) === Number(companyId) && String(row.employee_id || "") === PAYROLL_REPORT_ROW_ID)
         .map((row) => ({
@@ -1480,8 +1502,17 @@ function createFirebaseStore(baseDir) {
           snapshot_json: row.comment || "",
           created_at: row.created_at || "",
           legacy: true,
-        }))
-        .sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
+        }));
+
+      const merged = new Map();
+      for (const report of legacyReports) {
+        merged.set(report.month, report);
+      }
+      for (const report of reports) {
+        merged.set(report.month, report);
+      }
+
+      return Array.from(merged.values()).sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
     },
 
     async getPayrollReportByIdCompany(id, companyId) {
@@ -1570,7 +1601,7 @@ function createFirebaseStore(baseDir) {
 function createSupabaseStore() {
   const baseUrl = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  const requestTimeoutMs = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 8000));
+  const requestTimeoutMs = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 30000));
   const nowIso = () => new Date().toISOString();
   const supabaseCapabilities = {
     requiredTablesChecked: false,
@@ -1586,7 +1617,7 @@ function createSupabaseStore() {
     const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
 
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      return await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
     } catch (error) {
       if (error?.name === "AbortError") {
         throw new Error(`Supabase request timed out after ${requestTimeoutMs}ms.`);
@@ -2180,8 +2211,48 @@ function createSupabaseStore() {
         query: {
           month: `eq.${month}`,
           company_id: `eq.${Number(companyId)}`,
+          employee_id: `neq.${PAYROLL_REPORT_ROW_ID}`,
         },
       });
+    },
+
+    async replacePayrollRecords(month, companyId, records) {
+      await this.deletePayrollByMonthCompany(month, companyId);
+      if (!records || records.length === 0) return;
+
+      let attemptedIds = [];
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const startId = attempt === 0
+          ? await nextNumericId("payroll_entries")
+          : Math.max(Date.now(), ...attemptedIds) + attempt * 1000;
+        attemptedIds.push(startId);
+
+        const body = records.map((record, idx) => ({
+          id: startId + idx,
+          company_id: Number(companyId),
+          month,
+          employee_id: record.employeeId || "",
+          employee_name: record.employeeName || "",
+          designation: record.designation || "",
+          present_salary: Number(record.presentSalary || 0),
+          increment: Number(record.increment || 0),
+          old_advance_taken: Number(record.oldAdvanceTaken || 0),
+          extra_advance_added: Number(record.extraAdvanceAdded || 0),
+          deduction_entered: Number(record.deductionEntered || 0),
+          days_absent: Number(record.daysAbsent || 0),
+          comment: record.comment || "",
+          position_index: Number(record.positionIndex || 0),
+          updated_at: nowIso(),
+        }));
+
+        try {
+          await supabaseRest("payroll_entries", { method: "POST", body });
+          return;
+        } catch (error) {
+          if (String(error?.code || "") !== "23505") throw error;
+        }
+      }
+      throw new Error("Failed to allocate unique ids for bulk insert in Supabase.");
     },
 
     async insertPayrollRecord(month, companyId, record) {
@@ -2209,6 +2280,7 @@ function createSupabaseStore() {
     },
 
     async listPayrollReportsByCompany(companyId) {
+      let newReports = [];
       if (await canUsePayrollReportsTable()) {
         const rows = await supabaseRest("payroll_reports", {
           query: {
@@ -2218,8 +2290,8 @@ function createSupabaseStore() {
           },
           allowEmpty: true,
         });
-        if (rows.length) {
-          return rows.map((row) => ({
+        if (rows && rows.length) {
+          newReports = rows.map((row) => ({
             id: row.id,
             company_id: row.company_id,
             month: row.month,
@@ -2231,7 +2303,8 @@ function createSupabaseStore() {
           }));
         }
       }
-      return supabaseRest("payroll_entries", {
+      
+      const legacyRows = await supabaseRest("payroll_entries", {
         query: {
           select: "*",
           company_id: `eq.${Number(companyId)}`,
@@ -2239,7 +2312,8 @@ function createSupabaseStore() {
           order: "month.desc,id.desc",
         },
         allowEmpty: true,
-      }).then((legacyRows) => legacyRows.map((row) => ({
+      });
+      const legacyReports = (legacyRows || []).map((row) => ({
         id: row.id,
         company_id: row.company_id,
         month: row.month,
@@ -2248,7 +2322,17 @@ function createSupabaseStore() {
         employee_count: Number(row.present_salary || 0),
         snapshot_json: row.comment || "",
         legacy: true,
-      })));
+      }));
+
+      const merged = new Map();
+      for (const report of legacyReports) {
+        merged.set(report.month, report);
+      }
+      for (const report of newReports) {
+        merged.set(report.month, report);
+      }
+      
+      return Array.from(merged.values()).sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")) || (Number(b.id || 0) - Number(a.id || 0)));
     },
 
     async getPayrollReportByIdCompany(id, companyId) {

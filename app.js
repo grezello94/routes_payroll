@@ -1190,6 +1190,13 @@ function wireAppActions() {
   wireRailActions();
   wireCompanyActions();
 
+  window.addEventListener("beforeunload", (event) => {
+    if (saveInFlight || pendingSaveTimer || saveQueued) {
+      event.preventDefault();
+      event.returnValue = "Changes are still saving to the cloud. Please wait a moment before leaving.";
+    }
+  });
+
   SELECTORS.clearErrorLogsBtn?.addEventListener("click", () => {
     clearErrorLogs();
     showAppMessage("Error logs cleared.");
@@ -1197,6 +1204,8 @@ function wireAppActions() {
 
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
+    activePayrollReportId = null;
+    activePayrollReportSnapshot = null;
     await loadMonthRecords();
     await loadPayrollReports();
   });
@@ -1842,6 +1851,8 @@ function wireCompanyActions() {
   SELECTORS.companyPicker.addEventListener("change", async () => {
     await flushPendingSave();
     activeCompanyId = Number(SELECTORS.companyPicker.value) || null;
+    activePayrollReportId = null;
+    activePayrollReportSnapshot = null;
     await loadEmployees();
     await loadMonthRecords();
     await loadDesignationPresets();
@@ -2493,8 +2504,8 @@ function renderPayrollTable() {
   })();
   const allowOverride = isFirstMonth || isCurrentMonth;
   const visibleRecords = currentRecords
-    .filter((record) => isPayrollVisibleForMonth(record, month))
-    .map((record, index) => ({ record, index }));
+    .map((record, index) => ({ record, index }))
+    .filter((item) => isPayrollVisibleForMonth(item.record, month));
   const visibleCount = visibleRecords.length;
 
   if (visibleCount === 0) {
@@ -2747,14 +2758,20 @@ async function persistRecords() {
       body: { records: currentRecords },
     });
     setSaveStatus("All changes saved.");
-  } catch (error) {
-    setSaveStatus("Save failed.");
-    showAppMessage(error.message);
-  } finally {
     saveInFlight = false;
     if (saveQueued) {
       saveQueued = false;
       persistRecords();
+    }
+  } catch (error) {
+    setSaveStatus("Network busy. Auto-retrying save...");
+    saveInFlight = false;
+    saveQueued = true;
+    if (!pendingSaveTimer) {
+      pendingSaveTimer = setTimeout(() => {
+        pendingSaveTimer = null;
+        persistRecords();
+      }, 4000);
     }
   }
 }

@@ -44,7 +44,7 @@ const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyCqK3ZVR-
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-const SUPABASE_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 8000));
+const SUPABASE_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 30000));
 const store = createStore({ baseDir: __dirname });
 const RATE_BUCKETS = new Map();
 const AUTH_CACHE = new Map();
@@ -53,7 +53,7 @@ let startupReady = false;
 let startupState = "pending";
 let startupInitPromise = null;
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static(__dirname, { index: "index.html" }));
 
 function isValidMonth(month) {
@@ -223,6 +223,7 @@ async function getSystemBackupPayload() {
   const rows = await store.listPayrollEntriesAll();
   const employees = [];
   const designations = [];
+  const reports = [];
   for (const company of companies) {
     // eslint-disable-next-line no-await-in-loop
     const companyEmployees = await store.listEmployeesByCompany(company.id);
@@ -230,6 +231,20 @@ async function getSystemBackupPayload() {
     // eslint-disable-next-line no-await-in-loop
     const companyDesignations = await store.listDesignationPresets(company.id);
     designations.push(...companyDesignations.map(dbRowToDesignation));
+    // eslint-disable-next-line no-await-in-loop
+    const companyReports = await store.listPayrollReportsByCompany(company.id);
+    for (const r of companyReports) {
+      reports.push({
+        id: r.id,
+        companyId: r.company_id || r.companyId || company.id,
+        month: r.month,
+        checkedAt: r.checked_at || r.checkedAt || "",
+        generatedAt: r.generated_at || r.generatedAt || "",
+        employeeCount: r.employee_count || r.employeeCount || 0,
+        snapshotJson: r.snapshot_json || r.snapshotJson || "",
+        legacy: r.legacy || false,
+      });
+    }
   }
 
   return {
@@ -241,6 +256,7 @@ async function getSystemBackupPayload() {
     employees,
     designations,
     entries: rows.map(dbRowToRecord),
+    reports,
   };
 }
 
@@ -314,7 +330,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_REQUEST_
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
   } catch (error) {
     if (error?.name === "AbortError") {
       throw new Error(`Request timed out after ${timeoutMs}ms.`);
@@ -1838,6 +1854,7 @@ app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
   const employeesPayload = req.body?.employees;
   const designationsPayload = req.body?.designations;
   const entriesPayload = req.body?.entries;
+  const reportsPayload = req.body?.reports;
   const months = req.body?.months;
   const isLegacyPayload = months && typeof months === "object" && !Array.isArray(months);
   const isNewPayload = Array.isArray(companiesPayload) && Array.isArray(entriesPayload);
@@ -1901,6 +1918,25 @@ app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
         const record = normalizeRecord(rawEntry, Number(rawEntry?.positionIndex) || 0);
         await store.insertPayrollRecord(month, companyId, record);
       }
+
+      if (Array.isArray(reportsPayload)) {
+        for (const rawReport of reportsPayload) {
+          const companyId = parseCompanyId(rawReport?.companyId, null);
+          const month = String(rawReport?.month || "");
+          if (!companyId || !isValidMonth(month) || !(await store.companyExists(companyId))) continue;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await store.savePayrollReportSnapshot(month, companyId, {
+              checkedAt: rawReport.checkedAt || "",
+              generatedAt: rawReport.generatedAt || "",
+              employeeCount: rawReport.employeeCount || 0,
+              snapshot: parseSnapshotJson(rawReport.snapshotJson),
+            });
+          } catch {
+            // Ignore errors for individual reports during restore
+          }
+        }
+      }
     } else {
       for (const [month, records] of Object.entries(months)) {
         if (!isValidMonth(month) || !Array.isArray(records)) {
@@ -1957,10 +1993,7 @@ app.put("/api/payroll/:month", authMiddleware, async (req, res) => {
   const normalized = records.map((record, index) => normalizeRecord(record, index));
 
   try {
-    await store.deletePayrollByMonthCompany(month, companyId);
-    for (const record of normalized) {
-      await store.insertPayrollRecord(month, companyId, record);
-    }
+    await store.replacePayrollRecords(month, companyId, normalized);
     res.json({ ok: true, count: normalized.length });
   } catch (error) {
     console.error(`Failed to save payroll month data for ${month} company ${companyId}:`, error);
