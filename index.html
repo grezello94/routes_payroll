@@ -9,7 +9,17 @@
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css?v=20260408f" />
     <style id="responsive-overrides">
-      /* Mobile and Tablet Responsive Adjustments */
+      /* 1. Prevent universal horizontal scrolling & overflow */
+      *, *::before, *::after {
+        box-sizing: border-box !important;
+      }
+      html, body, .shell {
+        overflow-x: hidden !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+      }
+
+      /* 2. Mobile and Tablet Responsive Adjustments */
       @media (max-width: 850px) {
         .app-view {
           flex-direction: column !important;
@@ -44,6 +54,7 @@
         .app-main {
           padding: 15px 15px calc(85px + env(safe-area-inset-bottom)) 15px !important;
           width: 100% !important;
+          max-width: 100vw !important;
           height: auto !important;
           overflow-y: visible !important;
         }
@@ -53,12 +64,30 @@
           gap: 15px;
         }
         .toolbar {
-          flex-wrap: wrap !important;
-          justify-content: flex-start;
-          gap: 10px;
+          flex-direction: column !important;
+          align-items: stretch !important;
+          gap: 12px !important;
         }
-        .toolbar > * {
-          flex: 1 1 auto;
+        .toolbar label {
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: flex-start !important;
+          width: 100% !important;
+        }
+        .toolbar select, .toolbar input, .toolbar button {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+        }
+        .action-menu summary {
+          width: 100% !important;
+        }
+        .menu-sheet {
+          width: 100% !important;
+          position: static !important;
+          box-shadow: none !important;
+          border: 1px solid var(--border) !important;
+          margin-top: 5px !important;
         }
         .metrics {
           grid-template-columns: 1fr 1fr !important;
@@ -70,14 +99,40 @@
           grid-template-columns: 1fr 1fr !important;
         }
         .payroll-modern-grid {
+          display: flex !important;
           flex-direction: column !important;
+          gap: 20px !important;
+        }
+        .employee-form, .employee-status-fields, .payroll-fields {
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 15px !important;
+        }
+        .settings-inline {
+          flex-direction: column !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+        .settings-inline input, .settings-inline button {
+          width: 100% !important;
         }
         .employee-list-wrap, .table-wrap {
           overflow-x: auto !important;
           -webkit-overflow-scrolling: touch;
+          width: 100% !important;
+          max-width: calc(100vw - 30px) !important;
         }
         table {
           min-width: 700px !important; 
+        }
+        .row-actions {
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 8px !important;
+        }
+        .row-actions button {
+          width: 100% !important;
+          margin: 0 !important;
         }
         .dialog-content {
           width: 95vw !important;
@@ -104,21 +159,22 @@
           width: 100% !important;
           margin: 0 !important;
         }
+        .auth-view {
+          padding: 15px !important;
+        }
         .auth-card {
           width: 95% !important;
           margin: 20px auto !important;
+          padding: 20px 15px !important;
         }
       }
 
       @media (max-width: 480px) {
-        .metrics, .dashboard-summary-cards {
+        .metrics, .dashboard-summary-cards, .kpi-metrics-row {
           grid-template-columns: 1fr !important;
         }
         .dialog-actions {
           grid-template-columns: 1fr !important;
-        }
-        .toolbar {
-          flex-direction: column !important;
         }
       }
     </style>
