@@ -445,16 +445,6 @@ function syncEmployeeStatusFields() {
   SELECTORS.employeeLeaveFromInput.disabled = !leaveMode;
   SELECTORS.employeeResumeOnInput.disabled = !(leaveMode || resumedMode);
   SELECTORS.employeeTerminatedOnInput.disabled = !terminatedMode;
-
-  if (!leaveMode) {
-    SELECTORS.employeeLeaveFromInput.value = "";
-  }
-  if (!(leaveMode || resumedMode)) {
-    SELECTORS.employeeResumeOnInput.value = "";
-  }
-  if (!terminatedMode) {
-    SELECTORS.employeeTerminatedOnInput.value = "";
-  }
 }
 
 function resetEmployeeForm() {
@@ -576,8 +566,15 @@ function renderEmployeeTable() {
           ? "status-pill terminated"
           : "status-pill working";
       let advanceRemainedDisplay = Number(employee.openingAdvance || 0);
+      let salaryDisplay = Number(employee.baseSalary || 0);
       const payroll = payrollByEmployee[employee.employeeId];
       if (payroll) {
+        const latestPresentSalary = Number(
+          payroll.presentSalary ?? payroll.present_salary ?? payroll.baseSalary ?? payroll.base_salary
+        );
+        if (Number.isFinite(latestPresentSalary) && latestPresentSalary > 0) {
+          salaryDisplay = latestPresentSalary;
+        }
         if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained))) {
           advanceRemainedDisplay = Number(payroll.advanceRemained);
         }
@@ -595,7 +592,7 @@ function renderEmployeeTable() {
             <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
-          <td>${formatCurrency(Number(employee.baseSalary || 0))}</td>
+          <td>${formatCurrency(salaryDisplay)}</td>
           <td><span class="${advanceRemainedDisplay > 0 ? "advance-remained-alert" : ""}">${formatCurrency(advanceRemainedDisplay)}</span></td>
           <td><span class="${statusClass}">${statusLabel}</span></td>
           <td>${escapeHtml(employee.leaveFrom || "-")}</td>
@@ -1056,10 +1053,9 @@ async function generatePayslipForCurrentRecord(index) {
     });
     activePayrollReportId = Number(response.report?.id || activePayrollReportId || 0) || null;
     activePayrollReportSnapshot = response.snapshot || null;
-    await loadPayrollReports(activePayrollReportId);
-    setWorkspace("reports");
-    SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "reports"));
-    showAppMessage(`Payslip generated for ${record.employeeName || record.employeeId} and added to Reports.`);
+    await loadPayrollReports(activePayrollReportId, { openPreferredReport: false });
+    renderPayrollWorkflow();
+    showAppMessage(`Payslip generated for ${record.employeeName || record.employeeId}.`);
   } catch (error) {
     showAppMessage(error.message);
   }
@@ -1718,21 +1714,22 @@ function wireSettingsActions() {
       const inferenceText = analyzed.diagnostics?.inferenceNotes?.length
         ? ` Mapped fields: ${analyzed.diagnostics.inferenceNotes.slice(0, 4).join("; ")}.`
         : "";
+      const monthPreview = buildLegacyImportPreview(analyzed);
       if (analyzed.payrollRecords.length === 0) {
         const reasonText = analyzed.diagnostics?.reasons?.length
           ? analyzed.diagnostics.reasons.join(" ")
           : "No payroll rows matched expected columns.";
-        setImportSummary(`Import failed: ${reasonText}${inferenceText}`);
+        setImportSummary(`Import failed: ${reasonText}${inferenceText}${monthPreview ? `\n${monthPreview}` : ""}`);
         setSettingsMessage(`Import failed: ${reasonText}`);
         return;
       }
 
       if (btn) btn.textContent = "Importing... 1%";
-      setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... 1%`);
+      setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... 1%${monthPreview ? `\n${monthPreview}` : ""}`);
       await importLegacyAnalysis(analyzed, ({ percent, label }) => {
         const safePercent = Math.max(1, Math.min(100, Number(percent) || 1));
         if (btn) btn.textContent = `Importing... ${safePercent}%`;
-        setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... ${safePercent}%${label ? ` (${label})` : ""}`);
+        setImportSummary(`Rows analyzed: ${analyzed.totalRows}. Importing... ${safePercent}%${label ? ` (${label})` : ""}${monthPreview ? `\n${monthPreview}` : ""}`);
       });
 
       const latestImportedMonth = analyzed.months?.length ? analyzed.months[analyzed.months.length - 1] : "";
@@ -1749,7 +1746,7 @@ function wireSettingsActions() {
       const warningText = analyzed.diagnostics?.warnings?.length
         ? ` Warnings: ${analyzed.diagnostics.warnings.join(" ")}`
         : "";
-      setImportSummary(`Import successful! 100%. Imported ${analyzed.payrollRecords.length} payroll rows across ${analyzed.months.length} month(s).${warningText}${inferenceText}`);
+      setImportSummary(`Import successful! 100%. Imported ${analyzed.payrollRecords.length} payroll rows across ${analyzed.months.length} month(s).${warningText}${inferenceText}${monthPreview ? `\n${monthPreview}` : ""}`);
       setSettingsMessage(`Import successful!${warningText}`);
       showAppMessage("Import successful!");
       if (SELECTORS.legacyImportInput) SELECTORS.legacyImportInput.value = "";
@@ -2140,6 +2137,17 @@ function isPayrollActiveStatus(status) {
   return normalized !== "terminated" && normalized !== "leave";
 }
 
+function isPayrollVisibleForMonth(record, month = getSelectedMonth()) {
+  const status = String(record?.employeeStatus || "working").toLowerCase();
+  if (status === "leave" || status === "terminated") return false;
+  if (status !== "resumed") return true;
+
+  const resumedOn = parseIsoDate(record?.leaveTo);
+  if (!resumedOn) return false;
+  const { end } = monthBounds(month);
+  return resumedOn <= end;
+}
+
 function getSelectedCompanyId() {
   if (activeCompanyId) return activeCompanyId;
   const parsed = Number(SELECTORS.companyPicker.value);
@@ -2205,8 +2213,24 @@ async function loadMonthRecords() {
   const month = getSelectedMonth();
   try {
     const response = await apiRequest(payrollMonthUrl(month));
-    currentRecords = Array.isArray(response.records) ? response.records : [];
-    const visible = currentRecords.filter((record) => isPayrollActiveStatus(record.employeeStatus));
+    currentRecords = (Array.isArray(response.records) ? response.records : []).map((record) => {
+      const employee = employeeMaster.find((item) => String(item.employeeId) === String(record.employeeId));
+      if (!employee) return record;
+
+      const masterSalary = Number(employee.baseSalary || 0);
+      const monthSalary = Number(record.presentSalary || 0);
+      return {
+        ...record,
+        employeeName: employee.employeeName || record.employeeName || "",
+        designation: employee.designation || record.designation || "",
+        presentSalary: masterSalary > 0 ? masterSalary : monthSalary,
+        employeeStatus: employee.status || record.employeeStatus || "working",
+        leaveFrom: employee.leaveFrom || record.leaveFrom || "",
+        leaveTo: employee.leaveTo || record.leaveTo || "",
+        terminatedOn: employee.terminatedOn || record.terminatedOn || "",
+      };
+    });
+    const visible = currentRecords.filter((record) => isPayrollVisibleForMonth(record, month));
     if (!visible.some((record) => String(record.employeeId) === String(activePayrollEmployeeId))) {
       activePayrollEmployeeId = visible[0]?.employeeId || "";
     }
@@ -2228,7 +2252,8 @@ function payrollReportsUrl() {
   return `/api/payroll-reports?companyId=${getSelectedCompanyId()}`;
 }
 
-async function loadPayrollReports(preferredReportId = activePayrollReportId) {
+async function loadPayrollReports(preferredReportId = activePayrollReportId, options = {}) {
+  const { openPreferredReport = true } = options;
   try {
     const response = await apiRequest(payrollReportsUrl());
     payrollReports = Array.isArray(response.reports) ? response.reports : [];
@@ -2237,10 +2262,9 @@ async function loadPayrollReports(preferredReportId = activePayrollReportId) {
       || payrollReports[0]
       || null;
     activePayrollReportId = selectedReport ? Number(selectedReport.id) : null;
-    if (activePayrollReportId) {
+    if (activePayrollReportId && openPreferredReport) {
       await openPayrollReport(activePayrollReportId, true);
     } else {
-      activePayrollReportSnapshot = null;
       renderGeneratedPayrollReports();
       renderReportsSummary();
       renderDashboardInsights();
@@ -2399,7 +2423,7 @@ function computePayroll(record, month = getSelectedMonth()) {
   const proratedAbsenceDeduction = Math.max(0, grossSalary - payableSalary);
   const deductionApplied = Math.min(deductionEntered, totalAdvance);
   const advanceRemained = totalAdvance - deductionApplied;
-  const netSalary = payableSalary - deductionApplied;
+  const netSalary = Math.max(0, payableSalary - deductionApplied);
 
   return {
     blocked,
@@ -2424,6 +2448,38 @@ function computePayroll(record, month = getSelectedMonth()) {
   };
 }
 
+function payrollZeroSalaryReason(record, calc, month) {
+  if (calc.netSalary > 0) return "";
+  if (calc.blocked) {
+    return `Payroll is locked for ${formatMonth(month)}.`;
+  }
+  if (calc.workedDays <= 0) {
+    const joiningDate = parseIsoDate(record.joiningDate);
+    const resumedOn = String(record.employeeStatus || "").toLowerCase() === "resumed"
+      ? parseIsoDate(record.leaveTo)
+      : null;
+    const { end } = monthBounds(month);
+
+    if (joiningDate && joiningDate > end) {
+      return `No salary is payable for ${formatMonth(month)} because joining date ${record.joiningDate} falls after this payroll month.`;
+    }
+    if (resumedOn && resumedOn > end) {
+      return `No salary is payable for ${formatMonth(month)} because resume date ${record.leaveTo} falls after this payroll month.`;
+    }
+    if (calc.manualDaysAbsent >= calc.systemWorkedDays && calc.systemWorkedDays > 0) {
+      return `No salary is payable because manual absent days removed all ${formatNumberValue(calc.systemWorkedDays)} payable day(s).`;
+    }
+    return `No salary is payable for ${formatMonth(month)} because the system counted 0 worked day(s). Check payroll month, joining date, resume date, or absences.`;
+  }
+  if (calc.proratedAbsenceDeduction >= calc.grossSalary) {
+    return `No salary remains after full-month absence proration for ${formatMonth(month)}.`;
+  }
+  if (calc.deductionApplied >= calc.payableSalary && calc.deductionApplied > 0) {
+    return `Advance deduction consumed the full payable salary for ${formatMonth(month)}.`;
+  }
+  return "";
+}
+
 function renderPayrollTable() {
   const month = getSelectedMonth();
   const now = new Date();
@@ -2437,13 +2493,14 @@ function renderPayrollTable() {
   })();
   const allowOverride = isFirstMonth || isCurrentMonth;
   const visibleRecords = currentRecords
+    .filter((record) => isPayrollVisibleForMonth(record, month))
     .map((record, index) => ({ record, index }));
   const visibleCount = visibleRecords.length;
 
   if (visibleCount === 0) {
     SELECTORS.payrollBody.innerHTML = `
       <div class="empty">
-        No payroll records for ${formatMonth(month)}. Add employees from Employee Management.
+        No active payroll employees for ${formatMonth(month)}. Employees on leave or terminated are hidden until they resume.
       </div>
     `;
     updateMetrics([]);
@@ -2455,6 +2512,7 @@ function renderPayrollTable() {
   const index = activeEntry.index;
   activePayrollEmployeeId = record.employeeId || "";
   const calc = computePayroll(record, month);
+  const zeroSalaryReason = payrollZeroSalaryReason(record, calc, month);
   const status = String(record.employeeStatus || "working").toLowerCase();
   const statusLabel = status === "leave"
     ? "On Leave"
@@ -2594,6 +2652,7 @@ function renderPayrollTable() {
                 <span class="field-note">Locked (system calculated)</span>
               </label>
             </div>
+            ${zeroSalaryReason ? `<p class="status-note">${escapeHtml(zeroSalaryReason)}</p>` : ""}
           </section>
         </div>
 
@@ -2601,14 +2660,14 @@ function renderPayrollTable() {
           <div class="kpi-card net">
             <p>Net Salary In Hand</p>
             <strong>${formatCurrency(calc.netSalary)}</strong>
-            <div class="net-sub">Calculated: Gross - Deductions</div>
+            <div class="net-sub">Calculated: Worked Days Pay - Advance Deduction</div>
           </div>
 
           <div class="kpi-card soft">
             <h4>Deductions</h4>
             <div class="kpi-line"><span>Deduction Entered</span><b>${formatCurrency(calc.deductionEntered)}</b></div>
             <div class="kpi-line"><span>Absence Deduction</span><b>${formatCurrency(calc.proratedAbsenceDeduction)}</b></div>
-            <div class="kpi-line total"><span>Total Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
+            <div class="kpi-line total"><span>Advance Deduction Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
           </div>
 
           <div class="kpi-card amber">
@@ -3960,6 +4019,23 @@ function setImportSummary(message) {
   SELECTORS.importLegacySummary.textContent = String(message || "");
 }
 
+function buildLegacyImportPreview(analyzed) {
+  const monthSummaries = Array.isArray(analyzed?.monthSummaries) ? analyzed.monthSummaries : [];
+  if (!monthSummaries.length) return "";
+
+  const latestMonth = monthSummaries[monthSummaries.length - 1];
+  const monthLines = monthSummaries.map((item) => (
+    `${item.month}: ${item.rowCount} row(s), ${item.employeeCount} employee(s), `
+    + `salary ${formatCurrency(item.presentSalary)}, increment ${formatCurrency(item.increment)}, `
+    + `advance ${formatCurrency(item.totalAdvance)}, deduction ${formatCurrency(item.deductionEntered)}`
+  ));
+
+  return [
+    `Detected ${monthSummaries.length} month(s). Latest month: ${latestMonth.month}.`,
+    ...monthLines,
+  ].join("\n");
+}
+
 function excelSerialToDate(value) {
   const raw = Number(value);
   if (!Number.isFinite(raw) || raw <= 0) return null;
@@ -3973,7 +4049,12 @@ async function parseLegacyPayrollFile(file) {
   const name = String(file?.name || "").toLowerCase();
   if (name.endsWith(".csv")) {
     const text = await file.text();
-    return parseCsvRows(text);
+    const inferredMonth = inferMonthValue(file?.name || "");
+    return parseCsvRows(text).map((row) => ({
+      ...row,
+      __sourceSheetName: String(file?.name || "CSV"),
+      __sourceSheetMonth: inferredMonth,
+    }));
   }
 
   if (!window.XLSX) {
@@ -3983,18 +4064,8 @@ async function parseLegacyPayrollFile(file) {
   const workbook = window.XLSX.read(buffer, { type: "array" });
   if (!workbook.SheetNames || workbook.SheetNames.length === 0) return [];
 
-  // Helper to convert sheet name like 'Mar_2026' or 'Apr_2025' to '2026-03' or '2025-04'
   function parseMonthFromSheetName(sheetName) {
-    const match = String(sheetName).match(/([A-Za-z]{3})[_-](\d{4})/);
-    if (match) {
-      const monthMap = {
-        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-      };
-      const m = monthMap[match[1].toLowerCase()];
-      if (m) return `${match[2]}-${m}`;
-    }
-    return '';
+    return inferMonthValue(String(sheetName || ""));
   }
 
   let allRows = [];
@@ -4009,6 +4080,8 @@ async function parseLegacyPayrollFile(file) {
         if (!hasMonth && monthFromSheet) {
           row["Month"] = monthFromSheet;
         }
+        row.__sourceSheetName = sheetName;
+        row.__sourceSheetMonth = monthFromSheet;
       }
       allRows = allRows.concat(rows);
     }
@@ -4110,7 +4183,22 @@ function parseMoney(value) {
   return Number.isFinite(num) ? Math.max(0, num) : 0;
 }
 
-function parseMonthFromImport(value) {
+function parseOptionalMoney(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  return parseMoney(raw);
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function inferMonthValue(value) {
   if (typeof value === "number") {
     const serialDate = excelSerialToDate(value);
     if (serialDate) {
@@ -4119,12 +4207,20 @@ function parseMonthFromImport(value) {
   }
 
   const raw = String(value || "").trim();
-  if (!raw) return getSelectedMonth();
+  if (!raw) return "";
   if (/^\d{4}-\d{2}$/.test(raw)) return raw;
   if (/^\d{4}\/\d{2}$/.test(raw)) return raw.replace("/", "-");
   if (/^\d{2}[-/]\d{4}$/.test(raw)) {
     const [m, y] = raw.split(/[-/]/);
     return `${y}-${m}`;
+  }
+  if (/^\d{4}[-/]\d{1,2}$/.test(raw)) {
+    const [y, m] = raw.split(/[-/]/);
+    return `${y}-${String(Number(m)).padStart(2, "0")}`;
+  }
+  if (/^\d{1,2}[-/]\d{4}$/.test(raw)) {
+    const [m, y] = raw.split(/[-/]/);
+    return `${y}-${String(Number(m)).padStart(2, "0")}`;
   }
   const namedMonthMatch = raw.match(/^([a-z]{3,9})[\s,_/-]+(\d{4})$/i);
   if (namedMonthMatch) {
@@ -4145,10 +4241,35 @@ function parseMonthFromImport(value) {
     const month = monthMap[namedMonthMatch[1].toLowerCase()];
     if (month) return `${namedMonthMatch[2]}-${month}`;
   }
+  const reversedNamedMonthMatch = raw.match(/^(\d{4})[\s,_/-]+([a-z]{3,9})$/i);
+  if (reversedNamedMonthMatch) {
+    const monthMap = {
+      january: "01", jan: "01",
+      february: "02", feb: "02",
+      march: "03", mar: "03",
+      april: "04", apr: "04",
+      may: "05",
+      june: "06", jun: "06",
+      july: "07", jul: "07",
+      august: "08", aug: "08",
+      september: "09", sept: "09", sep: "09",
+      october: "10", oct: "10",
+      november: "11", nov: "11",
+      december: "12", dec: "12",
+    };
+    const month = monthMap[reversedNamedMonthMatch[2].toLowerCase()];
+    if (month) return `${reversedNamedMonthMatch[1]}-${month}`;
+  }
   const date = new Date(raw);
   if (!Number.isNaN(date.getTime())) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
   }
+  return "";
+}
+
+function parseMonthFromImport(value) {
+  const inferred = inferMonthValue(value);
+  if (inferred) return inferred;
   return getSelectedMonth();
 }
 
@@ -4190,6 +4311,13 @@ function isSpreadsheetErrorValue(value) {
   return raw === "#REF!" || raw === "#VALUE!" || raw === "#NAME?" || raw === "#N/A" || raw === "#NULL!";
 }
 
+function rowHasSpreadsheetError(row, schema, fields) {
+  return fields.some((field) => {
+    const value = pickCellFromSchema(row, schema, field);
+    return isSpreadsheetErrorValue(value);
+  });
+}
+
 function isLikelyMonthValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return false;
@@ -4212,18 +4340,46 @@ function isLikelyDaysAbsentValue(value) {
   return Number.isFinite(num) && num >= 0 && num <= 31;
 }
 
+function makeImportHeaderStats(rows, headers) {
+  const sampleRows = Array.isArray(rows) ? rows.slice(0, 50) : [];
+  const stats = new Map();
+  for (const header of headers) {
+    let nonEmpty = 0;
+    let moneyLike = 0;
+    let monthLike = 0;
+    let nameLike = 0;
+    let idLike = 0;
+    let absentLike = 0;
+    for (const row of sampleRows) {
+      const rawValue = row?.[header.original];
+      if (String(rawValue ?? "").trim() === "") continue;
+      nonEmpty += 1;
+      if (isLikelyMoneyValue(rawValue)) moneyLike += 1;
+      if (isLikelyMonthValue(rawValue)) monthLike += 1;
+      if (isLikelyPersonName(rawValue)) nameLike += 1;
+      if (isLikelyEmployeeId(rawValue)) idLike += 1;
+      if (isLikelyDaysAbsentValue(rawValue)) absentLike += 1;
+    }
+    stats.set(header.original, { nonEmpty, moneyLike, monthLike, nameLike, idLike, absentLike });
+  }
+  return stats;
+}
+
 function buildImportSchema(rows) {
   const headerMap = collectImportHeaders(rows);
   const headers = Array.from(headerMap.entries()).map(([normalized, original]) => ({ normalized, original }));
   const sampleRows = Array.isArray(rows) ? rows.slice(0, 25) : [];
+  const headerStats = makeImportHeaderStats(rows, headers);
   const fieldDefinitions = {
     employeeId: {
       aliases: ["employee id", "emp id", "employeeid", "staff id", "staff code", "id code", "code"],
       scoreValue: isLikelyEmployeeId,
+      negativeAliases: ["phone", "mobile", "month", "salary", "advance", "deduction"],
     },
     employeeName: {
       aliases: ["employee name", "employee names", "name", "emp name", "staff name", "full name", "worker name"],
       scoreValue: isLikelyPersonName,
+      negativeAliases: ["company name", "month", "designation", "role", "comment", "remark"],
     },
     designation: {
       aliases: ["designation", "role", "position", "job title", "title", "department role"],
@@ -4231,65 +4387,111 @@ function buildImportSchema(rows) {
         const raw = String(value || "").trim();
         return raw.length >= 2 && raw.length <= 60 && !/\d{4,}/.test(raw);
       },
+      negativeAliases: ["employee", "name", "month", "salary", "advance", "deduction"],
     },
     month: {
       aliases: ["year month", "updated month", "month", "period", "salary month", "pay month", "for month"],
       scoreValue: isLikelyMonthValue,
+      negativeAliases: ["joining", "birth", "salary", "advance", "deduction"],
     },
     presentSalary: {
-      aliases: ["present salary", "salary", "base salary", "net salary", "gross salary", "monthly salary", "salary amount"],
+      aliases: ["present salary", "salary", "base salary", "monthly salary", "salary amount", "basic salary"],
       scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["increment", "advance", "deduction", "days absent", "old advance", "extra advance"],
+    },
+    grossSalary: {
+      aliases: ["gross salary", "gross", "gross pay", "total salary before deduction"],
+      scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["net salary", "present salary", "increment", "deduction", "advance remained"],
     },
     increment: {
-      aliases: ["increment", "salary increment", "raise", "hike"],
+      aliases: ["increment", "salary increment", "raise", "hike", "inc", "incr"],
       scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["salary", "advance", "deduction", "absent"],
     },
     oldAdvanceTaken: {
       aliases: ["old advance taken", "old advance", "advance taken", "previous advance", "opening advance"],
       scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["extra advance", "deduction", "salary", "increment"],
     },
     extraAdvanceAdded: {
-      aliases: ["extra advance added", "extra advance", "new advance", "advance added", "fresh advance"],
+      aliases: ["extra advance added", "extra advance", "new advance", "advance added", "fresh advance", "advance add"],
       scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["old advance", "deduction", "salary", "increment"],
     },
     deductionEntered: {
-      aliases: ["deduction entered", "deduction", "advance deduction", "recovery", "recovered amount"],
+      aliases: ["deduction entered", "deduction", "advance deduction", "recovery", "recovered amount", "deducted", "recovery amount"],
       scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["days absent", "salary", "increment", "advance remained"],
+    },
+    totalAdvance: {
+      aliases: ["total advance", "advance total", "total advance taken"],
+      scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["old advance", "extra advance", "deduction", "salary"],
+    },
+    deductionApplied: {
+      aliases: ["deduction applied", "advance deduction applied", "deduction applied advance only", "recovery applied"],
+      scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["days absent", "salary", "increment", "advance remained"],
+    },
+    advanceRemained: {
+      aliases: ["advance remained", "advance remaining", "remaining advance", "advance balance"],
+      scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["deduction", "salary", "increment", "total advance"],
+    },
+    netSalary: {
+      aliases: ["salary in hand", "net salary", "salary in hand net salary", "take home salary", "net pay"],
+      scoreValue: isLikelyMoneyValue,
+      negativeAliases: ["gross salary", "advance remained", "deduction", "increment"],
     },
     daysAbsent: {
       aliases: ["days absent", "absent", "attendance absent", "absent days", "leave days"],
       scoreValue: isLikelyDaysAbsentValue,
+      negativeAliases: ["deduction", "salary", "advance", "month"],
     },
     comment: {
       aliases: ["comment", "notes", "remark", "remarks", "description"],
       scoreValue: (value) => String(value || "").trim().length > 0,
+      negativeAliases: ["month", "salary", "advance", "deduction", "employee id"],
     },
     joiningDate: {
       aliases: ["joining date", "date of joining", "doj", "joined on"],
       scoreValue: (value) => Boolean(parseIsoFromImport(value)),
+      negativeAliases: ["birth", "month", "salary", "advance"],
     },
     birthDate: {
       aliases: ["birth date", "date of birth", "dob"],
       scoreValue: (value) => Boolean(parseIsoFromImport(value)),
+      negativeAliases: ["joining", "month", "salary", "advance"],
     },
     mobileNumber: {
       aliases: ["mobile", "phone", "contact", "mobile number", "phone number"],
       scoreValue: (value) => /\d{7,}/.test(String(value || "").replace(/\D/g, "")),
+      negativeAliases: ["employee id", "month", "salary", "advance", "deduction"],
     },
   };
 
   const schema = {};
   const inferenceNotes = [];
+  const candidates = [];
 
   for (const [field, definition] of Object.entries(fieldDefinitions)) {
-    let best = { original: "", score: -1, matchedBy: "" };
     for (const header of headers) {
       let score = 0;
       let matchedBy = "content";
       for (const alias of definition.aliases) {
-        if (headerMatchesAlias(header.normalized, alias)) {
-          score += 12;
+        const normalizedAlias = normalizeHeader(alias);
+        if (header.normalized === normalizedAlias) {
+          score += 18;
           matchedBy = "header";
+        } else if (headerMatchesAlias(header.normalized, alias)) {
+          score += 10;
+          matchedBy = "header";
+        }
+      }
+      for (const negativeAlias of definition.negativeAliases || []) {
+        if (headerMatchesAlias(header.normalized, negativeAlias)) {
+          score -= 8;
         }
       }
 
@@ -4304,16 +4506,48 @@ function buildImportSchema(rows) {
       if (sampleChecks > 0) {
         score += Math.round((sampleMatches / sampleChecks) * 8);
       }
-
-      if (score > best.score) {
-        best = { original: header.original, score, matchedBy };
+      const stats = headerStats.get(header.original);
+      if (stats) {
+        if (field === "month") score += Math.round(((stats.monthLike || 0) / Math.max(1, stats.nonEmpty || 1)) * 10);
+        if (field === "employeeName") score += Math.round(((stats.nameLike || 0) / Math.max(1, stats.nonEmpty || 1)) * 6);
+        if (field === "employeeId") score += Math.round(((stats.idLike || 0) / Math.max(1, stats.nonEmpty || 1)) * 6);
+        if ([
+          "presentSalary",
+          "grossSalary",
+          "increment",
+          "oldAdvanceTaken",
+          "extraAdvanceAdded",
+          "totalAdvance",
+          "deductionEntered",
+          "deductionApplied",
+          "advanceRemained",
+          "netSalary",
+        ].includes(field)) {
+          score += Math.round(((stats.moneyLike || 0) / Math.max(1, stats.nonEmpty || 1)) * 4);
+        }
+        if (field === "daysAbsent") {
+          score += Math.round(((stats.absentLike || 0) / Math.max(1, stats.nonEmpty || 1)) * 8);
+        }
       }
+      candidates.push({ field, original: header.original, score, matchedBy });
     }
+  }
 
-    if (best.original && best.score >= 6) {
-      schema[field] = best.original;
-      inferenceNotes.push(`${field} -> ${best.original} (${best.matchedBy} inference)`);
-    } else {
+  const assignedHeaders = new Set();
+  const sortedCandidates = candidates
+    .filter((item) => item.original && item.score >= 6)
+    .sort((a, b) => b.score - a.score || a.field.localeCompare(b.field));
+
+  for (const candidate of sortedCandidates) {
+    if (schema[candidate.field]) continue;
+    if (assignedHeaders.has(candidate.original)) continue;
+    schema[candidate.field] = candidate.original;
+    assignedHeaders.add(candidate.original);
+    inferenceNotes.push(`${candidate.field} -> ${candidate.original} (${candidate.matchedBy} inference, score ${candidate.score})`);
+  }
+
+  for (const field of Object.keys(fieldDefinitions)) {
+    if (!schema[field]) {
       schema[field] = "";
     }
   }
@@ -4345,18 +4579,43 @@ function analyzeLegacyRows(rows) {
   const designationSet = new Set();
   const employeeMap = new Map();
   const earliestMonthByEmployee = new Map();
+  const latestMonthByEmployee = new Map();
   const monthSet = new Set();
   const { schema: detectedHeaders, inferenceNotes } = buildImportSchema(rows);
   const usedEmployeeIds = new Set();
   let skippedMissingEmployeeName = 0;
+  let skippedSpreadsheetErrorRows = 0;
   let defaultedMonthCount = 0;
+  let sheetInferredMonthCount = 0;
   let generatedEmployeeIdCount = 0;
+  let duplicateEmployeeMonthCount = 0;
+  const seenEmployeeMonthKeys = new Set();
 
   rows.forEach((row, rowIndex) => {
     let employeeId = String(pickCellFromSchema(row, detectedHeaders, "employeeId") || "").trim();
     const employeeName = String(pickCellFromSchema(row, detectedHeaders, "employeeName") || "").trim();
     if (!employeeName || isSpreadsheetErrorValue(employeeName) || isSpreadsheetErrorValue(employeeId)) {
       skippedMissingEmployeeName += 1;
+      return;
+    }
+    if (rowHasSpreadsheetError(row, detectedHeaders, [
+      "employeeId",
+      "employeeName",
+      "designation",
+      "month",
+      "presentSalary",
+      "grossSalary",
+      "increment",
+      "oldAdvanceTaken",
+      "extraAdvanceAdded",
+      "totalAdvance",
+      "deductionEntered",
+      "deductionApplied",
+      "advanceRemained",
+      "daysAbsent",
+      "comment",
+    ])) {
+      skippedSpreadsheetErrorRows += 1;
       return;
     }
     if (!employeeId) {
@@ -4368,18 +4627,57 @@ function analyzeLegacyRows(rows) {
 
     const designation = String(pickCellFromSchema(row, detectedHeaders, "designation") || "").trim();
     const rawMonthValue = pickCellFromSchema(row, detectedHeaders, "month");
-    const month = parseMonthFromImport(rawMonthValue);
+    const explicitMonth = inferMonthValue(rawMonthValue);
+    const sheetMonth = inferMonthValue(row?.__sourceSheetMonth || row?.__sourceSheetName || "");
+    const month = explicitMonth || sheetMonth || getSelectedMonth();
     const presentSalary = parseMoney(pickCellFromSchema(row, detectedHeaders, "presentSalary"));
-    const increment = parseMoney(pickCellFromSchema(row, detectedHeaders, "increment"));
-    const oldAdvanceTaken = parseMoney(pickCellFromSchema(row, detectedHeaders, "oldAdvanceTaken"));
-    const extraAdvanceAdded = parseMoney(pickCellFromSchema(row, detectedHeaders, "extraAdvanceAdded"));
-    const deductionEntered = parseMoney(pickCellFromSchema(row, detectedHeaders, "deductionEntered"));
+    const grossSalary = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "grossSalary"));
+    const explicitIncrement = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "increment"));
+    const explicitOldAdvanceTaken = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "oldAdvanceTaken"));
+    const explicitExtraAdvanceAdded = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "extraAdvanceAdded"));
+    const totalAdvance = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "totalAdvance"));
+    const explicitDeductionEntered = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "deductionEntered"));
+    const deductionApplied = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "deductionApplied"));
+    const advanceRemained = parseOptionalMoney(pickCellFromSchema(row, detectedHeaders, "advanceRemained"));
+    const increment = firstFiniteNumber(
+      explicitIncrement,
+      grossSalary !== null ? Math.max(0, grossSalary - presentSalary) : null,
+      0
+    );
+    const extraAdvanceAdded = firstFiniteNumber(
+      explicitExtraAdvanceAdded,
+      totalAdvance !== null && explicitOldAdvanceTaken !== null
+        ? Math.max(0, totalAdvance - explicitOldAdvanceTaken)
+        : null,
+      0
+    );
+    const oldAdvanceTaken = firstFiniteNumber(
+      explicitOldAdvanceTaken,
+      totalAdvance !== null && explicitExtraAdvanceAdded !== null
+        ? Math.max(0, totalAdvance - explicitExtraAdvanceAdded)
+        : null
+    );
+    const deductionEntered = firstFiniteNumber(
+      explicitDeductionEntered,
+      deductionApplied,
+      totalAdvance !== null && advanceRemained !== null
+        ? Math.max(0, totalAdvance - advanceRemained)
+        : null,
+      0
+    );
     const daysAbsentRaw = Number(pickCellFromSchema(row, detectedHeaders, "daysAbsent"));
     const daysAbsent = Number.isFinite(daysAbsentRaw) ? Math.min(30, Math.max(0, daysAbsentRaw)) : 0;
     const comment = String(pickCellFromSchema(row, detectedHeaders, "comment") || "").trim();
-    if (!String(rawMonthValue || "").trim()) {
+    if (!explicitMonth && sheetMonth) {
+      sheetInferredMonthCount += 1;
+    } else if (!explicitMonth) {
       defaultedMonthCount += 1;
     }
+    const employeeMonthKey = `${employeeId}__${month}`;
+    if (seenEmployeeMonthKeys.has(employeeMonthKey)) {
+      duplicateEmployeeMonthCount += 1;
+    }
+    seenEmployeeMonthKeys.add(employeeMonthKey);
 
     if (designation) designationSet.add(designation);
     monthSet.add(month);
@@ -4387,19 +4685,23 @@ function analyzeLegacyRows(rows) {
     if (!previousEarliestMonth || String(month).localeCompare(previousEarliestMonth) < 0) {
       earliestMonthByEmployee.set(employeeId, month);
     }
+    const previousLatestMonth = latestMonthByEmployee.get(employeeId);
+    if (!previousLatestMonth || String(month).localeCompare(previousLatestMonth) > 0) {
+      latestMonthByEmployee.set(employeeId, month);
+    }
 
     payrollRecords.push({
       month,
       employeeId,
-      employeeName,
-      designation,
-      presentSalary,
-      increment,
-      oldAdvanceTaken,
-      extraAdvanceAdded,
-      deductionEntered,
-      daysAbsent,
-      comment,
+        employeeName,
+        designation,
+        presentSalary,
+        increment,
+        oldAdvanceTaken: oldAdvanceTaken ?? "",
+        extraAdvanceAdded,
+        deductionEntered,
+        daysAbsent,
+        comment,
     });
 
     if (!employeeMap.has(employeeId)) {
@@ -4420,8 +4722,18 @@ function analyzeLegacyRows(rows) {
       const existingEmployee = employeeMap.get(employeeId);
       const importedJoiningDate = parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "joiningDate"));
       const earliestMonth = earliestMonthByEmployee.get(employeeId) || month || getSelectedMonth();
+      const latestMonth = latestMonthByEmployee.get(employeeId) || month || getSelectedMonth();
       if (existingEmployee && !existingEmployee.joiningDate) {
         existingEmployee.joiningDate = importedJoiningDate || `${String(earliestMonth)}-01`;
+      }
+      if (existingEmployee) {
+        const existingLatestMonth = String(existingEmployee.__latestImportedMonth || "");
+        if (!existingLatestMonth || String(latestMonth).localeCompare(existingLatestMonth) >= 0) {
+          existingEmployee.baseSalary = presentSalary;
+          existingEmployee.openingAdvance = oldAdvanceTaken ?? existingEmployee.openingAdvance ?? 0;
+          existingEmployee.designation = designation || existingEmployee.designation || "Staff";
+          existingEmployee.__latestImportedMonth = latestMonth;
+        }
       }
     }
   });
@@ -4436,6 +4748,9 @@ function analyzeLegacyRows(rows) {
   if (rows.length > 0 && payrollRecords.length === 0 && skippedMissingEmployeeName > 0) {
     reasons.push(`Skipped ${skippedMissingEmployeeName} row(s) because Employee Name was empty or not recognized.`);
   }
+  if (skippedSpreadsheetErrorRows > 0) {
+    reasons.push(`Skipped ${skippedSpreadsheetErrorRows} row(s) because they contained spreadsheet error values like #REF!.`);
+  }
   if (!detectedHeaders.month) {
     reasons.push("No Month column was detected, so the importer would fall back to the currently selected month.");
   }
@@ -4444,26 +4759,77 @@ function analyzeLegacyRows(rows) {
   if (defaultedMonthCount > 0) {
     warnings.push(`${defaultedMonthCount} row(s) did not include a month, so the selected app month was used.`);
   }
+  if (sheetInferredMonthCount > 0) {
+    warnings.push(`${sheetInferredMonthCount} row(s) used the workbook sheet name to infer the payroll month.`);
+  }
   if (generatedEmployeeIdCount > 0) {
     warnings.push(`${generatedEmployeeIdCount} employee ID(s) were generated because the legacy sheet did not include usable IDs.`);
   }
   if (skippedMissingEmployeeName > 0) {
     warnings.push(`${skippedMissingEmployeeName} row(s) were skipped due to missing Employee Name.`);
   }
+  if (skippedSpreadsheetErrorRows > 0) {
+    warnings.push(`${skippedSpreadsheetErrorRows} row(s) were skipped because they contained spreadsheet errors like #REF!.`);
+  }
+  if (duplicateEmployeeMonthCount > 0) {
+    warnings.push(`${duplicateEmployeeMonthCount} duplicate employee-month row(s) were found. The last row for the same employee and month is kept during import.`);
+  }
+
+  const monthSummaryMap = new Map();
+  for (const row of payrollRecords) {
+    const month = String(row.month || "");
+    if (!monthSummaryMap.has(month)) {
+      monthSummaryMap.set(month, {
+        month,
+        rowCount: 0,
+        employeeIds: new Set(),
+        presentSalary: 0,
+        increment: 0,
+        totalAdvance: 0,
+        deductionEntered: 0,
+      });
+    }
+    const summary = monthSummaryMap.get(month);
+    summary.rowCount += 1;
+    summary.employeeIds.add(String(row.employeeId || ""));
+    summary.presentSalary += Number(row.presentSalary || 0);
+    summary.increment += Number(row.increment || 0);
+    summary.totalAdvance += Number(row.oldAdvanceTaken || 0) + Number(row.extraAdvanceAdded || 0);
+    summary.deductionEntered += Number(row.deductionEntered || 0);
+  }
+  const monthSummaries = Array.from(monthSummaryMap.values())
+    .sort((a, b) => String(a.month).localeCompare(String(b.month)))
+    .map((item) => ({
+      month: item.month,
+      rowCount: item.rowCount,
+      employeeCount: item.employeeIds.size,
+      presentSalary: item.presentSalary,
+      increment: item.increment,
+      totalAdvance: item.totalAdvance,
+      deductionEntered: item.deductionEntered,
+    }));
 
   return {
     totalRows: rows.length,
     payrollRecords,
     designations: Array.from(designationSet),
-    employees: Array.from(employeeMap.values()),
+    employees: Array.from(employeeMap.values()).map((employee) => {
+      const copy = { ...employee };
+      delete copy.__latestImportedMonth;
+      return copy;
+    }),
     months: Array.from(monthSet).sort(),
+    monthSummaries,
     diagnostics: {
       detectedHeaders,
       reasons,
       warnings,
       skippedMissingEmployeeName,
+      skippedSpreadsheetErrorRows,
       defaultedMonthCount,
+      sheetInferredMonthCount,
       generatedEmployeeIdCount,
+      duplicateEmployeeMonthCount,
       inferenceNotes,
     },
   };

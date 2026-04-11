@@ -6,10 +6,39 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const admin = require("firebase-admin");
+
+function loadLocalEnv(baseDir) {
+  const envPath = path.join(baseDir, ".env.local");
+  if (!fs.existsSync(envPath)) return;
+
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eqIndex = line.indexOf("=");
+    if (eqIndex <= 0) continue;
+
+    const key = line.slice(0, eqIndex).trim();
+    if (!key || Object.prototype.hasOwnProperty.call(process.env, key)) continue;
+
+    let value = line.slice(eqIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+loadLocalEnv(__dirname);
+
 const { createStore } = require("./datastore");
 
 const app = express();
 const PORT = Number(process.env.PORT || 5501);
+const IS_VERCEL = String(process.env.VERCEL || "").toLowerCase() === "1";
 const JWT_SECRET = process.env.JWT_SECRET || "routes_payroll_dev_secret_change_me";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyCqK3ZVR-9qN9WmsXycGzYkar5hnZBEpW0";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -22,6 +51,7 @@ const AUTH_CACHE = new Map();
 let startupDegradedError = null;
 let startupReady = false;
 let startupState = "pending";
+let startupInitPromise = null;
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(__dirname, { index: "index.html" }));
@@ -94,6 +124,19 @@ function isQuotaExceededError(error) {
   return error?.code === 8 || message.includes("quota exceeded");
 }
 
+function isStoreUnavailableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const causeMessage = String(error?.cause?.message || "").toLowerCase();
+  return message.includes("fetch failed")
+    || message.includes("request timed out")
+    || message.includes("network")
+    || message.includes("socket")
+    || causeMessage.includes("enotfound")
+    || causeMessage.includes("eai_again")
+    || causeMessage.includes("timed out")
+    || causeMessage.includes("network");
+}
+
 function startupStatusPayload() {
   if (startupState === "pending") {
     return { ok: true, pending: true, degraded: false, provider: store.provider };
@@ -120,7 +163,9 @@ function fallbackCompanies() {
   ];
 }
 
-const MONTHLY_BACKUP_DIR = path.join(__dirname, "data", "monthly-backups");
+const MONTHLY_BACKUP_DIR = IS_VERCEL
+  ? path.join("/tmp", "routes-payroll", "monthly-backups")
+  : path.join(__dirname, "data", "monthly-backups");
 
 function ensureMonthlyBackupDir() {
   fs.mkdirSync(MONTHLY_BACKUP_DIR, { recursive: true });
@@ -638,7 +683,14 @@ async function resolveCompanyId(req, res, source = "query") {
       return null;
     }
     return companyId;
-  } catch {
+  } catch (error) {
+    if (companyId === 1 && (startupDegradedError || isStoreUnavailableError(error))) {
+      return 1;
+    }
+    if (isStoreUnavailableError(error)) {
+      res.status(503).json({ error: "Payroll data service is temporarily unreachable. Please retry in a moment." });
+      return null;
+    }
     res.status(500).json({ error: "Failed to resolve company." });
     return null;
   }
@@ -800,8 +852,8 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       employeeId: employee.employee_id,
       employeeName: employee.employee_name,
       joiningDate: employee.joining_date || "",
-      designation: employee.designation || "",
-      presentSalary: Number(employee.base_salary || 0),
+      designation: linked?.designation || employee.designation || "",
+      presentSalary: linked?.present_salary ?? Number(employee.base_salary || 0),
       increment: linked?.increment ?? 0,
       oldAdvanceTaken: linked?.old_advance_taken ?? (carriedAdvance ?? Number(employee.opening_advance || 0)),
       extraAdvanceAdded: linked?.extra_advance_added ?? 0,
@@ -1318,6 +1370,18 @@ app.get("/api/companies", authMiddleware, async (_req, res) => {
       });
       return;
     }
+    if (isStoreUnavailableError(error)) {
+      const rows = fallbackCompanies();
+      res.json({
+        companies: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          logoDataUrl: row.logo_data_url || "",
+        })),
+        degraded: true,
+      });
+      return;
+    }
     res.status(500).json({ error: "Failed to fetch companies." });
   }
 });
@@ -1510,7 +1574,11 @@ app.get("/api/settings/designations", authMiddleware, async (req, res) => {
   try {
     const rows = await store.listDesignationPresets(companyId);
     res.json({ designations: rows.map(dbRowToDesignation) });
-  } catch {
+  } catch (error) {
+    if (isStoreUnavailableError(error)) {
+      res.json({ designations: [], degraded: true });
+      return;
+    }
     res.status(500).json({ error: "Failed to fetch designation presets." });
   }
 });
@@ -1550,7 +1618,11 @@ app.delete("/api/settings/designations/:id", authMiddleware, async (req, res) =>
   try {
     await store.deleteDesignationPreset(companyId, id);
     res.json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (isStoreUnavailableError(error)) {
+      res.status(503).json({ error: "Payroll data service is temporarily unreachable. Designation was not deleted." });
+      return;
+    }
     res.status(500).json({ error: "Failed to delete designation." });
   }
 });
@@ -1559,6 +1631,20 @@ app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
   try {
     res.json(await getSystemBackupPayload());
   } catch (error) {
+    if (isStoreUnavailableError(error) || startupDegradedError) {
+      res.json({
+        companies: fallbackCompanies().map((row) => ({
+          id: row.id,
+          name: row.name,
+          logoDataUrl: row.logo_data_url || "",
+        })),
+        employees: [],
+        designations: [],
+        entries: [],
+        degraded: true,
+      });
+      return;
+    }
     res.status(500).json({ error: "Failed to fetch payroll backup data." });
   }
 });
@@ -1595,7 +1681,9 @@ app.get("/api/payroll-reports", authMiddleware, async (req, res) => {
   try {
     const rows = await store.listPayrollReportsByCompany(companyId);
     res.json({ reports: rows.map(dbRowToPayrollReport) });
-  } catch {
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to fetch payroll reports:", error);
     res.status(500).json({ error: "Failed to fetch payroll reports." });
   }
 });
@@ -1731,8 +1819,14 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
       generatedEmployeeId: payload.record.employeeId,
     });
   } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to generate payroll report entry:", error);
     if (error?.statusCode) {
       res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    if (isStoreUnavailableError(error)) {
+      res.status(503).json({ error: "Payroll data service is temporarily unreachable. Payslip generation can continue once the connection is back." });
       return;
     }
     res.status(500).json({ error: "Failed to generate payslip for this employee." });
@@ -1869,6 +1963,7 @@ app.put("/api/payroll/:month", authMiddleware, async (req, res) => {
     }
     res.json({ ok: true, count: normalized.length });
   } catch (error) {
+    console.error(`Failed to save payroll month data for ${month} company ${companyId}:`, error);
     res.status(500).json({ error: "Failed to save payroll month data." });
   }
 });
@@ -1901,21 +1996,33 @@ function dbRowToRecord(row) {
   };
 }
 
-app.listen(PORT, "127.0.0.1", () => {
-  // eslint-disable-next-line no-console
-  console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}, startup: ${startupState})`);
-});
+function ensureStartupInit() {
+  if (!startupInitPromise) {
+    startupInitPromise = store.init()
+      .then(() => {
+        startupReady = true;
+        startupState = "ready";
+        // eslint-disable-next-line no-console
+        console.log(`Routes Payroll cloud startup completed (db: ${store.provider})`);
+      })
+      .catch((error) => {
+        startupDegradedError = error;
+        startupState = "degraded";
+        // eslint-disable-next-line no-console
+        console.error("Database initialized in degraded mode:", error);
+      });
+  }
 
-store.init()
-  .then(() => {
-    startupReady = true;
-    startupState = "ready";
+  return startupInitPromise;
+}
+
+ensureStartupInit();
+
+if (require.main === module) {
+  app.listen(PORT, "127.0.0.1", () => {
     // eslint-disable-next-line no-console
-    console.log(`Routes Payroll cloud startup completed (db: ${store.provider})`);
-  })
-  .catch((error) => {
-    startupDegradedError = error;
-    startupState = "degraded";
-    // eslint-disable-next-line no-console
-    console.error("Database initialized in degraded mode:", error);
+    console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}, startup: ${startupState})`);
   });
+}
+
+module.exports = app;
