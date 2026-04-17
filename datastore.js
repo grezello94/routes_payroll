@@ -20,10 +20,19 @@ function resolveFirebaseCredentialFile(baseDir) {
   return "";
 }
 
-function createStore({ baseDir }) {
-  const requestedProvider = String(process.env.DB_PROVIDER || "").toLowerCase();
-  const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const provider = requestedProvider || (hasSupabase ? "supabase" : "firebase");
+function isRecoverableStoreInitError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const causeMessage = String(error?.cause?.message || "").toLowerCase();
+  return message.includes("fetch failed")
+    || message.includes("timed out")
+    || message.includes("network")
+    || causeMessage.includes("enotfound")
+    || causeMessage.includes("eai_again")
+    || causeMessage.includes("timed out")
+    || causeMessage.includes("network");
+}
+
+function createStoreByProvider(provider, baseDir) {
   if (provider === "supabase") {
     return createSupabaseStore();
   }
@@ -31,6 +40,48 @@ function createStore({ baseDir }) {
     return createFirebaseStore(baseDir);
   }
   return createSqliteStore(baseDir);
+}
+
+function createStore({ baseDir }) {
+  const requestedProvider = String(process.env.DB_PROVIDER || "").toLowerCase();
+  const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const provider = requestedProvider || (hasSupabase ? "supabase" : "firebase");
+  const fallbackProvider = provider === "supabase" ? "sqlite" : null;
+  let activeStore = createStoreByProvider(provider, baseDir);
+
+  async function swapToFallback(error) {
+    if (!fallbackProvider || !isRecoverableStoreInitError(error)) {
+      throw error;
+    }
+    const fallbackStore = createStoreByProvider(fallbackProvider, baseDir);
+    await fallbackStore.init();
+    activeStore = fallbackStore;
+  }
+
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (prop === "provider") {
+        return activeStore.provider;
+      }
+
+      if (prop === "init") {
+        return async function initWithFallback(...args) {
+          try {
+            return await activeStore.init(...args);
+          } catch (error) {
+            await swapToFallback(error);
+            return undefined;
+          }
+        };
+      }
+
+      const value = activeStore[prop];
+      if (typeof value === "function") {
+        return value.bind(activeStore);
+      }
+      return value;
+    },
+  });
 }
 
 function createSqliteStore(baseDir) {

@@ -141,6 +141,19 @@ let activePayrollReportSnapshot = null;
 let errorLogs = readStoredErrorLogs();
 let backupStatus = null;
 
+const MOTIVATING_MESSAGES = [
+  "Great job this month! Keep up the excellent work.",
+  "Your hard work and dedication are truly appreciated.",
+  "Thank you for your continuous effort and positive energy.",
+  "We value your commitment to the team. Keep it up!",
+  "Outstanding performance! Proud to have you with us.",
+  "Your contributions make a big difference. Thank you!",
+  "Keep shining! Your dedication does not go unnoticed.",
+  "Thank you for your outstanding teamwork and reliability.",
+  "Your positive attitude is contagious. Thank you!",
+  "We appreciate all the extra effort you put in this month."
+];
+
 init();
 
 async function init() {
@@ -2817,17 +2830,22 @@ async function persistRecords() {
   }
 }
 
+function getRandomMotivatingMessage() {
+  return MOTIVATING_MESSAGES[Math.floor(Math.random() * MOTIVATING_MESSAGES.length)];
+}
+
 function openPayslip(record, month, companyOverride = null) {
   const calc = computePayroll(record, month);
   const company = companyOverride || getActiveCompany();
-  activePayslip = { record, calc, month, company };
-  SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month, company);
+  const displayComment = String(record.comment || "").trim() || getRandomMotivatingMessage();
+  activePayslip = { record, calc, month, company, displayComment };
+  SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month, company, displayComment);
   SELECTORS.payslipDialog.showModal();
 }
 
-function renderPayslipCard(record, calc, month, company) {
+function renderPayslipCard(record, calc, month, company, displayComment = null) {
   const monthSheet = formatPayslipMonth(month);
-  const comment = String(record.comment || "").trim() || "No comment added for this payroll month.";
+  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage();
   const status = formatStatusLabel(record.employeeStatus || "working");
   const absenceSummary = calc.daysAbsent > 0
     ? `${formatNumberValue(calc.workedDays)} day(s) worked out of ${calc.monthDays} • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
@@ -2915,7 +2933,8 @@ function ensureActivePayslip() {
 }
 
 function getPayslipText(data) {
-  const { record, calc, month, company } = data;
+  const { record, calc, month, company, displayComment } = data;
+  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage();
   return [
     "Routes Payroll Payslip",
     `Company: ${company?.name || "-"}`,
@@ -2938,7 +2957,7 @@ function getPayslipText(data) {
     `Deduction Applied: ${formatCurrency(calc.deductionApplied)}`,
     `Advance Remained: ${formatCurrency(calc.advanceRemained)}`,
     `Salary In Hand: ${formatCurrency(calc.netSalary)}`,
-    `Comment: ${record.comment || "-"}`,
+    `Comment: ${comment}`,
   ].join("\n");
 }
 
@@ -2998,7 +3017,8 @@ function buildPayslipPrintDocument() {
           activePayslip.record,
           activePayslip.calc,
           activePayslip.month,
-          activePayslip.company
+          activePayslip.company,
+          activePayslip.displayComment
         )}
       </body>
     </html>

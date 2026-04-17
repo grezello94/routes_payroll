@@ -222,12 +222,27 @@ async function getSystemBackupPayload() {
   const companies = await store.listCompaniesById();
   const rows = await store.listPayrollEntriesAll();
   const employees = [];
+  const entries = [];
   const designations = [];
   const reports = [];
   for (const company of companies) {
     // eslint-disable-next-line no-await-in-loop
     const companyEmployees = await store.listEmployeesByCompany(company.id);
     employees.push(...companyEmployees.map(dbRowToEmployee));
+    const openingAdvanceByEmployeeId = new Map(
+      companyEmployees.map((employee) => [
+        String(employee.employee_id || ""),
+        Number(employee.opening_advance || 0),
+      ])
+    );
+    const companyRows = rows.filter((row) => Number(row.company_id) === Number(company.id));
+    const advanceLedger = buildAdvanceLedger(companyRows, openingAdvanceByEmployeeId);
+    entries.push(
+      ...companyRows.map((row) => dbRowToRecord(
+        row,
+        advanceLedger.normalizedByRowId.get(Number(row.id)) || null
+      ))
+    );
     // eslint-disable-next-line no-await-in-loop
     const companyDesignations = await store.listDesignationPresets(company.id);
     designations.push(...companyDesignations.map(dbRowToDesignation));
@@ -255,7 +270,7 @@ async function getSystemBackupPayload() {
     })),
     employees,
     designations,
-    entries: rows.map(dbRowToRecord),
+    entries,
     reports,
   };
 }
@@ -780,14 +795,6 @@ function dbRowToEmployee(row) {
   };
 }
 
-function previousMonthIso(month) {
-  if (!/^\d{4}-\d{2}$/.test(String(month || ""))) return "";
-  const [year, mon] = String(month).split("-").map((item) => Number(item));
-  const date = new Date(year, mon - 1, 1);
-  date.setMonth(date.getMonth() - 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function advanceRemainedFromPayrollRow(row) {
   const oldAdvance = Math.max(0, toNumber(row?.old_advance_taken));
   const extraAdvance = Math.max(0, toNumber(row?.extra_advance_added));
@@ -795,6 +802,51 @@ function advanceRemainedFromPayrollRow(row) {
   const deductionEntered = Math.max(0, toNumber(row?.deduction_entered));
   const deductionApplied = Math.min(deductionEntered, totalAdvance);
   return totalAdvance - deductionApplied;
+}
+
+function sortPayrollRowsChronologically(rows) {
+  return [...rows].sort((a, b) => {
+    const monthCmp = String(a?.month || "").localeCompare(String(b?.month || ""));
+    if (monthCmp !== 0) return monthCmp;
+    const posCmp = Number(a?.position_index || 0) - Number(b?.position_index || 0);
+    if (posCmp !== 0) return posCmp;
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  });
+}
+
+function buildAdvanceLedger(rows, openingAdvanceByEmployeeId, monthExclusive = "") {
+  const latestAdvanceByEmployeeId = new Map();
+  const normalizedByRowId = new Map();
+  const scopedRows = monthExclusive
+    ? rows.filter((row) => String(row?.month || "") < String(monthExclusive))
+    : rows;
+
+  sortPayrollRowsChronologically(scopedRows).forEach((row) => {
+    const employeeId = String(row?.employee_id || "");
+    if (!employeeId) return;
+
+    const openingAdvance = Math.max(0, toNumber(openingAdvanceByEmployeeId.get(employeeId)));
+    const rowOldAdvance = Math.max(0, toNumber(row?.old_advance_taken));
+    const carriedAdvance = latestAdvanceByEmployeeId.has(employeeId)
+      ? latestAdvanceByEmployeeId.get(employeeId)
+      : (rowOldAdvance > 0 ? rowOldAdvance : openingAdvance);
+    const extraAdvance = Math.max(0, toNumber(row?.extra_advance_added));
+    const totalAdvance = carriedAdvance + extraAdvance;
+    const deductionEntered = Math.max(0, toNumber(row?.deduction_entered));
+    const deductionApplied = Math.min(deductionEntered, totalAdvance);
+    const advanceRemained = totalAdvance - deductionApplied;
+
+    latestAdvanceByEmployeeId.set(employeeId, advanceRemained);
+    normalizedByRowId.set(Number(row?.id), {
+      oldAdvanceTaken: carriedAdvance,
+      advanceRemained,
+    });
+  });
+
+  return {
+    latestAdvanceByEmployeeId,
+    normalizedByRowId,
+  };
 }
 
 function dbRowToDesignation(row) {
@@ -848,19 +900,27 @@ async function listMergedPayrollMonthRecords(month, companyId) {
     store.listPayrollByMonthCompany(month, companyId),
     store.listEmployeesByCompany(companyId),
   ]);
+  const allCompanyRows = await store.listPayrollEntriesAll();
+  const openingAdvanceByEmployeeId = new Map(
+    employees.map((employee) => [
+      String(employee.employee_id || ""),
+      Number(employee.opening_advance || 0),
+    ])
+  );
   const employeeByEmployeeId = new Map(
     employees.map((employee) => [String(employee.employee_id || ""), employee])
   );
-  const prevMonth = previousMonthIso(month);
-  const previousRows = prevMonth ? await store.listPayrollByMonthCompany(prevMonth, companyId) : [];
-  const previousByEmployeeId = new Map(previousRows.map((row) => [String(row.employee_id || ""), row]));
+  const advanceLedger = buildAdvanceLedger(
+    allCompanyRows.filter((row) => Number(row.company_id) === Number(companyId)),
+    openingAdvanceByEmployeeId,
+    month
+  );
   const byEmployeeId = new Map(rows.map((row) => [String(row.employee_id || ""), row]));
   const records = [];
 
   employees.forEach((employee, index) => {
     const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
-    const previous = previousByEmployeeId.get(String(employee.employee_id || "")) || null;
-    const carriedAdvance = previous ? advanceRemainedFromPayrollRow(previous) : null;
+    const carriedAdvance = advanceLedger.latestAdvanceByEmployeeId.get(String(employee.employee_id || "")) ?? null;
     records.push({
       id: linked?.id || null,
       companyId,
@@ -871,7 +931,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       designation: linked?.designation || employee.designation || "",
       presentSalary: linked?.present_salary ?? Number(employee.base_salary || 0),
       increment: linked?.increment ?? 0,
-      oldAdvanceTaken: linked?.old_advance_taken ?? (carriedAdvance ?? Number(employee.opening_advance || 0)),
+      oldAdvanceTaken: carriedAdvance !== null ? carriedAdvance : (linked?.old_advance_taken ?? Number(employee.opening_advance || 0)),
       extraAdvanceAdded: linked?.extra_advance_added ?? 0,
       deductionEntered: linked?.deduction_entered ?? 0,
       daysAbsent: linked?.days_absent ?? 0,
@@ -2009,7 +2069,14 @@ app.get("/{*any}", (_req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-function dbRowToRecord(row) {
+function dbRowToRecord(row, overrides = null) {
+  const normalizedOldAdvance = overrides?.oldAdvanceTaken;
+  const normalizedRow = normalizedOldAdvance == null
+    ? row
+    : {
+      ...row,
+      old_advance_taken: normalizedOldAdvance,
+    };
   return {
     id: row.id,
     companyId: row.company_id,
@@ -2019,13 +2086,13 @@ function dbRowToRecord(row) {
     designation: row.designation,
     presentSalary: row.present_salary,
     increment: row.increment,
-    oldAdvanceTaken: row.old_advance_taken,
+    oldAdvanceTaken: normalizedOldAdvance ?? row.old_advance_taken,
     extraAdvanceAdded: row.extra_advance_added,
     deductionEntered: row.deduction_entered,
     daysAbsent: row.days_absent,
     comment: row.comment,
     positionIndex: row.position_index,
-    advanceRemained: advanceRemainedFromPayrollRow(row),
+    advanceRemained: overrides?.advanceRemained ?? advanceRemainedFromPayrollRow(normalizedRow),
   };
 }
 
