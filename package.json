@@ -1,7 +1,7 @@
 {
   "name": "routes-payroll",
   "version": "1.0.0",
-  "description": "Professional payroll system with: - Secure local admin login - Year-month payroll management - All requested payroll fields and formulas - Payslip preview, print/save PDF flow, TXT download - WhatsApp and Messenger share actions - CSV export and JSON backup/restore - PWA support (installable, offline cache)",
+  "description": "Professional cloud payroll system with year-month payroll management, payslip generation, CSV exports, and PWA support.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

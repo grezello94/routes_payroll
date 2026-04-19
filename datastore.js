@@ -156,6 +156,7 @@ function createSqliteStore(baseDir) {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
           logo_data_url TEXT NOT NULL DEFAULT '',
+          owner_id TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -242,6 +243,14 @@ function createSqliteStore(baseDir) {
 
       try {
         await run("ALTER TABLE employees ADD COLUMN opening_advance REAL NOT NULL DEFAULT 0");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE companies ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''");
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
           throw error;
@@ -494,17 +503,19 @@ function createSqliteStore(baseDir) {
       return Boolean(row);
     },
 
-    async listCompanies() {
+    async listCompanies(ownerId = "") {
       return all(
-        `SELECT id, name, logo_data_url
+        `SELECT id, name, logo_data_url, owner_id
          FROM companies
-         ORDER BY name, id`
+         WHERE owner_id = ? OR owner_id = ''
+         ORDER BY name, id`,
+        [ownerId]
       );
     },
 
     async listCompaniesById() {
       return all(
-        `SELECT id, name, logo_data_url
+        `SELECT id, name, logo_data_url, owner_id
          FROM companies
          ORDER BY id`
       );
@@ -512,18 +523,19 @@ function createSqliteStore(baseDir) {
 
     async getCompanyById(id) {
       return get(
-        `SELECT id, name, logo_data_url
+        `SELECT id, name, logo_data_url, owner_id
          FROM companies
          WHERE id = ?`,
         [id]
       );
     },
 
-    async createCompany(name, logoDataUrl) {
+    async createCompany(name, logoDataUrl, ownerId = "") {
       try {
-        const result = await run("INSERT INTO companies (name, logo_data_url) VALUES (?, ?)", [
+        const result = await run("INSERT INTO companies (name, logo_data_url, owner_id) VALUES (?, ?, ?)", [
           name,
           logoDataUrl,
+          ownerId,
         ]);
         return { id: result.lastID };
       } catch (error) {
@@ -950,6 +962,10 @@ function createSqliteStore(baseDir) {
       );
       return { id: result.lastID };
     },
+
+    async setCompanyOwner(id, ownerId) {
+      await run("UPDATE companies SET owner_id = ? WHERE id = ?", [ownerId, id]);
+    },
   };
 }
 
@@ -1209,10 +1225,11 @@ function createFirebaseStore(baseDir) {
       return snapshot.exists;
     },
 
-    async listCompanies() {
+    async listCompanies(ownerId = "") {
       const snapshot = await col("companies").get();
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
+        .filter((row) => row.owner_id === ownerId || !row.owner_id)
         .sort((a, b) => {
           const nameCmp = String(a.name || "").localeCompare(String(b.name || ""));
           if (nameCmp !== 0) return nameCmp;
@@ -1232,7 +1249,7 @@ function createFirebaseStore(baseDir) {
       return snapshot.exists ? (snapshot.data() || null) : null;
     },
 
-    async createCompany(name, logoDataUrl) {
+    async createCompany(name, logoDataUrl, ownerId = "") {
       const nameLc = String(name || "").toLowerCase();
       const existing = await findByField("companies", "name_lc", nameLc);
       if (existing) {
@@ -1247,6 +1264,7 @@ function createFirebaseStore(baseDir) {
         name,
         name_lc: nameLc,
         logo_data_url: logoDataUrl,
+        owner_id: ownerId,
         created_at: nowIso(),
       });
       await this.ensureDefaultDesignationPresets(id);
@@ -1646,6 +1664,10 @@ function createFirebaseStore(baseDir) {
       }, { merge: true });
       return { id: reportId };
     },
+
+    async setCompanyOwner(id, ownerId) {
+      await col("companies").doc(String(id)).set({ owner_id: ownerId }, { merge: true });
+    },
   };
 }
 
@@ -1664,19 +1686,32 @@ function createSupabaseStore() {
   }
 
   async function fetchWithTimeout(url, options = {}) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+    const maxRetries = (!options.method || options.method === "GET") ? 3 : 2;
+    let lastError;
 
-    try {
-      return await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw new Error(`Supabase request timed out after ${requestTimeoutMs}ms.`);
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+      try {
+        const response = await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (response.status >= 502 && response.status <= 504) {
+          throw new Error(`Gateway Error ${response.status}`);
+        }
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        lastError = error;
+        if (error?.name === "AbortError") {
+          lastError = new Error(`Supabase request timed out after ${requestTimeoutMs}ms.`);
+        }
+        if (attempt < maxRetries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
       }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
+    throw lastError;
   }
 
   async function supabaseRest(table, {
@@ -1730,33 +1765,91 @@ function createSupabaseStore() {
     return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
   }
 
-  async function nextNumericId(table) {
-    const rows = await supabaseRest(table, {
-      query: { select: "id", order: "id.desc", limit: "1" },
-      allowEmpty: true,
-    });
-    const current = Array.isArray(rows) && rows.length > 0 ? Number(rows[0].id || 0) : 0;
-    return current + 1;
+  let localNumericIdSeed = 0;
+  let localNumericIdSequence = 0;
+
+  function nextLocalNumericId() {
+    const now = Date.now();
+    if (now === localNumericIdSeed) {
+      localNumericIdSequence = (localNumericIdSequence + 1) % 1000;
+    } else {
+      localNumericIdSeed = now;
+      localNumericIdSequence = 0;
+    }
+    return (now * 1000) + localNumericIdSequence;
+  }
+
+  function nextLocalNumericIds(count) {
+    const ids = [];
+    for (let idx = 0; idx < count; idx += 1) {
+      ids.push(nextLocalNumericId());
+    }
+    return ids;
+  }
+
+  function getSupabaseErrorDetails(error) {
+    const details = error?.details;
+    if (!details) return "";
+    if (typeof details === "string") return details;
+    return String(details.details || details.message || details.hint || "");
+  }
+
+  function isSupabaseIdCollision(error) {
+    if (String(error?.code || "") !== "23505") return false;
+    const message = String(error?.message || "").toLowerCase();
+    const details = getSupabaseErrorDetails(error).toLowerCase();
+    return message.includes("pkey")
+      || message.includes("primary")
+      || details.includes("(id)=")
+      || details.includes(" id ");
+  }
+
+  function isSupabaseMissingGeneratedId(error) {
+    const code = String(error?.code || "");
+    const message = String(error?.message || "").toLowerCase();
+    const details = getSupabaseErrorDetails(error).toLowerCase();
+    return code === "23502"
+      && (message.includes("\"id\"")
+      || details.includes("column \"id\"")
+      || details.includes("null value in column \"id\""));
+  }
+
+  async function insertSupabaseRows(table, buildRows, {
+    count = 1,
+    fallbackLabel = table,
+  } = {}) {
+    const desiredCount = Math.max(1, Number(count) || 1);
+    try {
+      const rows = await supabaseRest(table, {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: buildRows(null),
+      });
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      if (!isSupabaseMissingGeneratedId(error)) throw error;
+    }
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const generatedIds = nextLocalNumericIds(desiredCount);
+      try {
+        const rows = await supabaseRest(table, {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: buildRows(generatedIds),
+        });
+        return Array.isArray(rows) ? rows : generatedIds.map((id) => ({ id }));
+      } catch (error) {
+        if (!isSupabaseIdCollision(error)) throw error;
+      }
+    }
+
+    throw new Error(`Failed to allocate a unique id for Supabase table "${fallbackLabel}".`);
   }
 
   async function insertSupabaseRowWithRetry(table, buildBody) {
-    let attemptedIds = [];
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const generatedId = attempt === 0
-        ? await nextNumericId(table)
-        : Math.max(Date.now(), ...attemptedIds) + attempt;
-      attemptedIds.push(generatedId);
-      try {
-        await supabaseRest(table, {
-          method: "POST",
-          body: buildBody(generatedId),
-        });
-        return generatedId;
-      } catch (error) {
-        if (String(error?.code || "") !== "23505") throw error;
-      }
-    }
-    throw new Error(`Failed to allocate a unique id for Supabase table "${table}".`);
+    const rows = await insertSupabaseRows(table, (generatedIds) => buildBody(Array.isArray(generatedIds) ? generatedIds[0] : null));
+    return Number(rows?.[0]?.id || 0);
   }
 
   function mapConflict(error, message) {
@@ -1994,11 +2087,12 @@ function createSupabaseStore() {
       return Boolean(row);
     },
 
-    async listCompanies() {
-      return supabaseRest("companies", {
+    async listCompanies(ownerId = "") {
+      const rows = await supabaseRest("companies", {
         query: { select: "*", order: "name.asc,id.asc" },
         allowEmpty: true,
       });
+      return rows.filter((row) => row.owner_id === ownerId || !row.owner_id);
     },
 
     async listCompaniesById() {
@@ -2015,22 +2109,18 @@ function createSupabaseStore() {
       });
     },
 
-    async createCompany(name, logoDataUrl) {
+    async createCompany(name, logoDataUrl, ownerId = "") {
       try {
-        const id = await nextNumericId("companies");
-        const rows = await supabaseRest("companies", {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: [{
-            id,
-            name,
-            name_lc: String(name || "").toLowerCase(),
-            logo_data_url: logoDataUrl,
-            created_at: nowIso(),
-          }],
-        });
+        const id = await insertSupabaseRowWithRetry("companies", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          name,
+          name_lc: String(name || "").toLowerCase(),
+          logo_data_url: logoDataUrl,
+          owner_id: ownerId,
+          created_at: nowIso(),
+        }]);
         await this.ensureDefaultDesignationPresets(id);
-        return { id: rows?.[0]?.id || id };
+        return { id };
       } catch (error) {
         mapConflict(error, "Company name already exists.");
       }
@@ -2049,20 +2139,15 @@ function createSupabaseStore() {
 
     async addDesignationPreset(companyId, name, positionIndex) {
       try {
-        const id = await nextNumericId("designation_presets");
-        const rows = await supabaseRest("designation_presets", {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: [{
-            id,
-            company_id: Number(companyId),
-            name,
-            name_lc: String(name || "").trim().toLowerCase(),
-            position_index: Number(positionIndex || 0),
-            created_at: nowIso(),
-          }],
-        });
-        return { id: rows?.[0]?.id || id };
+        const id = await insertSupabaseRowWithRetry("designation_presets", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          company_id: Number(companyId),
+          name,
+          name_lc: String(name || "").trim().toLowerCase(),
+          position_index: Number(positionIndex || 0),
+          created_at: nowIso(),
+        }]);
+        return { id };
       } catch (error) {
         mapConflict(error, "Designation already exists.");
       }
@@ -2112,32 +2197,27 @@ function createSupabaseStore() {
 
     async createEmployee(companyId, employee) {
       try {
-        const id = await nextNumericId("employees");
-        const rows = await supabaseRest("employees", {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: [{
-            id,
-            company_id: Number(companyId),
-            employee_id: employee.employeeId,
-            employee_name: employee.employeeName,
-            joining_date: employee.joiningDate,
-            birth_date: employee.birthDate,
-            base_salary: Number(employee.baseSalary || 0),
-            opening_advance: Number(employee.openingAdvance || 0),
-            designation: employee.designation,
-            mobile_number: employee.mobileNumber,
-            status: employee.status,
-            leave_from: employee.leaveFrom,
-            leave_to: employee.leaveTo,
-            terminated_on: employee.terminatedOn,
-            notes: employee.notes,
-            position_index: Number(employee.positionIndex || 0),
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          }],
-        });
-        return { id: rows?.[0]?.id || id };
+        const id = await insertSupabaseRowWithRetry("employees", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          company_id: Number(companyId),
+          employee_id: employee.employeeId,
+          employee_name: employee.employeeName,
+          joining_date: employee.joiningDate,
+          birth_date: employee.birthDate,
+          base_salary: Number(employee.baseSalary || 0),
+          opening_advance: Number(employee.openingAdvance || 0),
+          designation: employee.designation,
+          mobile_number: employee.mobileNumber,
+          status: employee.status,
+          leave_from: employee.leaveFrom,
+          leave_to: employee.leaveTo,
+          terminated_on: employee.terminatedOn,
+          notes: employee.notes,
+          position_index: Number(employee.positionIndex || 0),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }]);
+        return { id };
       } catch (error) {
         mapConflict(error, "Employee ID already exists for this company.");
       }
@@ -2271,15 +2351,9 @@ function createSupabaseStore() {
       await this.deletePayrollByMonthCompany(month, companyId);
       if (!records || records.length === 0) return;
 
-      let attemptedIds = [];
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const startId = attempt === 0
-          ? await nextNumericId("payroll_entries")
-          : Math.max(Date.now(), ...attemptedIds) + attempt * 1000;
-        attemptedIds.push(startId);
-
-        const body = records.map((record, idx) => ({
-          id: startId + idx,
+      await insertSupabaseRows("payroll_entries", (generatedIds) => (
+        records.map((record, idx) => ({
+          ...(Array.isArray(generatedIds) && generatedIds[idx] !== undefined ? { id: generatedIds[idx] } : {}),
           company_id: Number(companyId),
           month,
           employee_id: record.employeeId || "",
@@ -2294,40 +2368,31 @@ function createSupabaseStore() {
           comment: record.comment || "",
           position_index: Number(record.positionIndex || 0),
           updated_at: nowIso(),
-        }));
-
-        try {
-          await supabaseRest("payroll_entries", { method: "POST", body });
-          return;
-        } catch (error) {
-          if (String(error?.code || "") !== "23505") throw error;
-        }
-      }
-      throw new Error("Failed to allocate unique ids for bulk insert in Supabase.");
+        }))
+      ), {
+        count: records.length,
+        fallbackLabel: "payroll_entries",
+      });
     },
 
     async insertPayrollRecord(month, companyId, record) {
-      const id = await nextNumericId("payroll_entries");
-      await supabaseRest("payroll_entries", {
-        method: "POST",
-        body: [{
-          id,
-          company_id: Number(companyId),
-          month,
-          employee_id: record.employeeId || "",
-          employee_name: record.employeeName || "",
-          designation: record.designation || "",
-          present_salary: Number(record.presentSalary || 0),
-          increment: Number(record.increment || 0),
-          old_advance_taken: Number(record.oldAdvanceTaken || 0),
-          extra_advance_added: Number(record.extraAdvanceAdded || 0),
-          deduction_entered: Number(record.deductionEntered || 0),
-          days_absent: Number(record.daysAbsent || 0),
-          comment: record.comment || "",
-          position_index: Number(record.positionIndex || 0),
-          updated_at: nowIso(),
-        }],
-      });
+      await insertSupabaseRowWithRetry("payroll_entries", (generatedId) => [{
+        ...(generatedId === null ? {} : { id: generatedId }),
+        company_id: Number(companyId),
+        month,
+        employee_id: record.employeeId || "",
+        employee_name: record.employeeName || "",
+        designation: record.designation || "",
+        present_salary: Number(record.presentSalary || 0),
+        increment: Number(record.increment || 0),
+        old_advance_taken: Number(record.oldAdvanceTaken || 0),
+        extra_advance_added: Number(record.extraAdvanceAdded || 0),
+        deduction_entered: Number(record.deductionEntered || 0),
+        days_absent: Number(record.daysAbsent || 0),
+        comment: record.comment || "",
+        position_index: Number(record.positionIndex || 0),
+        updated_at: nowIso(),
+      }]);
     },
 
     async listPayrollReportsByCompany(companyId) {
@@ -2475,21 +2540,17 @@ function createSupabaseStore() {
       }
 
       if (await canUsePayrollReportsTable()) {
-        const id = await nextNumericId("payroll_reports");
-        await supabaseRest("payroll_reports", {
-          method: "POST",
-          body: [{
-            id,
-            company_id: Number(companyId),
-            month,
-            checked_at: checkedAt,
-            generated_at: "",
-            employee_count: 0,
-            snapshot_json: "",
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          }],
-        });
+        const id = await insertSupabaseRowWithRetry("payroll_reports", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          company_id: Number(companyId),
+          month,
+          checked_at: checkedAt,
+          generated_at: "",
+          employee_count: 0,
+          snapshot_json: "",
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }]);
         return { id };
       }
 
@@ -2506,7 +2567,7 @@ function createSupabaseStore() {
       }
 
       const legacyId = await insertSupabaseRowWithRetry("payroll_entries", (generatedId) => ([{
-        id: generatedId,
+        ...(generatedId === null ? {} : { id: generatedId }),
         company_id: Number(companyId),
         month,
         employee_id: PAYROLL_REPORT_ROW_ID,
@@ -2545,21 +2606,17 @@ function createSupabaseStore() {
       }
 
       if (await canUsePayrollReportsTable()) {
-        const id = await nextNumericId("payroll_reports");
-        await supabaseRest("payroll_reports", {
-          method: "POST",
-          body: [{
-            id,
-            company_id: Number(companyId),
-            month,
-            checked_at: payload?.checkedAt || "",
-            generated_at: payload?.generatedAt || "",
-            employee_count: Number(payload?.employeeCount || 0),
-            snapshot_json: JSON.stringify(payload?.snapshot || {}),
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          }],
-        });
+        const id = await insertSupabaseRowWithRetry("payroll_reports", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          company_id: Number(companyId),
+          month,
+          checked_at: payload?.checkedAt || "",
+          generated_at: payload?.generatedAt || "",
+          employee_count: Number(payload?.employeeCount || 0),
+          snapshot_json: JSON.stringify(payload?.snapshot || {}),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }]);
         return { id };
       }
 
@@ -2581,7 +2638,7 @@ function createSupabaseStore() {
       }
 
       const legacyId = await insertSupabaseRowWithRetry("payroll_entries", (generatedId) => ([{
-        id: generatedId,
+        ...(generatedId === null ? {} : { id: generatedId }),
         company_id: Number(companyId),
         month,
         employee_id: PAYROLL_REPORT_ROW_ID,
@@ -2598,6 +2655,14 @@ function createSupabaseStore() {
         updated_at: nowIso(),
       }]));
       return { id: legacyId };
+    },
+
+    async setCompanyOwner(id, ownerId) {
+      await supabaseRest("companies", {
+        method: "PATCH",
+        query: { id: `eq.${Number(id)}` },
+        body: { owner_id: ownerId },
+      });
     },
   };
 }

@@ -18,6 +18,7 @@ create table if not exists public.companies (
   name text not null unique,
   name_lc text not null unique,
   logo_data_url text not null default '',
+  owner_id text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -84,11 +85,36 @@ create table if not exists public.payroll_reports (
   unique (company_id, month)
 );
 
+create sequence if not exists public.designation_presets_id_seq;
+alter table public.designation_presets alter column id set default nextval('public.designation_presets_id_seq');
+select setval('public.designation_presets_id_seq', coalesce((select max(id) from public.designation_presets), 1), (select exists(select 1 from public.designation_presets)));
+
+create sequence if not exists public.employees_id_seq;
+alter table public.employees alter column id set default nextval('public.employees_id_seq');
+select setval('public.employees_id_seq', coalesce((select max(id) from public.employees), 1), (select exists(select 1 from public.employees)));
+
+create sequence if not exists public.payroll_entries_id_seq;
+alter table public.payroll_entries alter column id set default nextval('public.payroll_entries_id_seq');
+select setval('public.payroll_entries_id_seq', coalesce((select max(id) from public.payroll_entries), 1), (select exists(select 1 from public.payroll_entries)));
+
+create sequence if not exists public.payroll_reports_id_seq;
+alter table public.payroll_reports alter column id set default nextval('public.payroll_reports_id_seq');
+select setval('public.payroll_reports_id_seq', coalesce((select max(id) from public.payroll_reports), 1), (select exists(select 1 from public.payroll_reports)));
+
 create index if not exists idx_designation_company_position on public.designation_presets(company_id, position_index);
 create index if not exists idx_employees_company_position on public.employees(company_id, position_index);
 create index if not exists idx_payroll_company_month_position on public.payroll_entries(company_id, month, position_index);
 create index if not exists idx_payroll_reports_company_month on public.payroll_reports(company_id, month);
 
+-- Add owner_id to existing companies table if applying to an older database
+do $$ begin
+  alter table public.companies add column owner_id text not null default '';
+exception when duplicate_column then null; end $$;
+
 insert into public.companies (id, name, name_lc, logo_data_url)
 values (1, 'Routes Payroll', 'routes payroll', '')
 on conflict (id) do nothing;
+
+create sequence if not exists public.companies_id_seq;
+alter table public.companies alter column id set default nextval('public.companies_id_seq');
+select setval('public.companies_id_seq', coalesce((select max(id) from public.companies), 1), (select exists(select 1 from public.companies)));

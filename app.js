@@ -2063,12 +2063,14 @@ async function validateToken() {
     hydrateSettingsAccount();
     return true;
   } catch (error) {
-    if (String(error.message).toLowerCase().includes("expired") || String(error.message).toLowerCase().includes("authentication")) {
+    const msg = String(error.message).toLowerCase();
+    if (msg.includes("expired") || msg.includes("authentication") || msg.includes("invalid") || !authToken) {
       setToken("");
+      currentUser = null;
+      hydrateSettingsAccount();
+      return false;
     }
-    currentUser = null;
-    hydrateSettingsAccount();
-    return false;
+    return true;
   }
 }
 
@@ -2077,14 +2079,18 @@ async function switchToApp() {
   SELECTORS.authView.classList.add("hidden");
   SELECTORS.appView.classList.remove("hidden");
   hydrateSettingsAccount();
-  await loadCompanies();
-  await Promise.all([
-    loadEmployees(),
-    loadMonthRecords(),
-    loadDesignationPresets(),
-    loadPayrollReports(),
-    loadBackupStatus(),
-  ]);
+  try {
+    await loadCompanies();
+    await Promise.all([
+      loadEmployees(),
+      loadMonthRecords(),
+      loadDesignationPresets(),
+      loadPayrollReports(),
+      loadBackupStatus(),
+    ]);
+  } catch (error) {
+    showAppMessage(error.message || "Failed to load some application data.");
+  }
   setWorkspace("dashboard");
   SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
 }
@@ -2211,8 +2217,13 @@ function payrollMonthUrl(month) {
 
 async function loadCompanies() {
   const previousCompanyId = activeCompanyId;
-  const response = await apiRequest("/api/companies");
-  const incomingCompanies = Array.isArray(response.companies) ? response.companies : [];
+  let incomingCompanies = [];
+  try {
+    const response = await apiRequest("/api/companies");
+    incomingCompanies = Array.isArray(response.companies) ? response.companies : [];
+  } catch (error) {
+    showAppMessage(error.message || "Failed to load companies.");
+  }
   companies = incomingCompanies
     .map((company) => {
       const id = Number(company?.id);

@@ -8,28 +8,45 @@ const nodemailer = require("nodemailer");
 const admin = require("firebase-admin");
 
 function loadLocalEnv(baseDir) {
-  const envPath = path.join(baseDir, ".env.local");
-  if (!fs.existsSync(envPath)) return;
+  const possiblePaths = [".env.local", ".env.local.txt", "env.local", ".env", ".env.txt"];
+  let envPath = null;
+  let content = "";
 
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const p of possiblePaths) {
+    const candidate = path.join(baseDir, p);
+    if (fs.existsSync(candidate)) {
+      envPath = candidate;
+      content = fs.readFileSync(candidate, "utf8");
+      if (content.includes("{\\rtf1")) {
+        console.error(`\n[!] ERROR: Your ${p} file is saved as Rich Text (RTF). Please save it as Plain Text.\n`);
+        return;
+      }
+      break;
+    }
+  }
+
+  if (!envPath) return;
+
+  const lines = content.split(/\r?\n/);
+  let loadedCount = 0;
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const eqIndex = line.indexOf("=");
     if (eqIndex <= 0) continue;
 
-    const key = line.slice(0, eqIndex).trim();
+    let key = line.slice(0, eqIndex).trim();
+    if (key.toLowerCase().startsWith("export ")) key = key.slice(7).trim();
     if (!key || Object.prototype.hasOwnProperty.call(process.env, key)) continue;
 
     let value = line.slice(eqIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"'))
-      || (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if (/^["'“‘].*["'”’]$/.test(value)) {
       value = value.slice(1, -1);
     }
     process.env[key] = value;
+    loadedCount++;
   }
+  console.log(`[System] Loaded ${loadedCount} environment variables from ${path.basename(envPath)}`);
 }
 
 loadLocalEnv(__dirname);
@@ -218,8 +235,11 @@ function listMonthlyBackupFiles() {
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-async function getSystemBackupPayload() {
-  const companies = await store.listCompaniesById();
+async function getSystemBackupPayload(userId = null) {
+  let companies = await store.listCompaniesById();
+  if (userId) {
+    companies = companies.filter(c => c.owner_id === userId || !c.owner_id);
+  }
   const rows = await store.listPayrollEntriesAll();
   const employees = [];
   const entries = [];
@@ -341,19 +361,32 @@ function hasSupabaseAuthConfig() {
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_REQUEST_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const maxRetries = (!options.method || options.method === "GET") ? 3 : 2;
+  let lastError;
 
-  try {
-    return await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs}ms.`);
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.status >= 502 && response.status <= 504) {
+        throw new Error(`Gateway Error ${response.status}`);
+      }
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError = error;
+      if (error?.name === "AbortError") {
+        lastError = new Error(`Request timed out after ${timeoutMs}ms.`);
+      }
+      if (attempt < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
     }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
+  throw lastError;
 }
 
 async function supabaseAuthAdmin(pathname, { method = "GET", body } = {}) {
@@ -596,11 +629,16 @@ function createMailer() {
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER || "";
   const pass = process.env.SMTP_PASS || "";
-  const from = process.env.SMTP_FROM || user;
+  const from = process.env.SMTP_FROM || `"Routes Payroll" <${user}>`;
   const secure = String(process.env.SMTP_SECURE || "").toLowerCase() === "true";
 
-  if (!host || !port || !user || !pass || !from) {
-    return null;
+  const missing = [];
+  if (!host) missing.push("SMTP_HOST");
+  if (!user) missing.push("SMTP_USER");
+  if (!pass) missing.push("SMTP_PASS");
+
+  if (missing.length > 0) {
+    throw new Error(`Email not configured. Missing in .env.local: ${missing.join(", ")}`);
   }
 
   const transport = nodemailer.createTransport({
@@ -615,9 +653,6 @@ function createMailer() {
 
 async function sendUsernameRecoveryEmail({ to, username }) {
   const mailer = createMailer();
-  if (!mailer) {
-    throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.");
-  }
 
   await mailer.transport.sendMail({
     from: mailer.from,
@@ -633,9 +668,6 @@ async function sendUsernameRecoveryEmail({ to, username }) {
 
 async function sendPasswordResetLinkEmail({ to, resetLink }) {
   const mailer = createMailer();
-  if (!mailer) {
-    throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.");
-  }
 
   await mailer.transport.sendMail({
     from: mailer.from,
@@ -653,9 +685,6 @@ async function sendPasswordResetLinkEmail({ to, resetLink }) {
 
 async function sendEmailVerificationLinkEmail({ to, verifyLink }) {
   const mailer = createMailer();
-  if (!mailer) {
-    throw new Error("Email service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.");
-  }
 
   await mailer.transport.sendMail({
     from: mailer.from,
@@ -698,21 +727,34 @@ function normalizeEmploymentStatus(value) {
 
 async function resolveCompanyId(req, res, source = "query") {
   const rawValue = source === "body" ? req.body?.companyId : req.query?.companyId;
-  const companyId = parseCompanyId(rawValue, 1);
+  let companyId = parseCompanyId(rawValue, null);
+
   if (!companyId) {
-    res.status(400).json({ error: "Invalid company id." });
-    return null;
+    try {
+      const userComps = await store.listCompanies(req.user?.userId);
+      if (userComps && userComps.length > 0) companyId = userComps[0].id;
+      else companyId = 1;
+    } catch {
+      companyId = 1;
+    }
   }
 
   try {
     if (startupDegradedError && companyId === 1) {
       return 1;
     }
-    const exists = await store.companyExists(companyId);
-    if (!exists) {
+    const company = await store.getCompanyById(companyId);
+    if (!company) {
       res.status(404).json({ error: "Company not found." });
       return null;
     }
+    
+    const owner = company.owner_id || company.ownerId;
+    if (owner && req.user?.userId && owner !== req.user.userId) {
+      res.status(403).json({ error: "Access denied to this company's workspace." });
+      return null;
+    }
+    
     return companyId;
   } catch (error) {
     if (companyId === 1 && (startupDegradedError || isStoreUnavailableError(error))) {
@@ -1084,10 +1126,6 @@ app.post("/api/auth/register", async (req, res) => {
 
   try {
     const userCount = await countAuthUsers();
-    if (userCount > 0) {
-      res.status(409).json({ error: "Admin account already exists." });
-      return;
-    }
 
     const passwordHash = await bcrypt.hash(password, 12);
     const authUser = await createAuthUser({
@@ -1104,7 +1142,12 @@ app.post("/api/auth/register", async (req, res) => {
     await store.setUserEmailVerificationById(authUser.id, verifyTokenHash, expiresAtIso);
 
     if (!startupDegradedError || store.provider === "supabase") {
-      await store.updateCompanyName(1, companyName, "");
+      if (userCount === 0) {
+        await store.updateCompanyName(1, companyName, "");
+        if (store.setCompanyOwner) await store.setCompanyOwner(1, authUser.id);
+      } else {
+        await store.createCompany(companyName, "", authUser.id);
+      }
     }
 
     const verifyLink = `${appBaseUrl(req)}/verify-email.html?token=${encodeURIComponent(verifyToken)}`;
@@ -1113,6 +1156,7 @@ app.post("/api/auth/register", async (req, res) => {
     try {
       await sendEmailVerificationLinkEmail({ to: email, verifyLink });
     } catch (error) {
+      console.error("SMTP Warning: Failed to send initial verification email:", error);
       verificationEmailSent = false;
       message = "Account created, but verification email could not be sent. Use Verify Email in Settings after SMTP is configured.";
     }
@@ -1223,6 +1267,7 @@ app.post("/api/auth/send-email-verification", authMiddleware, async (req, res) =
     await sendEmailVerificationLinkEmail({ to: user.email, verifyLink });
     res.json({ ok: true, message: "Verification email sent to your registered email address." });
   } catch (error) {
+    console.error("SMTP Error (verify-email):", error);
     res.status(500).json({ error: String(error?.message || "Failed to send verification email.") });
   }
 });
@@ -1259,8 +1304,9 @@ app.post("/api/auth/recover-email", async (req, res) => {
     }
 
     res.json({ ok: true, message: "If account exists, recovery details have been sent." });
-  } catch {
-    res.status(500).json({ error: "Recovery request failed." });
+  } catch (error) {
+    console.error("SMTP Error (recover-email):", error);
+    res.status(500).json({ error: String(error?.message || "Recovery request failed.") });
   }
 });
 
@@ -1299,6 +1345,7 @@ app.post("/api/auth/request-password-reset", async (req, res) => {
 
     res.json({ ok: true, message: "If account exists, password reset link has been sent." });
   } catch (error) {
+    console.error("SMTP Error (request-reset):", error);
     res.status(500).json({ error: String(error?.message || "Reset request failed.") });
   }
 });
@@ -1425,7 +1472,7 @@ app.post("/api/auth/change-password", authMiddleware, async (req, res) => {
 
 app.get("/api/companies", authMiddleware, async (_req, res) => {
   try {
-    const rows = await store.listCompanies();
+    const rows = await store.listCompanies(_req.user.userId);
     res.json({
       companies: rows.map((row) => ({
         id: row.id,
@@ -1568,7 +1615,7 @@ app.post("/api/companies", authMiddleware, async (req, res) => {
   }
 
   try {
-    const result = await store.createCompany(name, logoDataUrl);
+    const result = await store.createCompany(name, logoDataUrl, req.user.userId);
     res.status(201).json({
       company: {
         id: result.id,
@@ -1705,7 +1752,7 @@ app.delete("/api/settings/designations/:id", authMiddleware, async (req, res) =>
 
 app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
   try {
-    res.json(await getSystemBackupPayload());
+    res.json(await getSystemBackupPayload(req.user.userId));
   } catch (error) {
     if (isStoreUnavailableError(error) || startupDegradedError) {
       res.json({

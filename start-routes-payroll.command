@@ -10,11 +10,20 @@ LOG_FILE="/tmp/routes-payroll-server.log"
 ENV_FILE="$SCRIPT_DIR/.env.local"
 STARTUP_WAIT_SECONDS="${APP_STARTUP_WAIT_SECONDS:-20}"
 
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
+is_running_server_healthy() {
+  local health
+  health="$(curl -fsS "$URL/api/health" 2>/dev/null || true)"
+  [ -n "$health" ] && [[ "$health" != *'"degraded":true'* ]]
+}
+
+stop_existing_server() {
+  local pids
+  pids="$(lsof -tiTCP:${PORT} -sTCP:LISTEN -n -P || true)"
+  if [ -n "$pids" ]; then
+    echo "$pids" | xargs kill
+    sleep 1
+  fi
+}
 
 start_server() {
   nohup node server.js >"$LOG_FILE" 2>&1 </dev/null &
@@ -24,7 +33,7 @@ start_server() {
 wait_for_health() {
   local attempt=0
   while [ "$attempt" -lt "$STARTUP_WAIT_SECONDS" ]; do
-    if curl -s "$URL/api/health" >/dev/null 2>&1; then
+    if is_running_server_healthy; then
       return 0
     fi
     attempt=$((attempt + 1))
@@ -34,8 +43,11 @@ wait_for_health() {
 }
 
 if lsof -iTCP:${PORT} -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-  open "$URL"
-  exit 0
+  if is_running_server_healthy; then
+    open "$URL"
+    exit 0
+  fi
+  stop_existing_server
 fi
 
 start_server

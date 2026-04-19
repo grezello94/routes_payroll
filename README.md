@@ -20,7 +20,6 @@ Example: in April, the app can open March payroll by default.
 - Frontend: plain HTML, CSS, and JavaScript
 - Backend: Node.js + Express
 - Default cloud backend: Supabase
-- Legacy/fallback backends: Firebase and SQLite
 - Auth: app JWT session over Supabase Auth or Firebase Auth
 
 ## What The App Does
@@ -264,7 +263,6 @@ Use `Supabase` on Vercel.
 Why:
 
 - Vercel functions are stateless
-- local SQLite files are not persistent there
 - backup files written by the app are temporary on Vercel
 
 The app now writes monthly emergency backups to `/tmp` on Vercel so requests do not fail, but `/tmp` is ephemeral and should not be treated as durable storage.
@@ -456,7 +454,6 @@ Supported restore payloads:
 Supabase is the preferred backend now.
 
 Firebase support still exists as a fallback for older setups.
-SQLite is available only as an intentional local fallback.
 
 ## Security Notes
 
