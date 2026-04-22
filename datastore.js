@@ -491,7 +491,16 @@ function createSqliteStore(baseDir) {
     },
 
     async updateCompanyName(id, name, logoDataUrl = "") {
-      await run("UPDATE companies SET name = ?, logo_data_url = ? WHERE id = ?", [name, logoDataUrl, id]);
+      try {
+        await run("UPDATE companies SET name = ?, logo_data_url = ? WHERE id = ?", [name, logoDataUrl, id]);
+      } catch (error) {
+        if (String(error?.message || "").toLowerCase().includes("unique")) {
+          const conflict = new Error("Company name already exists.");
+          conflict.code = "unique";
+          throw conflict;
+        }
+        throw error;
+      }
     },
 
     async updateCompanyLogo(id, logoDataUrl = "") {
@@ -537,6 +546,7 @@ function createSqliteStore(baseDir) {
           logoDataUrl,
           ownerId,
         ]);
+        await this.ensureDefaultDesignationPresets(result.lastID);
         return { id: result.lastID };
       } catch (error) {
         if (String(error?.message || "").toLowerCase().includes("unique")) {
@@ -1199,11 +1209,18 @@ function createFirebaseStore(baseDir) {
     },
 
     async updateCompanyName(id, name, logoDataUrl = "") {
+      const nameLc = String(name || "").toLowerCase();
+      const existing = await findByField("companies", "name_lc", nameLc);
+      if (existing && String(existing.id) !== String(id)) {
+        const conflict = new Error("Company name already exists.");
+        conflict.code = "unique";
+        throw conflict;
+      }
       await col("companies").doc(String(id)).set(
         {
-          id,
+          id: Number(id),
           name,
-          name_lc: String(name || "").toLowerCase(),
+          name_lc: nameLc,
           logo_data_url: logoDataUrl,
         },
         { merge: true }
@@ -1891,13 +1908,12 @@ function createSupabaseStore() {
     if (supabaseCapabilities.requiredTablesChecked) return;
 
     const requiredTables = ["users", "companies", "designation_presets", "employees", "payroll_entries"];
-    for (const table of requiredTables) {
-      // eslint-disable-next-line no-await-in-loop
+    await Promise.all(requiredTables.map(async (table) => {
       const exists = await probeTableExists(table);
       if (!exists) {
         throw new Error(`Supabase table "${table}" is missing. Run supabase-setup.sql in the Supabase SQL editor.`);
       }
-    }
+    }));
 
     supabaseCapabilities.payrollReportsTable = await probeTableExists("payroll_reports");
     supabaseCapabilities.requiredTablesChecked = true;
@@ -1913,8 +1929,10 @@ function createSupabaseStore() {
 
     async init() {
       await ensureSupabaseSchemaReady();
-      await this.ensureDefaultCompany();
-      await this.ensureDefaultDesignationPresets(1);
+      await Promise.all([
+        this.ensureDefaultCompany(),
+        this.ensureDefaultDesignationPresets(1)
+      ]);
     },
 
     async countUsers() {
@@ -2060,15 +2078,19 @@ function createSupabaseStore() {
     },
 
     async updateCompanyName(id, name, logoDataUrl = "") {
-      await supabaseRest("companies", {
-        method: "PATCH",
-        query: { id: `eq.${Number(id)}` },
-        body: {
-          name,
-          name_lc: String(name || "").toLowerCase(),
-          logo_data_url: logoDataUrl,
-        },
-      });
+      try {
+        await supabaseRest("companies", {
+          method: "PATCH",
+          query: { id: `eq.${Number(id)}` },
+          body: {
+            name,
+            name_lc: String(name || "").toLowerCase(),
+            logo_data_url: logoDataUrl,
+          },
+        });
+      } catch (error) {
+        mapConflict(error, "Company name already exists.");
+      }
     },
 
     async updateCompanyLogo(id, logoDataUrl = "") {

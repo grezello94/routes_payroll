@@ -210,14 +210,21 @@ function wireAuth() {
         body: { companyName, email, username, password },
       }, false);
 
-      setToken(response.token);
-      currentUser = response.user || null;
-      hydrateSettingsAccount();
-      needsSetupFlow = false;
-      SELECTORS.setupForm.reset();
-      showAuthMessage("");
-      await switchToApp();
-      showAppMessage(response.message || "Account created.");
+      if (response.token) {
+        setToken(response.token);
+        currentUser = response.user || null;
+        hydrateSettingsAccount();
+        needsSetupFlow = false;
+        SELECTORS.setupForm.reset();
+        showAuthMessage("");
+        await switchToApp();
+        showAppMessage(response.message || "Account created.");
+      } else {
+        needsSetupFlow = false;
+        SELECTORS.setupForm.reset();
+        setAuthMode("login");
+        showAuthMessage(response.message || "Account created. Please check your email to verify before logging in.");
+      }
     } catch (error) {
       showAuthMessage(error.message);
     } finally {
@@ -1990,6 +1997,8 @@ function setWorkspace(view) {
   SELECTORS.reportsSection?.classList.toggle("hidden", !reportsView);
   SELECTORS.settingsSection?.classList.toggle("hidden", !settingsView);
   SELECTORS.saveStatus?.classList.toggle("hidden", !payrollView);
+  
+  localStorage.setItem("activeWorkspace", view);
 }
 
 function closeActionMenu() {
@@ -2018,7 +2027,7 @@ async function updateAuthView() {
       SELECTORS.setupForm.classList.add("hidden");
       SELECTORS.loginForm.classList.add("hidden");
       startServerReconnectPolling();
-      showAuthMessage(bootstrap.message || "Connecting to cloud payroll service. Please wait...");
+      showAuthMessage(bootstrap.message || "Connecting...");
       return;
     }
 
@@ -2091,8 +2100,10 @@ async function switchToApp() {
   } catch (error) {
     showAppMessage(error.message || "Failed to load some application data.");
   }
-  setWorkspace("dashboard");
-  SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "dashboard"));
+  
+  const savedWorkspace = localStorage.getItem("activeWorkspace") || "dashboard";
+  setWorkspace(savedWorkspace);
+  SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === savedWorkspace));
 }
 
 async function isServerReachable() {

@@ -557,7 +557,7 @@ async function signInWithFirebasePassword(email, password) {
 }
 
 async function createAuthUser({ email, password, username, emailVerified }) {
-  if (authProvider() === "supabase") {
+  if (store.provider !== "firebase") {
     return {
       id: crypto.randomUUID(),
       email,
@@ -577,7 +577,7 @@ async function createAuthUser({ email, password, username, emailVerified }) {
 }
 
 async function signInWithAuthPassword(email, password, passwordHash = "") {
-  if (authProvider() === "supabase") {
+  if (store.provider !== "firebase") {
     const normalizedHash = String(passwordHash || "");
     if (!normalizedHash) {
       const error = new Error("Invalid username or password.");
@@ -596,7 +596,7 @@ async function signInWithAuthPassword(email, password, passwordHash = "") {
 }
 
 async function updateAuthUserPassword(userId, newPassword) {
-  if (authProvider() === "supabase") {
+  if (store.provider !== "firebase") {
     return;
   }
   await firebaseAuth().updateUser(String(userId || ""), { password: newPassword });
@@ -750,7 +750,7 @@ async function resolveCompanyId(req, res, source = "query") {
     }
     
     const owner = company.owner_id || company.ownerId;
-    if (owner && req.user?.userId && owner !== req.user.userId) {
+    if (owner && req.user?.userId && String(owner) !== String(req.user.userId)) {
       res.status(403).json({ error: "Access denied to this company's workspace." });
       return null;
     }
@@ -1078,15 +1078,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/auth/bootstrap", async (_req, res) => {
-  if (!startupReady && !startupDegradedError) {
-    res.json({
-      needsSetup: false,
-      pending: true,
-      degraded: false,
-      message: "Connecting to cloud payroll service. Please wait...",
-    });
-    return;
-  }
+  await ensureStartupInit();
 
   if (startupDegradedError && store.provider === "supabase") {
     res.json({
@@ -1119,8 +1111,20 @@ app.post("/api/auth/register", async (req, res) => {
   const username = sanitizeText(req.body?.username, 40);
   const password = String(req.body?.password || "");
 
-  if (companyName.length < 2 || !isValidEmail(email) || username.length < 3 || !isStrongPassword(password)) {
-    res.status(400).json({ error: "Company name, email, username, or password is invalid." });
+  if (companyName.length < 2) {
+    res.status(400).json({ error: "Company name must be at least 2 characters." });
+    return;
+  }
+  if (!isValidEmail(email)) {
+    res.status(400).json({ error: "Email is invalid." });
+    return;
+  }
+  if (username.length < 3) {
+    res.status(400).json({ error: "Username must be at least 3 characters." });
+    return;
+  }
+  if (!isStrongPassword(password)) {
+    res.status(400).json({ error: "Password must be at least 8 characters and include uppercase, lowercase, and a number." });
     return;
   }
 
@@ -1138,37 +1142,35 @@ app.post("/api/auth/register", async (req, res) => {
     const verifyToken = crypto.randomBytes(24).toString("hex");
     const verifyTokenHash = hashResetCode(verifyToken);
     const expiresAtIso = new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
-    await store.createUser(username, email, passwordHash, { id: authUser.id, emailVerified: false });
-    await store.setUserEmailVerificationById(authUser.id, verifyTokenHash, expiresAtIso);
+      const createdDbUser = await store.createUser(username, email, passwordHash, { id: authUser.id, emailVerified: false });
+      await store.setUserEmailVerificationById(createdDbUser.id, verifyTokenHash, expiresAtIso);
 
     if (!startupDegradedError || store.provider === "supabase") {
       if (userCount === 0) {
         await store.updateCompanyName(1, companyName, "");
-        if (store.setCompanyOwner) await store.setCompanyOwner(1, authUser.id);
+          if (store.setCompanyOwner) await store.setCompanyOwner(1, createdDbUser.id);
       } else {
-        await store.createCompany(companyName, "", authUser.id);
+          await store.createCompany(companyName, "", createdDbUser.id);
       }
     }
 
     const verifyLink = `${appBaseUrl(req)}/verify-email.html?token=${encodeURIComponent(verifyToken)}`;
     let verificationEmailSent = true;
-    let message = "Account created. Verify your email from the link we sent, or resend it from Settings.";
+      let message = "Account created. Verify your email from the link we sent. If lost, simply try logging in to resend it.";
     try {
       await sendEmailVerificationLinkEmail({ to: email, verifyLink });
     } catch (error) {
       console.error("SMTP Warning: Failed to send initial verification email:", error);
       verificationEmailSent = false;
-      message = "Account created, but verification email could not be sent. Use Verify Email in Settings after SMTP is configured.";
+        message = "Account created, but verification email could not be sent. Check SMTP settings, then try logging in to resend.";
     }
 
-    const createdUser = { id: authUser.id, username, email, email_verified: false, password_hash: passwordHash };
+      const createdUser = { id: createdDbUser.id, username, email, email_verified: false, password_hash: passwordHash };
     cacheUser(createdUser);
-    const token = createToken(createdUser);
     res.status(201).json({
-      token,
       message,
       verificationEmailSent,
-      user: { id: authUser.id, username, email, emailVerified: false },
+        user: { id: createdDbUser.id, username, email, emailVerified: false },
     });
   } catch (error) {
     if (
@@ -1179,7 +1181,7 @@ app.post("/api/auth/register", async (req, res) => {
       || error?.code === "unique"
       || String(error?.message || "").toLowerCase().includes("already")
     ) {
-      res.status(409).json({ error: "Admin account or email already exists." });
+        res.status(409).json({ error: "Admin account, email, or company name already exists." });
       return;
     }
     res.status(500).json({ error: "Failed to register admin account." });
@@ -1209,7 +1211,19 @@ app.post("/api/auth/login", async (req, res) => {
 
     await signInWithAuthPassword(user.email, password, user.password_hash);
     if (!isUserEmailVerified(user)) {
-      res.status(403).json({ error: "Email not verified. Open the verification email or resend it from Settings on your registered system." });
+      try {
+        const verifyToken = crypto.randomBytes(24).toString("hex");
+        const verifyTokenHash = hashResetCode(verifyToken);
+        const expiresAtIso = new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
+        await store.setUserEmailVerificationById(user.id, verifyTokenHash, expiresAtIso);
+        
+        const verifyLink = `${appBaseUrl(req)}/verify-email.html?token=${encodeURIComponent(verifyToken)}`;
+        await sendEmailVerificationLinkEmail({ to: user.email, verifyLink });
+        res.status(403).json({ error: "Email not verified. We just sent a new verification link to your email." });
+      } catch (smtpError) {
+        console.error("SMTP Error during login resend:", smtpError);
+        res.status(403).json({ error: "Email not verified. Check SMTP settings, unable to send a new verification link." });
+      }
       return;
     }
 

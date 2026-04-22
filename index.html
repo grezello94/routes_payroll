@@ -46,9 +46,23 @@
           height: 100%;
           border-radius: 0 !important;
           margin: 0 !important;
-          font-size: 1.6rem !important;
+          font-size: 1.4rem !important;
           color: #6B7280 !important;
           transition: color 0.2s ease !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: center !important;
+          align-items: center !important;
+          padding: 0 !important;
+          gap: 4px !important;
+        }
+        .rail-btn::before {
+          display: none !important;
+        }
+        .rail-btn::after {
+          font-size: 0.65rem !important;
+          font-weight: 600 !important;
+          line-height: 1 !important;
         }
         .rail-btn:active {
           transform: scale(0.92) !important;
@@ -352,38 +366,69 @@
 
       /* Cards & Panels */
       .panel, .settings-card, .dashboard-panel, .payroll-entry-card, .auth-card, .metrics article, .dashboard-stat-card {
-        background: var(--surface) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: var(--radius) !important;
-        box-shadow: var(--shadow-md) !important;
+        background: #ffffff !important;
+        border: 1px solid rgba(229, 231, 235, 0.6) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03) !important;
         transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+      }
+      .panel::after, .settings-card::after, .dashboard-panel::after, .payroll-entry-card::after, .metrics article::after, .dashboard-stat-card::after {
+        content: "" !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 4px !important;
+        background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%) !important;
+        opacity: 0 !important;
+        transition: opacity 0.3s ease !important;
+      }
+      .panel:hover::after, .settings-card:hover::after, .dashboard-panel:hover::after, .payroll-entry-card:hover::after, .metrics article:hover::after, .dashboard-stat-card:hover::after {
+        opacity: 1 !important;
       }
       .panel:hover, .settings-card:hover, .dashboard-panel:hover, .payroll-entry-card:hover, .metrics article:hover, .dashboard-stat-card:hover {
-        box-shadow: var(--shadow-lg) !important;
+        box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.03) !important;
+        transform: translateY(-2px) !important;
       }
 
       /* Floating Topbar */
       .topbar {
-        background: var(--surface) !important;
-        backdrop-filter: none !important;
-        -webkit-backdrop-filter: none !important;
-        border: 1px solid var(--border) !important;
-        border-radius: var(--radius) !important;
-        box-shadow: var(--shadow-md) !important;
+        background: rgba(255, 255, 255, 0.85) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
+        border: 1px solid rgba(226, 232, 240, 0.8) !important;
+        border-radius: 20px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
         margin: 20px 0 32px 0 !important;
-        padding: 20px 28px !important;
+        padding: 24px 32px !important;
         position: sticky !important;
         top: 20px !important;
         z-index: 50 !important;
       }
+      .topbar h1 {
+        font-size: 1.8rem !important;
+        font-weight: 800 !important;
+        margin: 4px 0 !important;
+        background: linear-gradient(90deg, #1E3A8A, #3B82F6) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        display: inline-block !important;
+      }
 
-      /* Clean Tables */
-      .table-wrap, .employee-list-wrap {
-        border: 1px solid var(--border) !important;
-        border-radius: var(--radius) !important;
-        overflow-x: auto !important;
-        background: var(--surface) !important;
-        box-shadow: var(--shadow-md) !important;
+      /* Premium Cards and Clean Tables */
+      .table-wrap, .employee-list-wrap, .panel, .dashboard-summary-cards .summary-card, .metrics article, .dashboard-activity {
+        border: 1px solid rgba(226, 232, 240, 0.8) !important;
+        border-radius: 16px !important;
+        overflow: hidden !important;
+        background: #ffffff !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.03), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      }
+      .metrics article:hover, .dashboard-summary-cards .summary-card:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 20px 25px -5px rgba(0,0,0,0.05), 0 10px 10px -5px rgba(0,0,0,0.02) !important;
       }
       table {
         border-collapse: collapse !important;
@@ -393,26 +438,118 @@
         position: sticky !important;
         top: 0 !important;
         z-index: 10 !important;
-        background: var(--bg-color) !important;
-        backdrop-filter: none !important;
-        color: var(--text-muted) !important;
+        background: #F8FAFC !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        color: #475569 !important;
         text-transform: uppercase !important;
         font-size: 0.75rem !important;
-        letter-spacing: 0.06em !important;
-        padding: 16px !important;
+        letter-spacing: 0.05em !important;
+        padding: 16px 20px !important;
         font-weight: 700 !important;
-        border-bottom: 1px solid var(--border) !important;
-        box-shadow: 0 1px 0 var(--border) !important; /* Prevents scroll bleed */
+        border-bottom: 1px solid #E2E8F0 !important;
+        box-shadow: none !important;
       }
       td {
-        padding: 16px !important;
-        border-bottom: 1px solid var(--border) !important;
+        padding: 16px 20px !important;
+        border-bottom: 1px solid #F1F5F9 !important;
         vertical-align: middle !important;
-        color: var(--text-main) !important;
+        color: #1E293B !important;
         font-weight: 500 !important;
+        font-size: 0.95rem !important;
       }
       tr:last-child td { border-bottom: none !important; }
-      tr:hover td { background-color: #f8fafc !important; cursor: default; }
+      tr:hover td { background-color: #F8FAFC !important; cursor: default; }
+
+      /* Page Headings (Employees, Payroll, Settings, Reports) */
+      .table-head {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 10px 0 24px 0 !important;
+        margin-bottom: 0 !important;
+      }
+      .table-head h2 {
+        font-size: 2.25rem !important;
+        letter-spacing: -0.03em !important;
+        color: #0f172a !important;
+      }
+      .table-head p {
+        font-size: 1.05rem !important;
+        color: #64748b !important;
+        margin-top: 6px !important;
+      }
+
+      /* Inner Forms (Employee Form, Settings Grid) */
+      .employee-form {
+        background: #ffffff !important;
+        border: 1px solid rgba(229, 231, 235, 0.6) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
+        padding: 32px !important;
+        margin-bottom: 40px !important;
+      }
+      .settings-grid {
+        gap: 24px !important;
+      }
+      .settings-card {
+        padding: 32px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+      }
+      .settings-card h3 {
+        font-size: 1.25rem !important;
+        margin-bottom: 8px !important;
+        color: #0f172a !important;
+      }
+      .settings-card p {
+        font-size: 0.95rem !important;
+        color: #64748b !important;
+        margin-bottom: 24px !important;
+        line-height: 1.5 !important;
+      }
+
+      /* Payroll Register Cards */
+      .payroll-cards {
+        padding: 0 !important;
+        gap: 24px !important;
+        margin-top: 16px !important;
+      }
+      .payroll-entry-card {
+        padding: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+      }
+      .payroll-entry-head {
+        background: #f8fafc !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        padding: 20px 24px !important;
+        border-top-left-radius: 16px !important;
+        border-top-right-radius: 16px !important;
+      }
+      .payroll-entry-head strong {
+        font-size: 1.25rem !important;
+        color: #0f172a !important;
+      }
+      .payroll-entry-body {
+        padding: 24px !important;
+      }
+      .payroll-fields {
+        gap: 16px !important;
+      }
+      .payroll-entry-foot {
+        background: #f8fafc !important;
+        border-top: 1px solid #e2e8f0 !important;
+        padding: 20px 24px !important;
+        border-bottom-left-radius: 16px !important;
+        border-bottom-right-radius: 16px !important;
+        margin-top: auto !important;
+      }
+      .payroll-entry-foot strong {
+        font-size: 1.5rem !important;
+        color: var(--primary) !important;
+      }
 
       /* Soft Status Pills */
       .status-pill {
@@ -570,8 +707,201 @@
       .payslip-line-total strong { font-size: 1.25rem !important; }
       .payslip-net-box { background: #0f172a !important; color: #ffffff !important; padding: 16px 24px !important; border-radius: 8px !important; font-size: 1.75rem !important; font-weight: 800 !important; display: inline-block !important; }
 
+      /* 8. Premium Auth UI */
+      .auth-view {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 1000 !important;
+        overflow-y: auto !important;
+        display: flex !important;
+        flex-direction: row !important;
+        background: #F8FAFC !important;
+        gap: 0 !important;
+      }
+      .auth-view.hidden {
+        display: none !important;
+      }
+      .auth-view .brand {
+        flex: 1 1 45% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 60px !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        border-right: 1px solid #E2E8F0 !important;
+        box-shadow: 2px 0 20px rgba(0,0,0,0.03) !important;
+        margin: 0 !important;
+        position: relative !important;
+        z-index: 2 !important;
+      }
+      .auth-view .brand h1, .auth-view .brand p, .auth-view .brand .eyebrow, .auth-view .brand .subtitle {
+        color: #0f172a !important;
+        text-shadow: none !important;
+      }
+      .auth-view .brand h1 {
+        font-size: 3rem !important;
+        font-weight: 800 !important;
+        margin-top: 10px !important;
+        margin-bottom: 24px !important;
+        letter-spacing: -0.04em !important;
+        background: linear-gradient(90deg, #1E3A8A, #3B82F6) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+      .auth-view .brand .eyebrow {
+        color: #64748b !important;
+        letter-spacing: 0.1em !important;
+        font-weight: 700 !important;
+        margin-top: 20px !important;
+      }
+      .auth-view .brand-logo {
+        width: 320px !important;
+        max-width: 80vw !important;
+        margin-bottom: 10px !important;
+        filter: drop-shadow(0 10px 15px rgba(0,0,0,0.08)) !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        padding: 0 !important;
+      }
+      .auth-view .auth-card {
+        flex: 1 1 55% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 60px 40px !important;
+        background: #F8FAFC !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        position: relative !important;
+      }
+      .auth-view .auth-card > * {
+        width: 100% !important;
+        max-width: 440px !important;
+        background: #ffffff !important;
+        padding: 40px !important;
+        border-radius: 20px !important;
+        box-shadow: 0 20px 40px -10px rgba(0,0,0,0.08), 0 10px 15px -3px rgba(0,0,0,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.5) !important;
+      }
+      .auth-view .auth-card > .auth-switch {
+        background: #F1F5F9 !important;
+        padding: 8px !important;
+        border-radius: 14px !important;
+        margin-bottom: 30px !important;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.05) !important;
+        border: none !important;
+        display: flex !important;
+        gap: 8px !important;
+      }
+      .auth-switch button {
+        flex: 1 !important;
+        background: transparent !important;
+        color: #6B7280 !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 12px !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+      }
+      .auth-switch button.active, .auth-switch button:focus, .auth-switch button:active {
+        background: #ffffff !important;
+        color: #111827 !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+      }
+      .auth-view .panel {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+      }
+      .auth-view .panel h2 {
+        font-size: 2rem !important;
+        margin-bottom: 8px !important;
+      }
+      .auth-view .panel p {
+        font-size: 1rem !important;
+        color: #6B7280 !important;
+        margin-bottom: 32px !important;
+        text-shadow: none !important;
+      }
+      .auth-view label {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        margin-bottom: 20px !important;
+        font-size: 0.95rem !important;
+      }
+      .auth-view input {
+        padding: 16px !important;
+        font-size: 1rem !important;
+        border-radius: 12px !important;
+        background: #F8FAFC !important;
+        border: 1px solid #E2E8F0 !important;
+        transition: all 0.2s ease !important;
+      }
+      .auth-view input:focus {
+        background: #ffffff !important;
+        border-color: #3B82F6 !important;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15) !important;
+        outline: none !important;
+      }
+      .auth-view button[type="submit"] {
+        width: 100% !important;
+        padding: 18px !important;
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.02em !important;
+        border-radius: 14px !important;
+        margin-top: 16px !important;
+        background: linear-gradient(90deg, #1E3A8A, #3B82F6) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4) !important;
+        transition: all 0.3s ease !important;
+      }
+      .auth-view button[type="submit"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 15px 25px -5px rgba(59, 130, 246, 0.5) !important;
+      }
+      .auth-view .status-msg {
+        margin-top: 24px !important;
+        text-align: center !important;
+        padding: 16px !important;
+        border-radius: 8px !important;
+      }
+
       @media (max-width: 1024px) {
         .kpi-metrics-row { grid-template-columns: repeat(2, 1fr) !important; }
+      }
+      @media (max-width: 850px) {
+        .auth-view {
+          flex-direction: column !important;
+          position: fixed !important;
+        }
+        .auth-view .brand {
+          flex: 0 0 auto !important;
+          padding: 60px 20px 80px 20px !important;
+        }
+        .auth-view .auth-card {
+          flex: 1 0 auto !important;
+          padding: 40px 20px !important;
+          border-top-left-radius: 32px !important;
+          border-top-right-radius: 32px !important;
+          margin-top: -40px !important;
+          background: #ffffff !important;
+          justify-content: flex-start !important;
+        }
       }
       @media (max-width: 480px) {
         .kpi-metrics-row { grid-template-columns: 1fr !important; }
@@ -582,10 +912,9 @@
     <main class="shell">
       <section id="authView" class="auth-view">
         <div class="brand">
+          <img class="brand-logo" src="icons/routes-logo-no-bg.png" alt="Routes Logo" />
           <p class="eyebrow">PWA Payroll Platform</p>
           <h1>Routes Payroll</h1>
-          <img class="brand-logo" src="icons/routes-logo.png" alt="Routes Logo" />
-          <p class="subtitle">Secure backend login, SQLite database, and smart payslip operations.</p>
         </div>
 
         <div class="auth-card">
@@ -615,6 +944,7 @@
                 <input id="setupPassword" type="password" required minlength="8" maxlength="80" />
                 <button class="password-toggle" type="button" data-password-target="setupPassword" aria-label="Show password" aria-pressed="false">👁</button>
               </div>
+              <small class="form-hint" style="display: block; margin-top: -0.5rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">Min 8 chars, 1 uppercase, 1 lowercase, 1 number.</small>
             </label>
             <label>
               Confirm Password
@@ -950,6 +1280,7 @@
                       <input id="newPasswordInput" type="password" minlength="8" maxlength="80" required />
                       <button class="password-toggle" type="button" data-password-target="newPasswordInput" aria-label="Show password" aria-pressed="false">👁</button>
                     </div>
+                    <small class="form-hint" style="display: block; margin-top: -0.5rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">Min 8 chars, 1 uppercase, 1 lowercase, 1 number.</small>
                   </label>
                   <label>
                     Confirm Password
