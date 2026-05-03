@@ -2189,7 +2189,9 @@ function isPayrollActiveStatus(status) {
 
 function isPayrollVisibleForMonth(record, month = getSelectedMonth()) {
   const status = String(record?.employeeStatus || "working").toLowerCase();
-  if (status === "leave" || status === "terminated") return false;
+  if (status === "leave" || status === "terminated") {
+    return systemWorkedDaysInMonth(record, month) > 0;
+  }
   if (status !== "resumed") return true;
 
   const resumedOn = parseIsoDate(record?.leaveTo);
@@ -2272,17 +2274,21 @@ async function loadMonthRecords() {
       const employee = employeeMaster.find((item) => String(item.employeeId) === String(record.employeeId));
       if (!employee) return record;
 
+      const hasStoredMonthRecord = Number(record.id || 0) > 0;
       const masterSalary = Number(employee.baseSalary || 0);
       const monthSalary = Number(record.presentSalary || 0);
+      const monthStatus = resolveEmployeeStatusForMonth(employee, month);
       return {
         ...record,
-        employeeName: employee.employeeName || record.employeeName || "",
-        designation: employee.designation || record.designation || "",
-        presentSalary: masterSalary > 0 ? masterSalary : monthSalary,
-        employeeStatus: employee.status || record.employeeStatus || "working",
-        leaveFrom: employee.leaveFrom || record.leaveFrom || "",
-        leaveTo: employee.leaveTo || record.leaveTo || "",
-        terminatedOn: employee.terminatedOn || record.terminatedOn || "",
+        employeeName: record.employeeName || employee.employeeName || "",
+        designation: record.designation || employee.designation || "",
+        presentSalary: hasStoredMonthRecord
+          ? monthSalary
+          : (masterSalary > 0 ? masterSalary : monthSalary),
+        employeeStatus: monthStatus.employeeStatus || record.employeeStatus || "working",
+        leaveFrom: monthStatus.leaveFrom,
+        leaveTo: monthStatus.leaveTo,
+        terminatedOn: monthStatus.terminatedOn,
       };
     });
     const visible = currentRecords.filter((record) => isPayrollVisibleForMonth(record, month));
@@ -2392,69 +2398,133 @@ function parseIsoDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function resolveEmployeeStatusForMonth(employee, month) {
+  const rawStatus = String(employee?.status || "working").toLowerCase();
+  const status = rawStatus === "leave" || rawStatus === "resumed" || rawStatus === "terminated" ? rawStatus : "working";
+  const leaveFrom = String(employee?.leaveFrom || "");
+  const leaveTo = String(employee?.leaveTo || "");
+  const terminatedOn = String(employee?.terminatedOn || "");
+  const { start, end } = monthBounds(month);
+  const leaveFromDate = parseIsoDate(leaveFrom);
+  const leaveToDate = parseIsoDate(leaveTo);
+  const terminatedOnDate = parseIsoDate(terminatedOn);
+
+  if (terminatedOnDate && terminatedOnDate <= end) {
+    return {
+      employeeStatus: "terminated",
+      leaveFrom: "",
+      leaveTo: "",
+      terminatedOn,
+    };
+  }
+
+  if (leaveFromDate) {
+    if (leaveFromDate > end) {
+      return {
+        employeeStatus: "working",
+        leaveFrom: "",
+        leaveTo: "",
+        terminatedOn: "",
+      };
+    }
+
+    if (leaveToDate) {
+      if (leaveToDate <= start) {
+        return {
+          employeeStatus: status === "resumed" ? "resumed" : "working",
+          leaveFrom,
+          leaveTo,
+          terminatedOn: "",
+        };
+      }
+      if (leaveToDate <= end) {
+        return {
+          employeeStatus: "resumed",
+          leaveFrom,
+          leaveTo,
+          terminatedOn: "",
+        };
+      }
+    }
+
+    return {
+      employeeStatus: "leave",
+      leaveFrom,
+      leaveTo: "",
+      terminatedOn: "",
+    };
+  }
+
+  return {
+    employeeStatus: status,
+    leaveFrom: status === "leave" ? leaveFrom : "",
+    leaveTo: status === "resumed" ? leaveTo : "",
+    terminatedOn: status === "terminated" ? terminatedOn : "",
+  };
+}
+
+function shiftDateByDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function payrollWorkWindow(record, month) {
+  const { start, end } = monthBounds(month);
+  const monthDays = end.getDate();
+  const status = String(record?.employeeStatus || "working").toLowerCase();
+  const joiningDate = parseIsoDate(record?.joiningDate);
+  const resumedOn = status === "resumed" ? parseIsoDate(record?.leaveTo) : null;
+  const leaveFrom = status === "leave" ? parseIsoDate(record?.leaveFrom) : null;
+  const terminatedOn = status === "terminated" ? parseIsoDate(record?.terminatedOn) : null;
+
+  let workStart = start;
+  let workEnd = end;
+
+  if (joiningDate && joiningDate > workStart) workStart = joiningDate;
+  if (resumedOn && resumedOn > workStart) workStart = resumedOn;
+  if (leaveFrom) {
+    const lastWorkedDay = shiftDateByDays(leaveFrom, -1);
+    if (lastWorkedDay < workEnd) workEnd = lastWorkedDay;
+  }
+  if (terminatedOn) {
+    const lastWorkedDay = shiftDateByDays(terminatedOn, -1);
+    if (lastWorkedDay < workEnd) workEnd = lastWorkedDay;
+  }
+
+  const workedDays = workStart > workEnd
+    ? 0
+    : clamp(Math.floor((workEnd.getTime() - workStart.getTime()) / 86400000) + 1, 0, monthDays);
+
+  return {
+    start,
+    end,
+    workStart,
+    workEnd,
+    monthDays,
+    workedDays,
+  };
+}
+
 function isPayrollBlocked(record, month) {
   const status = String(record.employeeStatus || "working").toLowerCase();
   if (status === "terminated") {
     const terminatedOn = parseIsoDate(record.terminatedOn);
     if (!terminatedOn) return true;
-    const { end } = monthBounds(month);
-    return terminatedOn <= end;
+    return payrollWorkWindow(record, month).workedDays <= 0;
   }
   if (status === "leave") {
-    const { start, end } = monthBounds(month);
     const leaveFrom = parseIsoDate(record.leaveFrom);
-    const leaveTo = parseIsoDate(record.leaveTo);
-    if (!leaveFrom && !leaveTo) return true;
-    if (leaveFrom && leaveFrom > end) return false;
-    if (leaveTo && leaveTo < start) return false;
-    return true;
+    if (!leaveFrom) return true;
+    return payrollWorkWindow(record, month).workedDays <= 0;
   }
   return false;
-}
-
-function daysBeforeResumeInMonth(record, month) {
-  const status = String(record.employeeStatus || "working").toLowerCase();
-  if (status !== "resumed") return 0;
-  const resumedOn = parseIsoDate(record.leaveTo);
-  if (!resumedOn) return 0;
-  const { start, end } = monthBounds(month);
-  if (resumedOn <= start) return 0;
-  const monthDays = end.getDate();
-  if (resumedOn > end) return monthDays;
-  return clamp(resumedOn.getDate() - 1, 0, monthDays);
 }
 
 function payrollMonthDayCount(month) {
   return monthBounds(month).end.getDate();
 }
 
-function daysWorkedFromDateInMonth(date, month) {
-  if (!date) return 0;
-  const { start, end } = monthBounds(month);
-  if (date > end) return 0;
-  const effectiveStart = date < start ? start : date;
-  return clamp(end.getDate() - effectiveStart.getDate() + 1, 0, end.getDate());
-}
-
 function systemWorkedDaysInMonth(record, month) {
-  const status = String(record.employeeStatus || "working").toLowerCase();
-  if (status === "leave" || status === "terminated") return 0;
-
-  const monthDays = payrollMonthDayCount(month);
-  const joiningDate = parseIsoDate(record.joiningDate);
-  const resumedOn = status === "resumed" ? parseIsoDate(record.leaveTo) : null;
-  const candidateDates = [];
-
-  if (joiningDate) candidateDates.push(joiningDate);
-  if (resumedOn) candidateDates.push(resumedOn);
-
-  if (candidateDates.length === 0) return monthDays;
-
-  let workedDays = monthDays;
-  for (const candidate of candidateDates) {
-    workedDays = Math.min(workedDays, daysWorkedFromDateInMonth(candidate, month));
-  }
-  return clamp(workedDays, 0, monthDays);
+  return payrollWorkWindow(record, month).workedDays;
 }
 
 function computePayroll(record, month = getSelectedMonth()) {
@@ -2468,10 +2538,13 @@ function computePayroll(record, month = getSelectedMonth()) {
   const extraAdvanceAdded = toMoney(record.extraAdvanceAdded);
   const totalAdvance = oldAdvanceTaken + extraAdvanceAdded;
 
+  const rawManualDaysAbsent = Math.max(0, toMoney(record.daysAbsent));
   const deductionEntered = blocked ? 0 : Math.max(0, toMoney(record.deductionEntered));
   const systemWorkedDays = blocked ? 0 : systemWorkedDaysInMonth(record, month);
   const autoDaysAbsent = blocked ? monthDays : Math.max(0, monthDays - systemWorkedDays);
-  const manualDaysAbsent = blocked ? 0 : clamp(toMoney(record.daysAbsent), 0, systemWorkedDays);
+  const manualDaysAbsent = blocked
+    ? 0
+    : (rawManualDaysAbsent > systemWorkedDays ? 0 : clamp(rawManualDaysAbsent, 0, systemWorkedDays));
   const workedDays = blocked ? 0 : clamp(systemWorkedDays - manualDaysAbsent, 0, monthDays);
   const daysAbsent = clamp(monthDays - workedDays, 0, monthDays);
   const payableSalary = monthDays > 0 ? (workedDays / monthDays) * grossSalary : 0;
@@ -2501,6 +2574,20 @@ function computePayroll(record, month = getSelectedMonth()) {
     advanceRemained,
     netSalary,
   };
+}
+
+function payrollWorkedDaysNote(record, calc) {
+  const status = String(record?.employeeStatus || "working").toLowerCase();
+  if (status === "leave" && record?.leaveFrom) {
+    return `System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) after leave date ${record.leaveFrom}. Salary is calculated only for the days worked before leave.`;
+  }
+  if (status === "terminated" && record?.terminatedOn) {
+    return `System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) after termination date ${record.terminatedOn}. Salary is calculated only for the days worked before termination.`;
+  }
+  if (status === "resumed" && record?.leaveTo) {
+    return `System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) before resume date ${record.leaveTo}. Manual absence is added separately.`;
+  }
+  return `System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) for this month from joining date and status dates. Manual absence is added separately.`;
 }
 
 function payrollZeroSalaryReason(record, calc, month) {
@@ -2671,7 +2758,7 @@ function renderPayrollTable() {
               </label>
               <label>Worked Days (out of ${calc.monthDays})
                 <input type="text" class="locked-field" value="${formatNumberValue(calc.workedDays)}" readonly />
-                <span class="field-note">System calculated from joining/resume date and manual absences.</span>
+                <span class="field-note">System calculated from joining date, leave/resume/termination date, and manual absences.</span>
               </label>
               <label>Manual Days Absent (out of ${calc.systemWorkedDays})
                 <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="${calc.systemWorkedDays}" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
@@ -2690,8 +2777,8 @@ function renderPayrollTable() {
                 <span class="field-note">Locked (system calculated)</span>
               </label>
             </div>
-            ${(calc.autoDaysAbsent > 0 || status === "resumed")
-              ? `<p class="status-note">${escapeHtml(`System counted ${formatNumberValue(calc.autoDaysAbsent)} non-working day(s) for this month before joining/resume. Manual absence is added separately.`)}</p>`
+            ${(calc.autoDaysAbsent > 0 || status === "resumed" || status === "leave" || status === "terminated")
+              ? `<p class="status-note">${escapeHtml(payrollWorkedDaysNote(record, calc))}</p>`
               : ""}
           </section>
 

@@ -192,6 +192,85 @@ function monthIsoFromDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function monthBounds(isoMonth) {
+  const [year, month] = String(isoMonth || "").split("-").map((item) => Number(item));
+  return {
+    start: new Date(year, month - 1, 1),
+    end: new Date(year, month, 0),
+  };
+}
+
+function parseIsoDate(value) {
+  if (!isIsoDate(value)) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function resolveEmployeeStatusForMonth(employee, month) {
+  const rawStatus = String(employee?.status || "working").toLowerCase();
+  const status = rawStatus === "leave" || rawStatus === "resumed" || rawStatus === "terminated" ? rawStatus : "working";
+  const leaveFrom = String(employee?.leave_from || employee?.leaveFrom || "");
+  const leaveTo = String(employee?.leave_to || employee?.leaveTo || "");
+  const terminatedOn = String(employee?.terminated_on || employee?.terminatedOn || "");
+  const { start, end } = monthBounds(month);
+  const leaveFromDate = parseIsoDate(leaveFrom);
+  const leaveToDate = parseIsoDate(leaveTo);
+  const terminatedOnDate = parseIsoDate(terminatedOn);
+
+  if (terminatedOnDate && terminatedOnDate <= end) {
+    return {
+      employeeStatus: "terminated",
+      leaveFrom: "",
+      leaveTo: "",
+      terminatedOn,
+    };
+  }
+
+  if (leaveFromDate) {
+    if (leaveFromDate > end) {
+      return {
+        employeeStatus: "working",
+        leaveFrom: "",
+        leaveTo: "",
+        terminatedOn: "",
+      };
+    }
+
+    if (leaveToDate) {
+      if (leaveToDate <= start) {
+        return {
+          employeeStatus: status === "resumed" ? "resumed" : "working",
+          leaveFrom,
+          leaveTo,
+          terminatedOn: "",
+        };
+      }
+      if (leaveToDate <= end) {
+        return {
+          employeeStatus: "resumed",
+          leaveFrom,
+          leaveTo,
+          terminatedOn: "",
+        };
+      }
+    }
+
+    return {
+      employeeStatus: "leave",
+      leaveFrom,
+      leaveTo: "",
+      terminatedOn: "",
+    };
+  }
+
+  return {
+    employeeStatus: status,
+    leaveFrom: status === "leave" ? leaveFrom : "",
+    leaveTo: status === "resumed" ? leaveTo : "",
+    terminatedOn: status === "terminated" ? terminatedOn : "",
+  };
+}
+
 function isLastCalendarDay(date) {
   const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   return date.getDate() === lastDay;
@@ -963,6 +1042,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
   employees.forEach((employee, index) => {
     const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
     const carriedAdvance = advanceLedger.latestAdvanceByEmployeeId.get(String(employee.employee_id || "")) ?? null;
+    const monthStatus = resolveEmployeeStatusForMonth(employee, month);
     records.push({
       id: linked?.id || null,
       companyId,
@@ -979,10 +1059,10 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       daysAbsent: linked?.days_absent ?? 0,
       comment: linked?.comment || "",
       positionIndex: Number(employee.position_index ?? index),
-      employeeStatus: employee.status || "working",
-      leaveFrom: employee.leave_from || "",
-      leaveTo: employee.leave_to || "",
-      terminatedOn: employee.terminated_on || "",
+      employeeStatus: monthStatus.employeeStatus,
+      leaveFrom: monthStatus.leaveFrom,
+      leaveTo: monthStatus.leaveTo,
+      terminatedOn: monthStatus.terminatedOn,
     });
     byEmployeeId.delete(String(employee.employee_id || ""));
   });
@@ -992,13 +1072,14 @@ async function listMergedPayrollMonthRecords(month, companyId) {
     if (!linkedEmployee) {
       continue;
     }
+    const monthStatus = resolveEmployeeStatusForMonth(linkedEmployee, month);
     records.push({
       ...dbRowToRecord(extra),
       joiningDate: linkedEmployee?.joining_date || "",
-      employeeStatus: linkedEmployee?.status || "working",
-      leaveFrom: linkedEmployee?.leave_from || "",
-      leaveTo: linkedEmployee?.leave_to || "",
-      terminatedOn: linkedEmployee?.terminated_on || "",
+      employeeStatus: monthStatus.employeeStatus,
+      leaveFrom: monthStatus.leaveFrom,
+      leaveTo: monthStatus.leaveTo,
+      terminatedOn: monthStatus.terminatedOn,
     });
   }
 
@@ -1764,7 +1845,7 @@ app.delete("/api/settings/designations/:id", authMiddleware, async (req, res) =>
   }
 });
 
-app.get("/api/payroll/all", authMiddleware, async (_req, res) => {
+app.get("/api/payroll/all", authMiddleware, async (req, res) => {
   try {
     res.json(await getSystemBackupPayload(req.user.userId));
   } catch (error) {
