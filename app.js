@@ -105,6 +105,9 @@ const SELECTORS = {
   clearErrorLogsBtn: document.getElementById("clearErrorLogsBtn"),
   generatedPayrollBody: document.getElementById("generatedPayrollBody"),
   generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
+  generatedPayslipsCheckAll: document.getElementById("generatedPayslipsCheckAll"),
+  generatedPayslipsSelectionCount: document.getElementById("generatedPayslipsSelectionCount"),
+  printSelectedPayslipsBtn: document.getElementById("printSelectedPayslipsBtn"),
   generatedPayrollEmployeesBody: document.getElementById("generatedPayrollEmployeesBody"),
   payslipDialog: document.getElementById("payslipDialog"),
   payslipPreview: document.getElementById("payslipPreview"),
@@ -138,21 +141,197 @@ let serverReconnectInFlight = false;
 let payrollReports = [];
 let activePayrollReportId = null;
 let activePayrollReportSnapshot = null;
+let selectedGeneratedPayslipsByReport = new Map();
 let errorLogs = readStoredErrorLogs();
 let backupStatus = null;
 
 const MOTIVATING_MESSAGES = [
-  "Great job this month! Keep up the excellent work.",
-  "Your hard work and dedication are truly appreciated.",
-  "Thank you for your continuous effort and positive energy.",
-  "We value your commitment to the team. Keep it up!",
-  "Outstanding performance! Proud to have you with us.",
-  "Your contributions make a big difference. Thank you!",
-  "Keep shining! Your dedication does not go unnoticed.",
-  "Thank you for your outstanding teamwork and reliability.",
-  "Your positive attitude is contagious. Thank you!",
-  "We appreciate all the extra effort you put in this month."
+  "Great job this month. Your effort and consistency are truly appreciated.",
+  "Thank you for showing up with focus and dedication every day.",
+  "Your contribution this month helped keep everything moving smoothly.",
+  "We appreciate your steady effort and dependable attitude.",
+  "Your hard work made a real difference this month. Thank you.",
+  "Thank you for the energy, discipline, and care you bring to work.",
+  "You handled your responsibilities with commitment and pride. Well done.",
+  "Your reliability continues to strengthen the whole team.",
+  "This month reflected your dedication and strong work ethic. Thank you.",
+  "You bring valuable effort to the workplace every day.",
+  "Thank you for staying committed and giving your best.",
+  "Your positive mindset and work quality are appreciated.",
+  "We notice your consistency, and it matters more than you think.",
+  "Thank you for helping create a strong and dependable team environment.",
+  "Your discipline and effort continue to stand out in a good way.",
+  "You carried your work with professionalism and care this month.",
+  "Thank you for being dependable even on the busiest days.",
+  "Your effort helps the whole operation stay strong and steady.",
+  "Well done on another month of sincere and valuable work.",
+  "Your presence, focus, and effort are all deeply appreciated.",
+  "The way you keep going with patience and effort deserves recognition.",
+  "Thank you for bringing a calm and dependable approach to your work.",
+  "Your dedication has a positive impact across the team.",
+  "You continue to earn appreciation through consistent effort.",
+  "Thank you for handling your work with seriousness and pride.",
+  "You helped make this month more successful through your effort.",
+  "Your support, discipline, and consistency are highly valued.",
+  "Thank you for contributing with sincerity and professionalism.",
+  "Another solid month of work from you. Keep moving forward.",
+  "Your efforts are noticed, respected, and appreciated.",
+  "Thank you for the care you put into doing your work properly.",
+  "You continue to be a dependable part of the team.",
+  "Your commitment this month deserves real appreciation.",
+  "Well done for maintaining quality and consistency in your work.",
+  "Your hard work adds real strength to the workplace.",
+  "Thank you for your patience, dedication, and daily effort.",
+  "You contributed in meaningful ways throughout the month.",
+  "Your professionalism continues to set a strong example.",
+  "Thank you for staying reliable and focused through every shift.",
+  "Your work this month reflects genuine commitment and effort.",
+  "Keep going. Your consistency is building something valuable.",
+  "Your disciplined approach continues to make a difference.",
+  "Thank you for the effort you bring even on demanding days.",
+  "You helped support the team with dependable work this month.",
+  "Your steady contribution never goes unnoticed.",
+  "Thank you for making your work count in both small and big ways.",
+  "This month showed your resilience and dedication clearly.",
+  "Your effort brings stability and confidence to the workplace.",
+  "You continue to contribute with heart, effort, and responsibility.",
+  "Thank you for giving this month your honest effort.",
+  "Your kitchen leadership brings confidence and direction to the team.",
+  "Your standards and discipline help raise the quality of the work around you.",
+  "Thank you for guiding the pace and keeping the team focused.",
+  "Your ability to lead through action is appreciated every day.",
+  "You bring strength, clarity, and trust to the kitchen floor.",
+  "Your example helps others work with more confidence and purpose.",
+  "Thank you for balancing speed, care, and responsibility so well.",
+  "Your steady leadership continues to shape strong results.",
+  "You help set the tone for quality and consistency in every shift.",
+  "Your experience and commitment make a lasting impact on the team.",
+  "Your support in the kitchen helps everything stay organized and dependable.",
+  "Thank you for stepping up wherever needed and doing it with care.",
+  "You continue to grow through effort, and it shows in your work.",
+  "Your contribution brings momentum and confidence to the kitchen team.",
+  "You help carry the workload with commitment and a good spirit.",
+  "Thank you for your effort, learning attitude, and dependable support.",
+  "Your work adds real value to the kitchen every day.",
+  "You are helping build strong results through steady effort.",
+  "Your focus and willingness to contribute are appreciated.",
+  "You continue to support the team in important ways. Well done.",
+  "The care you put into your tasks helps the whole shift run better.",
+  "Your service attitude helps people feel welcomed and respected.",
+  "Thank you for bringing patience, presence, and professionalism to the floor.",
+  "You help create a smooth and positive experience for everyone you serve.",
+  "Your calm approach and steady effort are a real strength.",
+  "You represent the team with grace and consistency every shift.",
+  "Thank you for making service feel attentive, warm, and reliable.",
+  "Your work on the floor reflects pride, energy, and respect.",
+  "The way you carry yourself adds value to the whole customer experience.",
+  "You help maintain a strong service standard through steady effort.",
+  "Thank you for supporting smooth service with focus and care.",
+  "Your behind-the-scenes effort helps the whole workplace succeed.",
+  "Thank you for the care and consistency you bring to essential daily work.",
+  "You help keep everything moving through reliable and honest effort.",
+  "Your contribution supports the team in important and lasting ways.",
+  "The standard you maintain helps everyone work better together.",
+  "Thank you for the pride you take in your responsibilities.",
+  "Your role brings order, support, and strength to the workplace.",
+  "You help create a cleaner, smoother, and more dependable environment.",
+  "Your work matters deeply, and it is appreciated.",
+  "Thank you for supporting the team through steady and valuable effort.",
+  "Your support helps the workplace feel more prepared and more professional.",
+  "Thank you for staying committed and handling your work with care.",
+  "You continue to show that dependable effort builds strong results.",
+  "Your daily work helps the whole team move with confidence.",
+  "We appreciate the way you stay focused and keep contributing.",
+  "Another month of honest, meaningful work from you. Well done.",
+  "Thank you for helping the team stay strong through your consistency.",
+  "Your work has real value, and your effort deserves recognition.",
+  "You continue to grow stronger through commitment and experience.",
+  "The respect you show toward your work is clearly visible.",
+  "Thank you for giving your responsibilities the attention they deserve.",
+  "Your effort helps create a workplace others can rely on.",
+  "You bring quiet strength and real value to the team.",
+  "Your consistency is one of your biggest strengths. Keep it going.",
+  "Thank you for working with patience, maturity, and discipline.",
+  "Your contribution may look simple day to day, but it means a lot.",
+  "The team benefits from your reliability more than words can say.",
+  "You continue to show what sincere work looks like.",
+  "Thank you for supporting the workplace with dignity and effort.",
+  "Your role is important, and the way you carry it out is appreciated.",
+  "You help build trust through the way you work each day.",
+  "Keep moving forward. Your steady effort is creating strong progress.",
+  "Thank you for doing your work with care, humility, and consistency.",
+  "You bring value to the team through your discipline and sincerity.",
+  "The quality of your effort is appreciated and respected.",
+  "You continue to contribute in ways that truly matter.",
+  "Thank you for helping maintain momentum during busy days.",
+  "Your dependable effort is part of what keeps the workplace strong.",
+  "You continue to earn appreciation through the way you work.",
+  "Well done on another month of responsible and meaningful effort.",
+  "Your professionalism and dedication are always welcome here.",
+  "Thank you for being someone the team can count on.",
+  "Your effort supports the success of the entire workplace.",
+  "You bring consistency, support, and value every month.",
+  "Thank you for approaching your work with seriousness and pride.",
+  "Your contribution adds strength to every shift you work.",
+  "The standard you maintain speaks well of your commitment.",
+  "Thank you for continuing to show discipline and heart in your work.",
+  "Your work ethic is a strong part of the team’s foundation.",
+  "You continue to contribute with patience, effort, and dignity.",
+  "Thank you for being present, dependable, and committed.",
+  "This month was stronger because of your contribution.",
+  "Your daily effort continues to make a positive difference."
 ];
+
+const DESIGNATION_MESSAGE_MAP = {
+  chef: [
+    "Your skill, discipline, and kitchen presence continue to inspire confidence.",
+    "Thank you for bringing creativity and consistency to the kitchen this month.",
+    "Your work reflects strong standards and real pride in your craft.",
+    "You continue to lead with quality, focus, and dependable effort.",
+    "Your contribution helps the kitchen perform with strength and confidence.",
+    "Thank you for maintaining high standards under pressure.",
+    "Your command of the kitchen helps the whole team stay steady.",
+    "You bring sharp focus and valuable experience to every shift.",
+    "Your effort continues to shape strong and dependable kitchen results.",
+    "The pride you take in your work is visible in the results."
+  ],
+  waiter: [
+    "Your service style helps create a warm and respectful experience for everyone.",
+    "Thank you for carrying yourself with patience, professionalism, and care.",
+    "You help make every shift feel smoother through your attention and effort.",
+    "Your steady presence on the floor adds real value to the team.",
+    "You continue to support excellent service through calm and dependable work.",
+    "Thank you for helping guests feel welcomed and cared for.",
+    "Your positive service attitude strengthens the team every day.",
+    "You bring consistency and professionalism to each interaction.",
+    "Your work helps create trust and comfort throughout the shift.",
+    "Thank you for your respectful and steady contribution to service."
+  ],
+  utility: [
+    "Your dependable support helps the workplace stay ready and organized.",
+    "Thank you for the effort you put into essential work every day.",
+    "You help build a stronger team through consistency and care.",
+    "Your support role carries real value, and it is appreciated.",
+    "You continue to contribute with patience, effort, and responsibility.",
+    "Thank you for helping the team stay prepared and steady.",
+    "Your commitment helps everything around you run more smoothly.",
+    "The reliability you bring to your work makes a real difference.",
+    "You support the team in important ways that truly matter.",
+    "Thank you for showing pride in work that keeps the whole place moving."
+  ],
+  helper: [
+    "Your support and willingness to contribute are appreciated every shift.",
+    "Thank you for helping where needed and doing it with sincerity.",
+    "You continue to grow stronger through steady effort and commitment.",
+    "Your contribution adds stability and support to the whole team.",
+    "You help the day go better through practical, dependable work.",
+    "Thank you for bringing patience and discipline to your responsibilities.",
+    "Your effort strengthens the team in meaningful ways.",
+    "You continue to earn trust through honest and consistent work.",
+    "Your support helps the workplace stay balanced and productive.",
+    "Thank you for carrying your work with care and commitment."
+  ],
+};
 
 init();
 
@@ -1093,9 +1272,10 @@ function renderGeneratedPayrollReports() {
       <tr><td colspan="5" class="empty">No payroll has been generated yet for this company.</td></tr>
     `;
     SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
-      <tr><td colspan="5" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
+      <tr><td colspan="6" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
     `;
     SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
+    syncGeneratedPayslipSelectionControls();
     renderPayrollWorkflow();
     return;
   }
@@ -1127,19 +1307,28 @@ function renderGeneratedPayrollReports() {
   const snapshot = activePayrollReportSnapshot;
   if (!snapshot || !Array.isArray(snapshot.records) || snapshot.records.length === 0) {
     SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
-      <tr><td colspan="5" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
+      <tr><td colspan="6" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
     `;
     SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
+    syncGeneratedPayslipSelectionControls();
     renderPayrollWorkflow();
     return;
   }
 
+  normalizeGeneratedPayslipSelection(snapshot);
   SELECTORS.generatedPayrollDetailTitle.textContent = `Generated Payslips for ${formatMonth(snapshot.month)}`;
   SELECTORS.generatedPayrollEmployeesBody.innerHTML = snapshot.records
     .map((record, index) => {
       const calc = computePayroll(record, snapshot.month);
+      const recordKey = getGeneratedPayslipRecordKey(record, index);
+      const checked = isGeneratedPayslipSelected(record, index);
       return `
         <tr>
+          <td>
+            <label class="report-select-cell" aria-label="Select ${escapeHtml(record.employeeName || record.employeeId || `Employee ${index + 1}`)}">
+              <input type="checkbox" data-report-select="${recordKey}" ${checked ? "checked" : ""} />
+            </label>
+          </td>
           <td>${escapeHtml(record.employeeId || "-")}</td>
           <td><div class="emp-list-name">${escapeHtml(record.employeeName || "-")}</div></td>
           <td>${escapeHtml(record.designation || "-")}</td>
@@ -1156,7 +1345,116 @@ function renderGeneratedPayrollReports() {
     })
     .join("");
 
+  syncGeneratedPayslipSelectionControls(snapshot);
   renderPayrollWorkflow();
+}
+
+function getGeneratedPayslipSelectionKey(reportId = activePayrollReportId) {
+  const numericId = Number(reportId);
+  const companyId = Number(getSelectedCompanyId());
+  if (!Number.isInteger(numericId) || numericId <= 0) return "";
+  if (!Number.isInteger(companyId) || companyId <= 0) return String(numericId);
+  return `${companyId}:${numericId}`;
+}
+
+function getGeneratedPayslipRecordKey(record, index) {
+  const employeeId = String(record?.employeeId || "").trim();
+  return employeeId || `row-${index}`;
+}
+
+function getGeneratedPayslipSelection(reportId = activePayrollReportId) {
+  const selectionKey = getGeneratedPayslipSelectionKey(reportId);
+  if (!selectionKey) return new Set();
+  if (!selectedGeneratedPayslipsByReport.has(selectionKey)) {
+    selectedGeneratedPayslipsByReport.set(selectionKey, new Set());
+  }
+  return selectedGeneratedPayslipsByReport.get(selectionKey);
+}
+
+function normalizeGeneratedPayslipSelection(snapshot = activePayrollReportSnapshot) {
+  if (!snapshot || !Array.isArray(snapshot.records)) return;
+  const selection = getGeneratedPayslipSelection();
+  const validKeys = new Set(snapshot.records.map((record, index) => getGeneratedPayslipRecordKey(record, index)));
+  Array.from(selection).forEach((key) => {
+    if (!validKeys.has(key)) selection.delete(key);
+  });
+}
+
+function isGeneratedPayslipSelected(record, index) {
+  return getGeneratedPayslipSelection().has(getGeneratedPayslipRecordKey(record, index));
+}
+
+function toggleGeneratedPayslipSelection(recordKey, checked) {
+  const selection = getGeneratedPayslipSelection();
+  if (checked) selection.add(recordKey);
+  else selection.delete(recordKey);
+  syncGeneratedPayslipSelectionControls();
+}
+
+function setAllGeneratedPayslipsSelected(checked) {
+  const snapshot = activePayrollReportSnapshot;
+  if (!snapshot || !Array.isArray(snapshot.records) || !snapshot.records.length) {
+    syncGeneratedPayslipSelectionControls();
+    return;
+  }
+  const selection = getGeneratedPayslipSelection();
+  selection.clear();
+  if (checked) {
+    snapshot.records.forEach((record, index) => {
+      selection.add(getGeneratedPayslipRecordKey(record, index));
+    });
+  }
+  renderGeneratedPayrollReports();
+}
+
+function syncGeneratedPayslipSelectionControls(snapshot = activePayrollReportSnapshot) {
+  const hasSnapshot = Boolean(snapshot && Array.isArray(snapshot.records) && snapshot.records.length);
+  const total = hasSnapshot ? snapshot.records.length : 0;
+  const selection = getGeneratedPayslipSelection();
+  const selectedCount = hasSnapshot ? selection.size : 0;
+  const allSelected = hasSnapshot && total > 0 && selectedCount === total;
+
+  if (SELECTORS.generatedPayslipsSelectionCount) {
+    SELECTORS.generatedPayslipsSelectionCount.textContent = `${selectedCount} selected`;
+  }
+  if (SELECTORS.generatedPayslipsCheckAll) {
+    SELECTORS.generatedPayslipsCheckAll.checked = allSelected;
+    SELECTORS.generatedPayslipsCheckAll.indeterminate = hasSnapshot && selectedCount > 0 && selectedCount < total;
+    SELECTORS.generatedPayslipsCheckAll.disabled = !hasSnapshot;
+  }
+  if (SELECTORS.printSelectedPayslipsBtn) {
+    SELECTORS.printSelectedPayslipsBtn.disabled = !hasSnapshot || selectedCount === 0;
+  }
+}
+
+function getSelectedGeneratedPayslipData() {
+  const snapshot = activePayrollReportSnapshot;
+  if (!snapshot || !Array.isArray(snapshot.records) || !snapshot.records.length) return [];
+  const selection = getGeneratedPayslipSelection();
+  return snapshot.records
+    .map((record, index) => ({ record, index }))
+    .filter(({ record, index }) => selection.has(getGeneratedPayslipRecordKey(record, index)))
+    .map(({ record }) => ({
+      record,
+      calc: computePayroll(record, snapshot.month),
+      month: snapshot.month,
+      company: snapshot.company || getActiveCompany() || { name: "Routes Payroll", logoDataUrl: "" },
+      displayComment: String(record.comment || "").trim() || getRandomMotivatingMessage(record),
+    }));
+}
+
+function printSelectedGeneratedPayslips() {
+  const selectedPayslips = getSelectedGeneratedPayslipData();
+  if (!selectedPayslips.length) {
+    showAppMessage("Select at least one payslip to print.");
+    return;
+  }
+  const printWindow = openBatchPayslipPrintWindow(selectedPayslips);
+  if (!printWindow) {
+    showAppMessage("Pop-up blocked. Allow pop-ups to print.");
+    return;
+  }
+  triggerPayslipPrint(printWindow);
 }
 
 function setEmployeeMessage(message) {
@@ -1230,6 +1528,7 @@ function wireAppActions() {
     await flushPendingSave();
     activePayrollReportId = null;
     activePayrollReportSnapshot = null;
+    selectedGeneratedPayslipsByReport = new Map();
     await loadMonthRecords();
     await loadPayrollReports();
     renderEmployeeTable();
@@ -1312,6 +1611,7 @@ function wireAppActions() {
     payrollReports = [];
     activePayrollReportId = null;
     activePayrollReportSnapshot = null;
+    selectedGeneratedPayslipsByReport = new Map();
     pendingSettingsLogoDataUrl = "";
     renderEmployeeTable();
     renderDesignationPresets();
@@ -1433,6 +1733,21 @@ function wireAppActions() {
       downloadCurrentPayslipPdf();
     }
   });
+
+  SELECTORS.generatedPayrollEmployeesBody?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.type !== "checkbox" || !target.dataset.reportSelect) return;
+    toggleGeneratedPayslipSelection(target.dataset.reportSelect, target.checked);
+  });
+
+  SELECTORS.generatedPayslipsCheckAll?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    setAllGeneratedPayslipsSelected(target.checked);
+  });
+
+  SELECTORS.printSelectedPayslipsBtn?.addEventListener("click", printSelectedGeneratedPayslips);
 }
 
 function wireSettingsActions() {
@@ -2939,14 +3254,32 @@ async function persistRecords() {
   }
 }
 
-function getRandomMotivatingMessage() {
-  return MOTIVATING_MESSAGES[Math.floor(Math.random() * MOTIVATING_MESSAGES.length)];
+function pickRandomMessage(messages) {
+  if (!Array.isArray(messages) || !messages.length) return "Thank you for your effort and dedication.";
+  return messages[Math.floor(Math.random() * messages.length)];
+}
+
+function getDesignationMessageKey(record) {
+  const designation = String(record?.designation || "").trim().toLowerCase();
+  if (!designation) return "";
+  if (designation.includes("chef")) return "chef";
+  if (designation.includes("waiter") || designation.includes("captain") || designation.includes("service")) return "waiter";
+  if (designation.includes("helper")) return "helper";
+  if (designation.includes("utility") || designation.includes("steward") || designation.includes("wash")) return "utility";
+  return "";
+}
+
+function getRandomMotivatingMessage(record = null) {
+  const key = getDesignationMessageKey(record);
+  const roleMessages = key ? DESIGNATION_MESSAGE_MAP[key] || [] : [];
+  const combinedPool = roleMessages.length ? [...roleMessages, ...MOTIVATING_MESSAGES] : MOTIVATING_MESSAGES;
+  return pickRandomMessage(combinedPool);
 }
 
 function openPayslip(record, month, companyOverride = null) {
   const calc = computePayroll(record, month);
   const company = companyOverride || getActiveCompany();
-  const displayComment = String(record.comment || "").trim() || getRandomMotivatingMessage();
+  const displayComment = String(record.comment || "").trim() || getRandomMotivatingMessage(record);
   activePayslip = { record, calc, month, company, displayComment };
   SELECTORS.payslipPreview.innerHTML = renderPayslipCard(record, calc, month, company, displayComment);
   SELECTORS.payslipDialog.showModal();
@@ -2954,7 +3287,7 @@ function openPayslip(record, month, companyOverride = null) {
 
 function renderPayslipCard(record, calc, month, company, displayComment = null) {
   const monthSheet = formatPayslipMonth(month);
-  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage();
+  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage(record);
   const status = formatStatusLabel(record.employeeStatus || "working");
   const absenceSummary = calc.daysAbsent > 0
     ? `${formatNumberValue(calc.workedDays)} day(s) worked out of ${calc.monthDays} • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
@@ -3043,7 +3376,7 @@ function ensureActivePayslip() {
 
 function getPayslipText(data) {
   const { record, calc, month, company, displayComment } = data;
-  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage();
+  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage(record);
   return [
     "Routes Payroll Payslip",
     `Company: ${company?.name || "-"}`,
@@ -3102,6 +3435,17 @@ function openPayslipPrintWindow() {
   return printWindow;
 }
 
+function openBatchPayslipPrintWindow(payslips) {
+  const html = buildBatchPayslipPrintDocument(payslips);
+  const printWindow = window.open("", "_blank", "width=1000,height=900");
+  if (!printWindow) {
+    return null;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  return printWindow;
+}
+
 function triggerPayslipPrint(printWindow) {
   printWindow.focus();
   window.setTimeout(() => {
@@ -3129,6 +3473,29 @@ function buildPayslipPrintDocument() {
           activePayslip.company,
           activePayslip.displayComment
         )}
+      </body>
+    </html>
+  `;
+}
+
+function buildBatchPayslipPrintDocument(payslips) {
+  const safePayslips = Array.isArray(payslips) ? payslips : [];
+  const titleMonth = safePayslips[0]?.month ? formatMonth(safePayslips[0].month) : "Selected Payslips";
+  const body = safePayslips
+    .map((item) => renderPayslipCard(item.record, item.calc, item.month, item.company, item.displayComment))
+    .join("\n");
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Payslips - ${escapeHtml(titleMonth)}</title>
+        <style>
+          ${getPayslipPrintStyles()}
+        </style>
+      </head>
+      <body class="batch-payslip-print">
+        ${body}
       </body>
     </html>
   `;
@@ -3195,6 +3562,12 @@ function getPayslipPrintStyles() {
       padding: 0;
     }
 
+    body.batch-payslip-print {
+      display: flex;
+      flex-direction: column;
+      gap: 8mm;
+    }
+
     .payslip-sheet {
       width: 100%;
       min-height: calc(210mm - 16mm);
@@ -3205,6 +3578,13 @@ function getPayslipPrintStyles() {
       display: flex;
       flex-direction: column;
       gap: 0;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .payslip-sheet:last-child {
+      break-after: auto;
+      page-break-after: auto;
     }
 
     .payslip-sheet-header {

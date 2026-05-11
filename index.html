@@ -1355,11 +1355,22 @@
 
             <article class="settings-card">
               <h3 id="generatedPayrollDetailTitle">Generated Payslips</h3>
-              <p>Open any generated payroll month below, then print or save PDF employee-wise.</p>
+              <p>Open any generated payroll month below, then print or save PDF employee-wise, or print only the selected payslips together.</p>
+              <div class="reports-selection-bar">
+                <label class="reports-check-all">
+                  <input id="generatedPayslipsCheckAll" type="checkbox" />
+                  <span>Check All</span>
+                </label>
+                <div class="reports-selection-actions">
+                  <span id="generatedPayslipsSelectionCount" class="reports-selection-count">0 selected</span>
+                  <button id="printSelectedPayslipsBtn" type="button" class="ghost">Print Selected</button>
+                </div>
+              </div>
               <div class="employee-list-wrap">
                 <table>
                   <thead>
                     <tr class="detail-row">
+                      <th>Select</th>
                       <th>Employee ID</th>
                       <th>Employee Name</th>
                       <th>Designation</th>

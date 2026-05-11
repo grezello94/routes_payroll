@@ -56,6 +56,7 @@ const { createStore } = require("./datastore");
 const app = express();
 const PORT = Number(process.env.PORT || 5501);
 const IS_VERCEL = String(process.env.VERCEL || "").toLowerCase() === "1";
+const IS_PRODUCTION = String(process.env.NODE_ENV || "").toLowerCase() === "production";
 const JWT_SECRET = process.env.JWT_SECRET || "routes_payroll_dev_secret_change_me";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyCqK3ZVR-9qN9WmsXycGzYkar5hnZBEpW0";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -730,6 +731,22 @@ function createMailer() {
   return { transport, from };
 }
 
+function describeSmtpError(error) {
+  return {
+    name: String(error?.name || "Error"),
+    code: String(error?.code || ""),
+    command: String(error?.command || ""),
+    responseCode: Number.isFinite(Number(error?.responseCode)) ? Number(error.responseCode) : null,
+    message: String(error?.message || "Unknown SMTP error"),
+    response: String(error?.response || ""),
+    host: String(error?.hostname || error?.host || ""),
+  };
+}
+
+function logSmtpError(context, error) {
+  console.error(`${context}:`, describeSmtpError(error));
+}
+
 async function sendUsernameRecoveryEmail({ to, username }) {
   const mailer = createMailer();
 
@@ -1158,6 +1175,38 @@ app.get("/api/health", (_req, res) => {
   res.json({ ...startupStatusPayload(), time: new Date().toISOString() });
 });
 
+app.get("/api/debug/smtp", async (_req, res) => {
+  if (IS_PRODUCTION) {
+    res.status(404).json({ error: "Not found." });
+    return;
+  }
+
+  try {
+    const mailer = createMailer();
+    await mailer.transport.verify();
+    res.json({
+      ok: true,
+      host: String(process.env.SMTP_HOST || ""),
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+      from: mailer.from,
+      user: String(process.env.SMTP_USER || ""),
+      message: "SMTP transport verified successfully.",
+    });
+  } catch (error) {
+    const details = describeSmtpError(error);
+    logSmtpError("SMTP Debug Check Failed", error);
+    res.status(500).json({
+      ok: false,
+      host: String(process.env.SMTP_HOST || ""),
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+      user: String(process.env.SMTP_USER || ""),
+      error: details,
+    });
+  }
+});
+
 app.get("/api/auth/bootstrap", async (_req, res) => {
   await ensureStartupInit();
 
@@ -1241,7 +1290,7 @@ app.post("/api/auth/register", async (req, res) => {
     try {
       await sendEmailVerificationLinkEmail({ to: email, verifyLink });
     } catch (error) {
-      console.error("SMTP Warning: Failed to send initial verification email:", error);
+      logSmtpError("SMTP Warning: Failed to send initial verification email", error);
       verificationEmailSent = false;
         message = "Account created, but verification email could not be sent. Check SMTP settings, then try logging in to resend.";
     }
@@ -1302,7 +1351,7 @@ app.post("/api/auth/login", async (req, res) => {
         await sendEmailVerificationLinkEmail({ to: user.email, verifyLink });
         res.status(403).json({ error: "Email not verified. We just sent a new verification link to your email." });
       } catch (smtpError) {
-        console.error("SMTP Error during login resend:", smtpError);
+        logSmtpError("SMTP Error during login resend", smtpError);
         res.status(403).json({ error: "Email not verified. Check SMTP settings, unable to send a new verification link." });
       }
       return;
@@ -1362,7 +1411,7 @@ app.post("/api/auth/send-email-verification", authMiddleware, async (req, res) =
     await sendEmailVerificationLinkEmail({ to: user.email, verifyLink });
     res.json({ ok: true, message: "Verification email sent to your registered email address." });
   } catch (error) {
-    console.error("SMTP Error (verify-email):", error);
+    logSmtpError("SMTP Error (verify-email)", error);
     res.status(500).json({ error: String(error?.message || "Failed to send verification email.") });
   }
 });
@@ -1400,7 +1449,7 @@ app.post("/api/auth/recover-email", async (req, res) => {
 
     res.json({ ok: true, message: "If account exists, recovery details have been sent." });
   } catch (error) {
-    console.error("SMTP Error (recover-email):", error);
+    logSmtpError("SMTP Error (recover-email)", error);
     res.status(500).json({ error: String(error?.message || "Recovery request failed.") });
   }
 });
@@ -1440,7 +1489,7 @@ app.post("/api/auth/request-password-reset", async (req, res) => {
 
     res.json({ ok: true, message: "If account exists, password reset link has been sent." });
   } catch (error) {
-    console.error("SMTP Error (request-reset):", error);
+    logSmtpError("SMTP Error (request-reset)", error);
     res.status(500).json({ error: String(error?.message || "Reset request failed.") });
   }
 });
