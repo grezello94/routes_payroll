@@ -50,6 +50,18 @@ const SELECTORS = {
   companyMessage: document.getElementById("companyMessage"),
   monthPicker: document.getElementById("monthPicker"),
   payrollBody: document.getElementById("payrollBody"),
+  payrollSearchInput: document.getElementById("payrollSearchInput"),
+  payrollFilterSelect: document.getElementById("payrollFilterSelect"),
+  payrollTotalsBar: document.getElementById("payrollTotalsBar"),
+  payrollReviewPanel: document.getElementById("payrollReviewPanel"),
+  bulkIncrementInput: document.getElementById("bulkIncrementInput"),
+  bulkAdvanceInput: document.getElementById("bulkAdvanceInput"),
+  bulkDeductionInput: document.getElementById("bulkDeductionInput"),
+  bulkAbsentInput: document.getElementById("bulkAbsentInput"),
+  applyBulkIncrementBtn: document.getElementById("applyBulkIncrementBtn"),
+  applyBulkAdvanceBtn: document.getElementById("applyBulkAdvanceBtn"),
+  applyBulkDeductionBtn: document.getElementById("applyBulkDeductionBtn"),
+  applyBulkAbsentBtn: document.getElementById("applyBulkAbsentBtn"),
   addEmployeeBtn: document.getElementById("addEmployeeBtn"),
   exportExcelBtn: document.getElementById("exportExcelBtn"),
   exportCsvBtn: document.getElementById("exportCsvBtn"),
@@ -59,6 +71,11 @@ const SELECTORS = {
   dashboardSummaryCards: document.getElementById("dashboardSummaryCards"),
   dashboardHighlightsBody: document.getElementById("dashboardHighlightsBody"),
   dashboardActivityBody: document.getElementById("dashboardActivityBody"),
+  dashboardCommandCenter: document.getElementById("dashboardCommandCenter"),
+  dashboardMonthStatusTitle: document.getElementById("dashboardMonthStatusTitle"),
+  dashboardMonthStatusBadge: document.getElementById("dashboardMonthStatusBadge"),
+  dashboardMonthStatusDetail: document.getElementById("dashboardMonthStatusDetail"),
+  dashboardAttentionBody: document.getElementById("dashboardAttentionBody"),
   metricEmployees: document.getElementById("metricEmployees"),
   metricGross: document.getElementById("metricGross"),
   metricNet: document.getElementById("metricNet"),
@@ -127,6 +144,9 @@ let activePayslip = null;
 let currentRecords = [];
 let employeeMaster = [];
 let activePayrollEmployeeId = "";
+let payrollSearchQuery = "";
+let payrollFilterMode = "all";
+let dirtyPayrollEmployeeIds = new Set();
 let companies = [];
 let activeCompanyId = null;
 let pendingSaveTimer = null;
@@ -1074,11 +1094,164 @@ function wireGlobalErrorLogging() {
   });
 }
 
+function getPayrollEntries(month = getSelectedMonth()) {
+  return currentRecords
+    .map((record, index) => ({ record, index, calc: computePayroll(record, month) }))
+    .filter((item) => isPayrollVisibleForMonth(item.record, month));
+}
+
+function payrollValidationWarnings(record, calc, month = getSelectedMonth()) {
+  const warnings = [];
+  const employeeLabel = record?.employeeName || record?.employeeId || "Employee";
+  if (!String(record?.employeeName || "").trim()) warnings.push(`${employeeLabel}: missing employee name.`);
+  if (!String(record?.designation || "").trim()) warnings.push(`${employeeLabel}: missing designation.`);
+  if (calc.presentSalary <= 0 && !calc.blocked) warnings.push(`${employeeLabel}: present salary is zero.`);
+  if (calc.netSalary <= 0 && !calc.blocked) warnings.push(`${employeeLabel}: net salary is zero.`);
+  if (calc.advanceRemained > 0) warnings.push(`${employeeLabel}: ${formatCurrency(calc.advanceRemained)} advance remains.`);
+  if (toMoney(record?.daysAbsent) > calc.systemWorkedDays) warnings.push(`${employeeLabel}: manual absent days exceed payable work days.`);
+  if (payrollZeroSalaryReason(record, calc, month)) warnings.push(`${employeeLabel}: ${payrollZeroSalaryReason(record, calc, month)}`);
+  return warnings;
+}
+
+function payrollEntryMatchesControls(item, month = getSelectedMonth()) {
+  const query = payrollSearchQuery.trim().toLowerCase();
+  const haystack = [
+    item.record.employeeId,
+    item.record.employeeName,
+    item.record.designation,
+    item.record.employeeStatus,
+  ].join(" ").toLowerCase();
+  if (query && !haystack.includes(query)) return false;
+
+  const warnings = payrollValidationWarnings(item.record, item.calc, month);
+  if (payrollFilterMode === "warnings") return warnings.length > 0;
+  if (payrollFilterMode === "advance") return item.calc.advanceRemained > 0;
+  if (payrollFilterMode === "changed") return dirtyPayrollEmployeeIds.has(String(item.record.employeeId || ""));
+  if (payrollFilterMode === "zero") return item.calc.netSalary <= 0;
+  return true;
+}
+
+function getFilteredPayrollEntries(month = getSelectedMonth()) {
+  return getPayrollEntries(month).filter((item) => payrollEntryMatchesControls(item, month));
+}
+
+function summarizePayrollEntries(entries) {
+  return entries.reduce((summary, item) => {
+    summary.employees += 1;
+    summary.gross += item.calc.grossSalary;
+    summary.net += item.calc.netSalary;
+    summary.deductions += item.calc.deductionApplied + item.calc.proratedAbsenceDeduction;
+    summary.advance += item.calc.advanceRemained;
+    summary.warnings += payrollValidationWarnings(item.record, item.calc).length;
+    if (item.calc.blocked) summary.blocked += 1;
+    return summary;
+  }, {
+    employees: 0,
+    gross: 0,
+    net: 0,
+    deductions: 0,
+    advance: 0,
+    warnings: 0,
+    blocked: 0,
+  });
+}
+
+function payrollStatusInfo(month = getSelectedMonth()) {
+  const report = payrollReports.find((item) => String(item.month) === String(month)) || null;
+  const entries = getPayrollEntries(month);
+  const summary = summarizePayrollEntries(entries);
+  if (report?.generatedAt) {
+    return {
+      label: "Generated",
+      className: "status-pill working",
+      title: `Generated for ${formatMonth(month)}`,
+      detail: `${report.employeeCount || 0} payslip(s) generated on ${formatDateTime(report.generatedAt)}. Net payout currently reads ${formatCurrency(summary.net)}.`,
+    };
+  }
+  if (dirtyPayrollEmployeeIds.size || pendingSaveTimer || saveInFlight || saveQueued) {
+    return {
+      label: "Draft",
+      className: "status-pill leave",
+      title: `Draft changes for ${formatMonth(month)}`,
+      detail: `${dirtyPayrollEmployeeIds.size} employee record(s) changed this session. Review warnings before generating payslips.`,
+    };
+  }
+  return {
+    label: "Open",
+    className: "status-pill working",
+    title: `Open payroll for ${formatMonth(month)}`,
+    detail: `${summary.employees} employee(s), ${formatCurrency(summary.net)} estimated net payout, ${summary.warnings} review warning(s).`,
+  };
+}
+
+function dashboardAttentionItems(month = getSelectedMonth()) {
+  const entries = getPayrollEntries(month);
+  const items = [];
+  const warningEntries = entries
+    .map((item) => ({ ...item, warnings: payrollValidationWarnings(item.record, item.calc, month) }))
+    .filter((item) => item.warnings.length > 0);
+
+  warningEntries.slice(0, 4).forEach((item) => {
+    items.push({
+      title: item.record.employeeName || item.record.employeeId || "Employee",
+      detail: item.warnings[0],
+    });
+  });
+
+  const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave");
+  if (onLeave.length) {
+    items.push({
+      title: `${onLeave.length} employee(s) on leave`,
+      detail: onLeave.slice(0, 3).map((employee) => employee.employeeName || employee.employeeId).join(", "),
+    });
+  }
+
+  const advanceLeader = entries
+    .filter((item) => item.calc.advanceRemained > 0)
+    .sort((a, b) => b.calc.advanceRemained - a.calc.advanceRemained)[0];
+  if (advanceLeader) {
+    items.push({
+      title: "Highest pending advance",
+      detail: `${advanceLeader.record.employeeName || advanceLeader.record.employeeId}: ${formatCurrency(advanceLeader.calc.advanceRemained)}`,
+    });
+  }
+
+  return items.slice(0, 6);
+}
+
 function renderDashboardInsights() {
+  const currentMonth = getSelectedMonth();
+  const status = payrollStatusInfo(currentMonth);
+  if (SELECTORS.dashboardMonthStatusTitle) {
+    SELECTORS.dashboardMonthStatusTitle.textContent = status.title;
+  }
+  if (SELECTORS.dashboardMonthStatusBadge) {
+    SELECTORS.dashboardMonthStatusBadge.textContent = status.label;
+    SELECTORS.dashboardMonthStatusBadge.className = status.className;
+  }
+  if (SELECTORS.dashboardMonthStatusDetail) {
+    SELECTORS.dashboardMonthStatusDetail.textContent = status.detail;
+  }
+  if (SELECTORS.dashboardAttentionBody) {
+    const items = dashboardAttentionItems(currentMonth);
+    SELECTORS.dashboardAttentionBody.innerHTML = items.length
+      ? items.map((item) => `
+        <div class="dashboard-list-item">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.detail)}</span>
+        </div>
+      `).join("")
+      : `
+        <div class="dashboard-list-item empty-dashboard-item">
+          <strong>Everything looks ready</strong>
+          <span>No salary, advance, absence, or employee profile warning found for this month.</span>
+        </div>
+      `;
+  }
+
   if (SELECTORS.dashboardSummaryCards) {
-    const currentMonth = getSelectedMonth();
     const currentMonthLabel = formatMonth(currentMonth);
-        const activeHeadcount = employeeMaster.filter((employee) => isPayrollActiveStatus(employee.status)).length;
+    const activeHeadcount = employeeMaster.filter((employee) => isPayrollActiveStatus(employee.status)).length;
     const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave").length;
     const terminated = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "terminated").length;
     const generatedCurrentMonth = payrollReports.find((report) => String(report.month) === String(currentMonth)) || null;
@@ -1259,6 +1432,34 @@ async function generatePayslipForCurrentRecord(index) {
     await loadPayrollReports(activePayrollReportId, { openPreferredReport: false });
     renderPayrollWorkflow();
     showAppMessage(`Payslip generated for ${record.employeeName || record.employeeId}.`);
+  } catch (error) {
+    showAppMessage(error.message);
+  }
+}
+
+async function generatePayslipsForEntries(entries) {
+  if (!entries.length) {
+    showAppMessage("No visible payroll employees to generate.");
+    return;
+  }
+  try {
+    await flushPendingSave();
+    const month = getSelectedMonth();
+    let generated = 0;
+    for (const item of entries) {
+      await apiRequest("/api/payroll-reports/generate-entry", {
+        method: "POST",
+        body: {
+          companyId: getSelectedCompanyId(),
+          month,
+          employeeId: item.record.employeeId,
+        },
+      });
+      generated += 1;
+    }
+    await loadPayrollReports(activePayrollReportId, { openPreferredReport: false });
+    renderPayrollWorkflow();
+    showAppMessage(`${generated} visible payslip(s) generated for ${formatMonth(month)}.`);
   } catch (error) {
     showAppMessage(error.message);
   }
@@ -1524,6 +1725,26 @@ function wireAppActions() {
     showAppMessage("Error logs cleared.");
   });
 
+  SELECTORS.dashboardCommandCenter?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("[data-dashboard-action]");
+    if (!button) return;
+    const action = button.dataset.dashboardAction;
+    if (action === "review") {
+      setWorkspace("payroll");
+      SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "payroll"));
+      SELECTORS.payrollReviewPanel?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (action === "employees" || action === "payroll" || action === "reports") {
+      setWorkspace(action);
+      SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === action));
+      const section = action === "employees" ? SELECTORS.employeesSection : action === "payroll" ? SELECTORS.payrollSection : SELECTORS.reportsSection;
+      section?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
     activePayrollReportId = null;
@@ -1637,6 +1858,7 @@ function wireAppActions() {
     if (Number.isNaN(index) || !field || !currentRecords[index]) return;
 
     currentRecords[index][field] = target.value;
+    markPayrollDirty(currentRecords[index]);
     scheduleSave(false);
   });
 
@@ -1686,6 +1908,36 @@ function wireAppActions() {
     if (action === "payslip") {
       generatePayslipForCurrentRecord(index);
     }
+  });
+
+  SELECTORS.payrollSearchInput?.addEventListener("input", () => {
+    payrollSearchQuery = SELECTORS.payrollSearchInput.value || "";
+    renderPayrollTable();
+  });
+
+  SELECTORS.payrollFilterSelect?.addEventListener("change", () => {
+    payrollFilterMode = SELECTORS.payrollFilterSelect.value || "all";
+    renderPayrollTable();
+  });
+
+  SELECTORS.applyBulkIncrementBtn?.addEventListener("click", () => {
+    applyBulkPayrollValue("increment", SELECTORS.bulkIncrementInput, "set");
+  });
+  SELECTORS.applyBulkAdvanceBtn?.addEventListener("click", () => {
+    applyBulkPayrollValue("extraAdvanceAdded", SELECTORS.bulkAdvanceInput, "add");
+  });
+  SELECTORS.applyBulkDeductionBtn?.addEventListener("click", () => {
+    applyBulkPayrollValue("deductionEntered", SELECTORS.bulkDeductionInput, "set");
+  });
+  SELECTORS.applyBulkAbsentBtn?.addEventListener("click", () => {
+    applyBulkPayrollValue("daysAbsent", SELECTORS.bulkAbsentInput, "set");
+  });
+
+  SELECTORS.payrollReviewPanel?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.id !== "generateVisiblePayslipsBtn") return;
+    generatePayslipsForEntries(getFilteredPayrollEntries());
   });
 
   SELECTORS.closePayslipBtn.addEventListener("click", () => SELECTORS.payslipDialog.close());
@@ -2306,6 +2558,7 @@ function setWorkspace(view) {
   const settingsView = view === "settings";
 
   SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
+  SELECTORS.dashboardCommandCenter?.classList.toggle("hidden", !dashboardView);
   SELECTORS.dashboardInsightsSection?.classList.toggle("hidden", !dashboardView);
   SELECTORS.employeesSection?.classList.toggle("hidden", !employeesView);
   SELECTORS.payrollSection?.classList.toggle("hidden", !payrollView);
@@ -2937,30 +3190,108 @@ function payrollZeroSalaryReason(record, calc, month) {
   return "";
 }
 
-function renderPayrollTable() {
-  const month = getSelectedMonth();
+function renderPayrollTotalsAndReview(entries, allEntries, month) {
+  const filteredSummary = summarizePayrollEntries(entries);
+  const allSummary = summarizePayrollEntries(allEntries);
+  if (SELECTORS.payrollTotalsBar) {
+    SELECTORS.payrollTotalsBar.innerHTML = `
+      <div><span>Visible Employees</span><strong>${filteredSummary.employees}</strong></div>
+      <div><span>Gross</span><strong>${formatCurrency(filteredSummary.gross)}</strong></div>
+      <div><span>Deductions</span><strong>${formatCurrency(filteredSummary.deductions)}</strong></div>
+      <div><span>Net Payout</span><strong>${formatCurrency(filteredSummary.net)}</strong></div>
+      <div><span>Advance Pending</span><strong>${formatCurrency(filteredSummary.advance)}</strong></div>
+    `;
+  }
+
+  if (!SELECTORS.payrollReviewPanel) return;
+  const warnings = entries.flatMap((item) => payrollValidationWarnings(item.record, item.calc, month));
+  const generated = getCurrentMonthPayrollReport();
+  const visibleCount = Number(filteredSummary.employees || 0);
+  const totalCount = Number(allSummary.employees || 0);
+  const visibilityLabel = visibleCount === totalCount
+    ? `${visibleCount} employees`
+    : `${visibleCount} of ${totalCount} employees`;
+  SELECTORS.payrollReviewPanel.innerHTML = `
+    <div class="payroll-review-head">
+      <div>
+        <p class="dashboard-kicker">Payroll Review</p>
+        <h3>${escapeHtml(formatMonth(month))}</h3>
+        <span class="payroll-review-meta">${escapeHtml(visibilityLabel)} visible</span>
+      </div>
+      <button id="generateVisiblePayslipsBtn" type="button" ${entries.length ? "" : "disabled"}>Generate Visible Payslips</button>
+    </div>
+    <div class="payroll-review-body">
+      <div class="payroll-review-grid">
+        <div><span>Total</span><strong>${allSummary.employees}</strong></div>
+        <div><span>Visible Net</span><strong>${formatCurrency(filteredSummary.net)}</strong></div>
+        <div><span>Warnings</span><strong>${warnings.length}</strong></div>
+        <div><span>Status</span><strong>${generated?.generatedAt ? "Generated" : "Draft"}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+function markPayrollDirty(record) {
+  const employeeId = String(record?.employeeId || "").trim();
+  if (employeeId) dirtyPayrollEmployeeIds.add(employeeId);
+}
+
+function canOverridePayrollMonth(month = getSelectedMonth()) {
   const now = new Date();
   const currentMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const isCurrentMonth = month === currentMonthIso;
   const isFirstMonth = (() => {
     if (!currentRecords.length) return true;
-    const months = currentRecords.map(r => r.month || month).filter(Boolean);
+    const months = currentRecords.map((record) => record.month || month).filter(Boolean);
     const sorted = months.slice().sort();
     return month === sorted[0];
   })();
-  const allowOverride = isFirstMonth || isCurrentMonth;
-  const visibleRecords = currentRecords
-    .map((record, index) => ({ record, index }))
-    .filter((item) => isPayrollVisibleForMonth(item.record, month));
+  return isFirstMonth || isCurrentMonth;
+}
+
+function applyBulkPayrollValue(field, input, mode = "set") {
+  if (!canOverridePayrollMonth()) {
+    showAppMessage("Bulk edits are locked for this payroll month.");
+    return;
+  }
+  const raw = input?.value;
+  const amount = toMoney(raw);
+  if (!input || raw === "" || !Number.isFinite(amount) || amount < 0) {
+    showAppMessage("Enter a valid bulk value first.");
+    return;
+  }
+  const entries = getFilteredPayrollEntries();
+  if (!entries.length) {
+    showAppMessage("No visible payroll employees match the current search/filter.");
+    return;
+  }
+  entries.forEach(({ record }) => {
+    const current = toMoney(record[field]);
+    record[field] = String(mode === "add" ? current + amount : amount);
+    markPayrollDirty(record);
+  });
+  renderPayrollTable();
+  scheduleSave(true);
+  showAppMessage(`Bulk ${field} applied to ${entries.length} visible employee(s).`);
+}
+
+function renderPayrollTable() {
+  const month = getSelectedMonth();
+  const allowOverride = canOverridePayrollMonth(month);
+  const allVisibleRecords = getPayrollEntries(month);
+  const visibleRecords = allVisibleRecords.filter((item) => payrollEntryMatchesControls(item, month));
   const visibleCount = visibleRecords.length;
 
   if (visibleCount === 0) {
+    renderPayrollTotalsAndReview([], allVisibleRecords, month);
     SELECTORS.payrollBody.innerHTML = `
       <div class="empty">
-        No active payroll employees for ${formatMonth(month)}. Employees on leave or terminated are hidden until they resume.
+        ${allVisibleRecords.length
+          ? "No payroll employees match the current search or filter."
+          : `No active payroll employees for ${formatMonth(month)}. Employees on leave or terminated are hidden until they resume.`}
       </div>
     `;
-    updateMetrics([]);
+    updateMetrics(allVisibleRecords.map((item) => item.calc));
     return;
   }
 
@@ -3003,11 +3334,12 @@ function renderPayrollTable() {
     .join("");
 
   const selectClass = status === "leave" ? "emp-picker leave" : "emp-picker working";
+  const dirtyClass = dirtyPayrollEmployeeIds.has(String(record.employeeId || "")) ? " payroll-entry-dirty" : "";
   SELECTORS.payrollBody.innerHTML = `
-    <article class="payroll-entry-card payroll-modern" data-index="${index}">
+    <article class="payroll-entry-card payroll-modern${dirtyClass}" data-index="${index}">
       <div class="payroll-modern-grid">
         <div class="payroll-modern-main">
-          <section class="payroll-stack-section">
+          <section class="payroll-stack-section payroll-section-profile">
             <h3>Employee Profile</h3>
             <div class="payroll-fields">
               <label>Employee ID
@@ -3028,7 +3360,7 @@ function renderPayrollTable() {
             ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
           </section>
 
-          <section class="payroll-stack-section">
+          <section class="payroll-stack-section payroll-section-salary">
             <h3>Core Salary & Increment</h3>
             <div class="payroll-fields">
               <label>Present Salary (₹)
@@ -3046,7 +3378,7 @@ function renderPayrollTable() {
             </div>
           </section>
 
-          <section class="payroll-stack-section">
+          <section class="payroll-stack-section payroll-section-advance">
             <h3>Advance Tracking</h3>
             <div class="payroll-fields">
               <label>Old Advance Taken (₹)
@@ -3064,7 +3396,7 @@ function renderPayrollTable() {
             </div>
           </section>
 
-          <section class="payroll-stack-section">
+          <section class="payroll-stack-section payroll-section-deduction">
             <h3>Deductions & Absence</h3>
             <div class="payroll-fields">
               <label>Deduction Entered (₹)
@@ -3097,7 +3429,7 @@ function renderPayrollTable() {
               : ""}
           </section>
 
-          <section class="payroll-stack-section">
+          <section class="payroll-stack-section payroll-section-summary">
             <h3>Summary</h3>
             <div class="payroll-fields">
               <label>Advance Remained (₹)
@@ -3146,8 +3478,8 @@ function renderPayrollTable() {
     </article>
   `;
 
-  const visibleRecordsForMetrics = currentRecords.filter((record) => isPayrollVisibleForMonth(record, month));
-  updateMetrics(visibleRecordsForMetrics.map((record) => computePayroll(record, month)));
+  renderPayrollTotalsAndReview(visibleRecords, allVisibleRecords, month);
+  updateMetrics(allVisibleRecords.map((item) => item.calc));
 }
 
 function updateMetrics(computedRecords) {
@@ -3235,7 +3567,9 @@ async function persistRecords() {
       method: "PUT",
       body: { records: currentRecords },
     });
+    dirtyPayrollEmployeeIds.clear();
     setSaveStatus("All changes saved.");
+    renderDashboardInsights();
     saveInFlight = false;
     if (saveQueued) {
       saveQueued = false;

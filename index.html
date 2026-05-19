@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260408f" />
+    <link rel="stylesheet" href="styles.css?v=20260519i" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -1051,7 +1051,7 @@
 
           <section id="metricsSection" class="metrics kpi-metrics-row">
             <article class="kpi-metric-card primary">
-              <div class="kpi-icon">👥</div>
+              <div class="kpi-icon" aria-hidden="true">PE</div>
               <div class="kpi-data">
                 <p>Payable Employees</p>
                 <strong id="metricEmployees">0</strong>
@@ -1059,7 +1059,7 @@
               </div>
             </article>
             <article class="kpi-metric-card success">
-              <div class="kpi-icon">💰</div>
+              <div class="kpi-icon" aria-hidden="true">NP</div>
               <div class="kpi-data">
                 <p>Estimated Net Payout</p>
                 <strong id="metricNet">₹0.00</strong>
@@ -1067,7 +1067,7 @@
               </div>
             </article>
             <article class="kpi-metric-card warning">
-              <div class="kpi-icon">📉</div>
+              <div class="kpi-icon" aria-hidden="true">GP</div>
               <div class="kpi-data">
                 <p>Gross Payroll Liability</p>
                 <strong id="metricGross">₹0.00</strong>
@@ -1075,12 +1075,50 @@
               </div>
             </article>
             <article class="kpi-metric-card alert">
-              <div class="kpi-icon">⚠️</div>
+              <div class="kpi-icon" aria-hidden="true">AE</div>
               <div class="kpi-data">
                 <p>Advance Exposure</p>
                 <strong id="metricAdvance">₹0.00</strong>
                 <span>Pending recovery</span>
               </div>
+            </article>
+          </section>
+
+          <section id="dashboardCommandCenter" class="dashboard-command-center">
+            <article class="dashboard-panel dashboard-status-panel">
+              <div class="dashboard-panel-head">
+                <div>
+                  <p class="dashboard-kicker">Month Status</p>
+                  <h3 id="dashboardMonthStatusTitle">Payroll Status</h3>
+                </div>
+                <span id="dashboardMonthStatusBadge" class="status-pill working">Draft</span>
+              </div>
+              <p id="dashboardMonthStatusDetail" class="dashboard-panel-note">Loading payroll status...</p>
+            </article>
+
+            <article class="dashboard-panel dashboard-actions-panel">
+              <div class="dashboard-panel-head">
+                <div>
+                  <p class="dashboard-kicker">Quick Actions</p>
+                  <h3>Start Work</h3>
+                </div>
+              </div>
+              <div class="dashboard-action-grid">
+                <button type="button" data-dashboard-action="employees">Add Employee</button>
+                <button type="button" data-dashboard-action="payroll">Open Payroll</button>
+                <button type="button" data-dashboard-action="review">Review Payroll</button>
+                <button type="button" data-dashboard-action="reports" class="ghost">View Reports</button>
+              </div>
+            </article>
+
+            <article class="dashboard-panel dashboard-attention-panel">
+              <div class="dashboard-panel-head">
+                <div>
+                  <p class="dashboard-kicker">Needs Attention</p>
+                  <h3>Payroll Checks</h3>
+                </div>
+              </div>
+              <div id="dashboardAttentionBody" class="dashboard-list"></div>
             </article>
           </section>
 
@@ -1442,6 +1480,51 @@
                 <span><i class="dot deduction"></i>Deductions</span>
               </p>
             </div>
+            <div class="payroll-control-panel">
+              <div class="payroll-search-row">
+                <label>
+                  Search Employee
+                  <input id="payrollSearchInput" type="search" placeholder="Search ID, name, or designation" />
+                </label>
+                <label>
+                  Filter
+                  <select id="payrollFilterSelect">
+                    <option value="all">All payroll employees</option>
+                    <option value="warnings">Needs attention</option>
+                    <option value="advance">Advance pending</option>
+                    <option value="changed">Changed this session</option>
+                    <option value="zero">Zero net salary</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="payroll-bulk-panel">
+                <label>
+                  Increment
+                  <input id="bulkIncrementInput" type="number" min="0" step="0.01" placeholder="0.00" />
+                </label>
+                <label>
+                  Extra Advance
+                  <input id="bulkAdvanceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+                </label>
+                <label>
+                  Deduction
+                  <input id="bulkDeductionInput" type="number" min="0" step="0.01" placeholder="0.00" />
+                </label>
+                <label>
+                  Manual Absent
+                  <input id="bulkAbsentInput" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <div class="payroll-bulk-actions">
+                  <button id="applyBulkIncrementBtn" type="button" class="ghost">Apply Increment</button>
+                  <button id="applyBulkAdvanceBtn" type="button" class="ghost">Apply Advance</button>
+                  <button id="applyBulkDeductionBtn" type="button" class="ghost">Apply Deduction</button>
+                  <button id="applyBulkAbsentBtn" type="button" class="ghost">Set Absent</button>
+                </div>
+              </div>
+            </div>
+            <div id="payrollTotalsBar" class="payroll-totals-bar"></div>
+            <div id="payrollReviewPanel" class="payroll-review-panel"></div>
             <div id="payrollBody" class="payroll-cards"></div>
           </section>
 
@@ -1491,6 +1574,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260410b"></script>
+    <script src="app.js?v=20260519e"></script>
   </body>
 </html>
