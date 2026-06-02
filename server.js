@@ -886,6 +886,86 @@ function isIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
+function normalizeLeaveHistoryItems(history) {
+  return (Array.isArray(history) ? history : [])
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      leaveFrom: isIsoDate(item.leaveFrom) ? String(item.leaveFrom) : "",
+      resumeOn: isIsoDate(item.resumeOn) ? String(item.resumeOn) : "",
+      terminatedOn: isIsoDate(item.terminatedOn) ? String(item.terminatedOn) : "",
+      recordedAt: String(item.recordedAt || ""),
+      updatedAt: String(item.updatedAt || ""),
+    }))
+    .filter((item) => item.leaveFrom || item.resumeOn || item.terminatedOn);
+}
+
+function parseLeaveNotesEnvelope(notes) {
+  const rawNotes = String(notes || "");
+  try {
+    const parsed = JSON.parse(rawNotes);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaveHistory)) {
+      return { text: rawNotes, leaveHistory: [] };
+    }
+    return {
+      text: sanitizeText(parsed.text || "", 20000),
+      leaveHistory: normalizeLeaveHistoryItems(parsed.leaveHistory),
+    };
+  } catch {
+    return { text: rawNotes, leaveHistory: [] };
+  }
+}
+
+function parseLeaveHistoryNotes(notes) {
+  return parseLeaveNotesEnvelope(notes).leaveHistory;
+}
+
+function stringifyLeaveHistoryNotes(history, text = "") {
+  const cleanText = sanitizeText(text, 20000);
+  const cleanHistory = normalizeLeaveHistoryItems(history);
+  if (cleanHistory.length === 0) return cleanText;
+  return JSON.stringify({
+    text: cleanText,
+    leaveHistory: cleanHistory,
+  });
+}
+
+function mergeEmployeeLeaveHistory(existingRow, employee) {
+  const existingNotes = parseLeaveNotesEnvelope(existingRow?.notes);
+  const history = existingNotes.leaveHistory;
+  const status = String(employee?.status || "working").toLowerCase();
+  const leaveFrom = isIsoDate(employee?.leaveFrom) ? String(employee.leaveFrom) : "";
+  const resumeOn = isIsoDate(employee?.leaveTo) ? String(employee.leaveTo) : "";
+  const terminatedOn = isIsoDate(employee?.terminatedOn) ? String(employee.terminatedOn) : "";
+  const now = new Date().toISOString();
+
+  if (status === "leave" && leaveFrom) {
+    const existingOpen = history.find((item) => item.leaveFrom === leaveFrom && !item.resumeOn && !item.terminatedOn);
+    if (!existingOpen) {
+      history.push({ leaveFrom, resumeOn: "", terminatedOn: "", recordedAt: now, updatedAt: now });
+    }
+  }
+
+  if (status === "resumed" && resumeOn) {
+    const matchingOpen = [...history].reverse().find((item) => !item.resumeOn && !item.terminatedOn && (!leaveFrom || item.leaveFrom === leaveFrom));
+    if (matchingOpen) {
+      matchingOpen.resumeOn = resumeOn;
+      matchingOpen.updatedAt = now;
+    } else if (leaveFrom) {
+      history.push({ leaveFrom, resumeOn, terminatedOn: "", recordedAt: now, updatedAt: now });
+    }
+  }
+
+  if (status === "terminated" && terminatedOn) {
+    const matchingOpen = [...history].reverse().find((item) => !item.resumeOn && !item.terminatedOn);
+    if (matchingOpen) {
+      matchingOpen.terminatedOn = terminatedOn;
+      matchingOpen.updatedAt = now;
+    }
+  }
+
+  return stringifyLeaveHistoryNotes(history, existingNotes.text);
+}
+
 function normalizeEmployee(employee, index) {
   const rawStatus = String(employee?.status || "working").toLowerCase();
   const status = rawStatus === "leave" || rawStatus === "resumed" || rawStatus === "terminated" ? rawStatus : "working";
@@ -907,7 +987,7 @@ function normalizeEmployee(employee, index) {
     leaveFrom,
     leaveTo,
     terminatedOn,
-    notes: sanitizeText(employee?.notes, 350),
+    notes: sanitizeText(employee?.notes, 20000),
     positionIndex: Number.isFinite(Number(employee?.positionIndex)) ? Number(employee.positionIndex) : index,
   };
 }
@@ -929,6 +1009,7 @@ function dbRowToEmployee(row) {
     leaveTo: row.leave_to || "",
     terminatedOn: row.terminated_on || "",
     notes: row.notes || "",
+    leaveHistory: parseLeaveHistoryNotes(row.notes),
     positionIndex: Number(row.position_index || 0),
   };
 }
@@ -1671,6 +1752,7 @@ app.post("/api/employees", authMiddleware, async (req, res) => {
 
   const existing = await store.listEmployeesByCompany(companyId).catch(() => []);
   const normalized = normalizeEmployee(req.body, existing.length);
+  normalized.notes = stringifyLeaveHistoryNotes(parseLeaveHistoryNotes(normalized.notes), normalized.notes);
   if (
     normalized.employeeName.length < 2
     || normalized.employeeId.length < 2
@@ -1710,6 +1792,7 @@ app.put("/api/employees/:id", authMiddleware, async (req, res) => {
   }
 
   const normalized = normalizeEmployee(req.body, Number(existing.position_index || 0));
+  normalized.notes = mergeEmployeeLeaveHistory(existing, normalized);
   if (
     normalized.employeeName.length < 2
     || normalized.employeeId.length < 2

@@ -544,9 +544,9 @@ function wireEmployeeManagement() {
       designation: SELECTORS.employeeDesignationInput.value.trim(),
       mobileNumber: SELECTORS.employeeMobileInput.value.trim(),
       status: statusValue,
-      leaveFrom: isEditMode ? (SELECTORS.employeeLeaveFromInput.value || "") : "",
-      leaveTo: isEditMode ? (SELECTORS.employeeResumeOnInput.value || "") : "",
-      terminatedOn: isEditMode ? (SELECTORS.employeeTerminatedOnInput.value || "") : "",
+      leaveFrom: isEditMode && (statusValue === "leave" || statusValue === "resumed") ? (SELECTORS.employeeLeaveFromInput.value || "") : "",
+      leaveTo: isEditMode && statusValue === "resumed" ? (SELECTORS.employeeResumeOnInput.value || "") : "",
+      terminatedOn: isEditMode && statusValue === "terminated" ? (SELECTORS.employeeTerminatedOnInput.value || "") : "",
       notes: "",
     };
 
@@ -661,8 +661,8 @@ function syncEmployeeStatusFields() {
   const resumedMode = status === "resumed";
   const terminatedMode = status === "terminated";
 
-  SELECTORS.employeeLeaveFromInput.disabled = !leaveMode;
-  SELECTORS.employeeResumeOnInput.disabled = !(leaveMode || resumedMode);
+  SELECTORS.employeeLeaveFromInput.disabled = !(leaveMode || resumedMode);
+  SELECTORS.employeeResumeOnInput.disabled = !resumedMode;
   SELECTORS.employeeTerminatedOnInput.disabled = !terminatedMode;
 }
 
@@ -754,7 +754,7 @@ function renderEmployeeTable() {
   if (!SELECTORS.employeesBody) return;
   if (employeeMaster.length === 0) {
     SELECTORS.employeesBody.innerHTML = `
-      <tr><td colspan="8" class="empty">No employees yet. Add employee details above.</td></tr>
+      <tr><td colspan="9" class="empty">No employees yet. Add employee details above.</td></tr>
     `;
     return;
   }
@@ -807,6 +807,7 @@ function renderEmployeeTable() {
           advanceRemainedDisplay = Math.max(0, advanceRemainedDisplay);
         }
       }
+      const tenure = latestTenureLabel(employee);
 
       return `
         <tr data-id="${employee.id}">
@@ -820,6 +821,12 @@ function renderEmployeeTable() {
           <td><span class="${statusClass}">${statusLabel}</span></td>
           <td>${escapeHtml(employee.leaveFrom || "-")}</td>
           <td>${escapeHtml(employee.leaveTo || "-")}</td>
+          <td>
+            <div class="tenure-cell ${tenure.className}">
+              <strong>${escapeHtml(tenure.label)}</strong>
+              <span>${escapeHtml(tenure.note || "-")}</span>
+            </div>
+          </td>
           <td>
             <div class="row-actions">
               <button type="button" class="mini ghost" data-action="edit">Edit</button>
@@ -836,12 +843,12 @@ function renderLeaveResumeReport() {
   if (!SELECTORS.leaveResumeReportBody) return;
 
   const rows = employeeMaster
-    .filter((employee) => employee.leaveFrom || employee.leaveTo || employee.terminatedOn)
+    .filter((employee) => employee.leaveFrom || employee.leaveTo || employee.terminatedOn || buildEmployeeTenures(employee).some((tenure) => tenure.leaveFrom))
     .sort((a, b) => String(a.employeeId || "").localeCompare(String(b.employeeId || "")));
 
   if (rows.length === 0) {
     SELECTORS.leaveResumeReportBody.innerHTML = `
-      <tr><td colspan="6" class="empty">No leave, resume, or termination details recorded yet.</td></tr>
+      <tr><td colspan="9" class="empty">No leave, resume, or termination details recorded yet.</td></tr>
     `;
     if (SELECTORS.reportsMessage) {
       SELECTORS.reportsMessage.textContent = "";
@@ -862,8 +869,21 @@ function renderLeaveResumeReport() {
         : status === "terminated"
           ? "status-pill terminated"
           : "status-pill working";
+      const tenures = buildEmployeeTenures(employee).filter((tenure) => tenure.leaveFrom || tenure.terminatedOn);
+      const historyRows = tenures.length ? tenures : [{
+        index: 1,
+        workStart: employee.joiningDate || "",
+        workEnd: "",
+        leaveFrom: employee.leaveFrom || "",
+        resumeOn: employee.leaveTo || "",
+        terminatedOn: employee.terminatedOn || "",
+        duration: monthsAndDaysBetweenInclusive(employee.joiningDate || "", employee.leaveFrom ? isoFromDate(addDays(parseIsoDate(employee.leaveFrom), -1)) : ""),
+        completed12Months: false,
+      }];
 
-      return `
+      return historyRows.map((tenure) => {
+        const payrollSummary = summarizePayrollForTenure(employee, tenure);
+        return `
         <tr>
           <td>${escapeHtml(employee.employeeId || "-")}</td>
           <td>
@@ -871,11 +891,32 @@ function renderLeaveResumeReport() {
             <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
           </td>
           <td><span class="${badgeClass}">${escapeHtml(statusLabel)}</span></td>
-          <td>${escapeHtml(employee.leaveFrom || "-")}</td>
-          <td>${escapeHtml(employee.leaveTo || "-")}</td>
-          <td>${escapeHtml(employee.terminatedOn || "-")}</td>
+          <td>${escapeHtml(tenure.leaveFrom || "-")}</td>
+          <td>${escapeHtml(tenure.resumeOn || "-")}</td>
+          <td>${escapeHtml(tenure.terminatedOn || "-")}</td>
+          <td>
+            <div class="tenure-cell ${tenure.completed12Months ? "tenure-highlight" : ""}">
+              <strong>${escapeHtml(formatTenureDuration(tenure.duration))}</strong>
+              <span>${escapeHtml(`${tenure.workStart || "-"} to ${tenure.workEnd || "-"}`)}</span>
+            </div>
+          </td>
+          <td>
+            <div class="tenure-money">
+              <span>Paid ${escapeHtml(formatCurrency(payrollSummary.salary + payrollSummary.bonus))}</span>
+              <span>Bonus/Increment ${escapeHtml(formatCurrency(payrollSummary.bonus))}</span>
+              <span>${payrollSummary.months} payroll month(s)</span>
+            </div>
+          </td>
+          <td>
+            <div class="tenure-money">
+              <span>Taken ${escapeHtml(formatCurrency(payrollSummary.advanceTaken))}</span>
+              <span>Cleared ${escapeHtml(formatCurrency(payrollSummary.advanceCleared))}</span>
+              <span>Remaining ${escapeHtml(formatCurrency(payrollSummary.advanceRemained))}</span>
+            </div>
+          </td>
         </tr>
       `;
+      }).join("");
     })
     .join("");
 
@@ -2964,6 +3005,188 @@ function parseIsoDate(value) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null;
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isoFromDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthFromIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value).slice(0, 7) : "";
+}
+
+function addDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function parseEmployeeLeaveHistory(employee) {
+  if (Array.isArray(employee?.leaveHistory)) {
+    return employee.leaveHistory
+      .map((item) => ({
+        leaveFrom: /^\d{4}-\d{2}-\d{2}$/.test(String(item?.leaveFrom || "")) ? String(item.leaveFrom) : "",
+        resumeOn: /^\d{4}-\d{2}-\d{2}$/.test(String(item?.resumeOn || "")) ? String(item.resumeOn) : "",
+        terminatedOn: /^\d{4}-\d{2}-\d{2}$/.test(String(item?.terminatedOn || "")) ? String(item.terminatedOn) : "",
+      }))
+      .filter((item) => item.leaveFrom || item.resumeOn || item.terminatedOn);
+  }
+  try {
+    const parsed = JSON.parse(String(employee?.notes || ""));
+    return Array.isArray(parsed?.leaveHistory) ? parsed.leaveHistory : [];
+  } catch {
+    return [];
+  }
+}
+
+function monthsAndDaysBetweenInclusive(startIso, endIso) {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!start || !end || start > end) return { months: 0, days: 0, totalDays: 0 };
+
+  const exclusiveEnd = addDays(end, 1);
+  let months = (exclusiveEnd.getFullYear() - start.getFullYear()) * 12
+    + (exclusiveEnd.getMonth() - start.getMonth());
+  let anchor = new Date(start.getFullYear(), start.getMonth() + months, start.getDate());
+  if (anchor > exclusiveEnd) {
+    months -= 1;
+    anchor = new Date(start.getFullYear(), start.getMonth() + months, start.getDate());
+  }
+  const days = Math.max(0, Math.floor((exclusiveEnd.getTime() - anchor.getTime()) / 86400000));
+  const totalDays = Math.max(0, Math.floor((exclusiveEnd.getTime() - start.getTime()) / 86400000));
+  return { months: Math.max(0, months), days, totalDays };
+}
+
+function formatTenureDuration(duration) {
+  const months = Number(duration?.months || 0);
+  const days = Number(duration?.days || 0);
+  if (months <= 0 && days <= 0) return "0 days";
+  const parts = [];
+  if (months > 0) parts.push(`${months} month${months === 1 ? "" : "s"}`);
+  if (days > 0) parts.push(`${days} day${days === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
+function buildEmployeeTenures(employee) {
+  const history = parseEmployeeLeaveHistory(employee)
+    .filter((item) => item.leaveFrom)
+    .sort((a, b) => String(a.leaveFrom).localeCompare(String(b.leaveFrom)));
+  const currentLeaveFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(employee?.leaveFrom || "")) ? String(employee.leaveFrom) : "";
+  if (currentLeaveFrom && !history.some((item) => item.leaveFrom === currentLeaveFrom)) {
+    history.push({
+      leaveFrom: currentLeaveFrom,
+      resumeOn: /^\d{4}-\d{2}-\d{2}$/.test(String(employee?.leaveTo || "")) ? String(employee.leaveTo) : "",
+      terminatedOn: /^\d{4}-\d{2}-\d{2}$/.test(String(employee?.terminatedOn || "")) ? String(employee.terminatedOn) : "",
+    });
+    history.sort((a, b) => String(a.leaveFrom).localeCompare(String(b.leaveFrom)));
+  }
+  const tenures = [];
+  let workStart = employee.joiningDate || "";
+
+  history.forEach((item, index) => {
+    const leaveDate = parseIsoDate(item.leaveFrom);
+    const endIso = leaveDate ? isoFromDate(addDays(leaveDate, -1)) : "";
+    const duration = monthsAndDaysBetweenInclusive(workStart, endIso);
+    tenures.push({
+      index: index + 1,
+      workStart,
+      workEnd: endIso,
+      leaveFrom: item.leaveFrom,
+      resumeOn: item.resumeOn || "",
+      terminatedOn: item.terminatedOn || "",
+      duration,
+      completed12Months: duration.months >= 12,
+      open: !item.resumeOn && !item.terminatedOn,
+    });
+    if (item.resumeOn) workStart = item.resumeOn;
+  });
+
+  const currentStatus = String(employee.status || "working").toLowerCase();
+  if (currentStatus === "terminated" && !history.length && employee.joiningDate && employee.terminatedOn) {
+    const terminatedOn = parseIsoDate(employee.terminatedOn);
+    const workEnd = terminatedOn ? isoFromDate(addDays(terminatedOn, -1)) : "";
+    const duration = monthsAndDaysBetweenInclusive(employee.joiningDate, workEnd);
+    tenures.push({
+      index: 1,
+      workStart: employee.joiningDate,
+      workEnd,
+      leaveFrom: "",
+      resumeOn: "",
+      terminatedOn: employee.terminatedOn,
+      duration,
+      completed12Months: duration.months >= 12,
+      current: false,
+      open: false,
+    });
+  }
+  if (currentStatus !== "leave" && currentStatus !== "terminated" && workStart) {
+    const todayIso = isoFromDate(new Date());
+    const duration = monthsAndDaysBetweenInclusive(workStart, todayIso);
+    tenures.push({
+      index: history.length + 1,
+      workStart,
+      workEnd: todayIso,
+      leaveFrom: "",
+      resumeOn: "",
+      terminatedOn: "",
+      duration,
+      completed12Months: duration.months >= 12,
+      current: true,
+      open: false,
+    });
+  }
+
+  return tenures;
+}
+
+function payrollRowsForEmployeeTenure(employee, tenure) {
+  const startMonth = monthFromIsoDate(tenure.workStart);
+  const endMonth = monthFromIsoDate(tenure.workEnd);
+  const companyId = getSelectedCompanyId && getSelectedCompanyId();
+  if (!startMonth || !endMonth || !Array.isArray(window.allPayrollRecords)) return [];
+  return window.allPayrollRecords.filter((row) => {
+    if (String(row.employeeId || "") !== String(employee.employeeId || "")) return false;
+    if (companyId && Number(row.companyId || row.company_id || 1) !== Number(companyId)) return false;
+    const month = String(row.month || "");
+    return month >= startMonth && month <= endMonth;
+  });
+}
+
+function summarizePayrollForTenure(employee, tenure) {
+  const rows = payrollRowsForEmployeeTenure(employee, tenure);
+  return rows.reduce((summary, row) => {
+    const presentSalary = Number(row.presentSalary ?? row.present_salary ?? 0);
+    const increment = Number(row.increment ?? 0);
+    const oldAdvance = Number(row.oldAdvanceTaken ?? row.old_advance_taken ?? 0);
+    const extraAdvance = Number(row.extraAdvanceAdded ?? row.extra_advance_added ?? 0);
+    const deduction = Number(row.deductionEntered ?? row.deduction_entered ?? 0);
+    const totalAdvance = Math.max(0, oldAdvance) + Math.max(0, extraAdvance);
+    const deductionApplied = Math.min(Math.max(0, deduction), totalAdvance);
+    const advanceRemained = Number(row.advanceRemained ?? Math.max(0, totalAdvance - deductionApplied));
+    summary.months += 1;
+    summary.salary += Number.isFinite(presentSalary) ? presentSalary : 0;
+    summary.bonus += Number.isFinite(increment) ? increment : 0;
+    summary.advanceTaken += Math.max(0, Number.isFinite(extraAdvance) ? extraAdvance : 0);
+    summary.advanceCleared += deductionApplied;
+    summary.advanceRemained = Number.isFinite(advanceRemained) ? Math.max(0, advanceRemained) : summary.advanceRemained;
+    return summary;
+  }, { months: 0, salary: 0, bonus: 0, advanceTaken: 0, advanceCleared: 0, advanceRemained: 0 });
+}
+
+function latestTenureLabel(employee) {
+  const tenures = buildEmployeeTenures(employee);
+  const latest = tenures[tenures.length - 1] || null;
+  if (!latest) return { label: "-", className: "", note: "" };
+  const label = formatTenureDuration(latest.duration);
+  const note = latest.current
+    ? `Since ${latest.workStart || "-"}`
+    : latest.leaveFrom
+      ? `Before leave on ${latest.leaveFrom}`
+      : "";
+  return {
+    label,
+    className: latest.completed12Months ? "tenure-highlight" : "",
+    note,
+  };
 }
 
 function resolveEmployeeStatusForMonth(employee, month) {

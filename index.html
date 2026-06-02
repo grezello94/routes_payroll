@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260519i" />
+    <link rel="stylesheet" href="styles.css?v=20260603a" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -418,10 +418,20 @@
       }
 
       /* Premium Cards and Clean Tables */
-      .table-wrap, .employee-list-wrap, .panel, .dashboard-summary-cards .summary-card, .metrics article, .dashboard-activity {
+      .panel, .dashboard-summary-cards .summary-card, .metrics article, .dashboard-activity {
         border: 1px solid rgba(226, 232, 240, 0.8) !important;
         border-radius: 16px !important;
         overflow: hidden !important;
+        background: #ffffff !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.03), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      }
+      .table-wrap, .employee-list-wrap {
+        border: 1px solid rgba(226, 232, 240, 0.8) !important;
+        border-radius: 16px !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+        -webkit-overflow-scrolling: touch !important;
         background: #ffffff !important;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.03), 0 8px 10px -6px rgba(0, 0, 0, 0.01) !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -1235,6 +1245,7 @@
                     <th>Status</th>
                     <th>Leave From</th>
                     <th>Resumed On</th>
+                    <th>Work Tenure</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -1434,6 +1445,9 @@
                       <th>Leave From</th>
                       <th>Resumed On</th>
                       <th>Terminated On</th>
+                      <th>Worked Tenure</th>
+                      <th>Paid / Bonus</th>
+                      <th>Advance</th>
                     </tr>
                   </thead>
                   <tbody id="leaveResumeReportBody"></tbody>
@@ -1574,6 +1588,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260519e"></script>
+    <script src="app.js?v=20260603a"></script>
   </body>
 </html>

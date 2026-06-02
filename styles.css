@@ -860,6 +860,36 @@ button:active {
   border: 1px solid #f5c6cd;
 }
 
+.tenure-cell,
+.tenure-money {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.tenure-cell strong {
+  color: #1f2f46;
+  font-size: 0.92rem;
+}
+
+.tenure-cell span,
+.tenure-money span {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.tenure-highlight {
+  border-left: 4px solid #d97706;
+  border-radius: 6px;
+  background: #fffbeb;
+  padding: 8px 10px;
+}
+
+.tenure-highlight strong {
+  color: #92400e;
+}
+
 .emp-name-cell {
   display: grid;
   gap: 4px;
@@ -3440,10 +3470,17 @@ textarea {
 
 .employee-list-wrap {
   padding: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
 }
 
 .employee-list-wrap table {
-  min-width: 0;
+  width: 100%;
+  min-width: 1180px;
+  table-layout: auto;
 }
 
 .employee-list-wrap th {
@@ -3455,15 +3492,98 @@ textarea {
   letter-spacing: 0.05em;
   font-weight: 800;
   border-top: none;
+  white-space: nowrap;
 }
 
 .employee-list-wrap td {
   background: #ffffff;
   color: #334155;
+  vertical-align: middle;
+}
+
+.employee-list-wrap th,
+.employee-list-wrap td {
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .employee-list-wrap tbody tr:nth-child(even) {
   background: #ffffff;
+}
+
+#employeesSection .employee-list-wrap table {
+  min-width: 1420px;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(1),
+#employeesSection .employee-list-wrap td:nth-child(1) {
+  min-width: 130px;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(2),
+#employeesSection .employee-list-wrap td:nth-child(2) {
+  min-width: 190px;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(3),
+#employeesSection .employee-list-wrap td:nth-child(3),
+#employeesSection .employee-list-wrap th:nth-child(4),
+#employeesSection .employee-list-wrap td:nth-child(4) {
+  min-width: 175px;
+  white-space: nowrap;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(5),
+#employeesSection .employee-list-wrap td:nth-child(5) {
+  min-width: 150px;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(6),
+#employeesSection .employee-list-wrap td:nth-child(6),
+#employeesSection .employee-list-wrap th:nth-child(7),
+#employeesSection .employee-list-wrap td:nth-child(7) {
+  min-width: 145px;
+  white-space: nowrap;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(8),
+#employeesSection .employee-list-wrap td:nth-child(8) {
+  min-width: 210px;
+}
+
+#employeesSection .employee-list-wrap th:nth-child(9),
+#employeesSection .employee-list-wrap td:nth-child(9) {
+  min-width: 170px;
+}
+
+#reportsSection .employee-list-wrap table {
+  min-width: 1120px;
+}
+
+#reportsSection article:nth-of-type(4) .employee-list-wrap table {
+  min-width: 1580px;
+}
+
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(4),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(4),
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(5),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(5),
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(6),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(6) {
+  min-width: 145px;
+  white-space: nowrap;
+}
+
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(7),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(7) {
+  min-width: 230px;
+}
+
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(8),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(8),
+#reportsSection article:nth-of-type(4) .employee-list-wrap th:nth-child(9),
+#reportsSection article:nth-of-type(4) .employee-list-wrap td:nth-child(9) {
+  min-width: 210px;
 }
 
 .emp-list-name {
@@ -3481,21 +3601,26 @@ textarea {
 .employee-list-wrap td .row-actions {
   flex-direction: row;
   justify-content: flex-end;
+  flex-wrap: nowrap;
+  min-width: max-content;
 }
 
 .employee-list-wrap .mini {
   min-height: 30px;
-  min-width: 62px;
-  border-radius: 0;
-  padding: 0 4px;
-  border: none;
-  background: transparent;
+  min-width: 72px;
+  border-radius: 8px;
+  padding: 0 10px;
+  border: 1px solid #d2dbe8;
+  background: #ffffff;
   color: #2563eb;
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .employee-list-wrap .mini.danger {
+  border-color: #fecaca;
+  background: #fff7f7;
   color: #ef4444;
 }
 
