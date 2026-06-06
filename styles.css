@@ -1819,8 +1819,16 @@ td.read {
   border-bottom: 2px solid #111827;
 }
 
+.advance-remained-line,
+.payslip-line-total:has(.amount-red-large) {
+  background: #fff1f2;
+  border-radius: 8px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
 .amount-red-large {
-  color: #c81e1e;
+  color: #7f1d1d;
   font-size: 1.8rem;
   font-weight: 800;
 }
@@ -3827,5 +3835,85 @@ textarea {
   #reportsSection .employee-list-wrap {
     margin-left: 0 !important;
     margin-right: 0 !important;
+  }
+}
+
+/* Keep wide employee/payroll tables contained inside their panels. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.shell,
+.app-view,
+.app-main,
+#employeesSection,
+#payrollSection,
+#settingsSection,
+#reportsSection {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#employeesSection,
+#payrollSection,
+#settingsSection,
+#reportsSection,
+.dashboard-insights,
+#saveStatus {
+  width: min(1280px, calc(100% - 40px));
+}
+
+.employee-list-wrap,
+.table-wrap {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+#employeesSection .employee-list-wrap,
+#reportsSection .employee-list-wrap {
+  margin-left: 20px;
+  margin-right: 20px;
+  max-width: calc(100% - 40px);
+}
+
+#employeesSection .employee-list-wrap table {
+  min-width: 1180px;
+}
+
+@media (max-width: 850px) {
+  .shell {
+    width: 100% !important;
+  }
+
+  .app-main {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  #employeesSection,
+  #payrollSection,
+  #settingsSection,
+  #reportsSection,
+  .dashboard-insights,
+  #saveStatus {
+    width: calc(100% - 24px) !important;
+  }
+
+  #employeesSection .employee-list-wrap,
+  #reportsSection .employee-list-wrap,
+  .employee-list-wrap,
+  .table-wrap {
+    width: auto !important;
+    max-width: calc(100% - 24px) !important;
+    margin-left: 12px !important;
+    margin-right: 12px !important;
+    border-left: 1px solid rgba(226, 232, 240, 0.8) !important;
+    border-right: 1px solid rgba(226, 232, 240, 0.8) !important;
+    border-radius: 14px !important;
   }
 }
