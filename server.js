@@ -118,14 +118,19 @@ function isStrongPassword(value) {
 
 function getLanAddress() {
   const interfaces = os.networkInterfaces();
+  const candidates = [];
   for (const entries of Object.values(interfaces)) {
     for (const entry of entries || []) {
       if (entry.family === "IPv4" && !entry.internal && entry.address) {
-        return entry.address;
+        candidates.push(entry.address);
       }
     }
   }
-  return "";
+  return candidates.find((address) => (
+    address.startsWith("192.168.")
+    || address.startsWith("10.")
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)
+  )) || candidates.find((address) => !address.startsWith("169.254.")) || "";
 }
 
 function isUserEmailVerified(user) {

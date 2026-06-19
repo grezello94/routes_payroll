@@ -1477,9 +1477,16 @@ async function loadPhoneCameraAccess() {
   if (!SELECTORS.phoneCameraAccess) return;
   try {
     const response = await apiRequest("/api/access-url");
-    const url = response.lanUrl || response.localUrl || "";
+    const currentUrl = new URL(window.location.href);
+    const currentHost = currentUrl.hostname;
+    const currentOriginIsShareable = currentUrl.protocol === "https:"
+      || (!["localhost", "127.0.0.1", "0.0.0.0"].includes(currentHost) && currentHost !== "");
+    const url = currentOriginIsShareable ? currentUrl.origin : response.lanUrl || "";
     phoneCameraUrl = url ? `${url}/?workspace=verification` : "";
-    if (!phoneCameraUrl) return;
+    if (!phoneCameraUrl) {
+      SELECTORS.phoneCameraAccess.classList.add("hidden");
+      return;
+    }
     SELECTORS.phoneCameraAccess.classList.remove("hidden");
     SELECTORS.phoneCameraUrlText.textContent = phoneCameraUrl;
     SELECTORS.phoneCameraLink.href = phoneCameraUrl;
