@@ -2,6 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const admin = require("firebase-admin");
 const PAYROLL_REPORT_ROW_ID = "__PAYROLL_REPORT__";
+const EMPLOYEE_VERIFICATION_ROW_ID = "__EMPLOYEE_VERIFICATION__";
+const EMPLOYEE_VERIFICATION_LEGACY_MONTH = "__employee_verifications__";
 
 function resolveFirebaseCredentialFile(baseDir) {
   const explicitPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || "").trim();
@@ -224,6 +226,18 @@ function createSqliteStore(baseDir) {
           terminated_on TEXT NOT NULL DEFAULT '',
           notes TEXT NOT NULL DEFAULT '',
           position_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await run(`
+        CREATE TABLE IF NOT EXISTS employee_verifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          company_id INTEGER NOT NULL DEFAULT 1,
+          full_name TEXT NOT NULL DEFAULT '',
+          date_of_birth TEXT NOT NULL DEFAULT '',
+          payload_json TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -739,9 +753,9 @@ function createSqliteStore(baseDir) {
                 present_salary, increment, old_advance_taken, extra_advance_added,
                 deduction_entered, days_absent, comment, position_index
          FROM payroll_entries
-         WHERE employee_id <> ?
+         WHERE employee_id NOT IN (?, ?)
          ORDER BY company_id, month, position_index, id`
-      , [PAYROLL_REPORT_ROW_ID]);
+      , [PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID]);
     },
 
     async listPayrollByMonthCompany(month, companyId) {
@@ -750,14 +764,14 @@ function createSqliteStore(baseDir) {
                 present_salary, increment, old_advance_taken, extra_advance_added,
                 deduction_entered, days_absent, comment, position_index
          FROM payroll_entries
-         WHERE month = ? AND company_id = ? AND employee_id <> ?
+         WHERE month = ? AND company_id = ? AND employee_id NOT IN (?, ?)
          ORDER BY position_index, id`,
-        [month, companyId, PAYROLL_REPORT_ROW_ID]
+        [month, companyId, PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID]
       );
     },
 
     async deletePayrollByMonthCompany(month, companyId) {
-      await run("DELETE FROM payroll_entries WHERE month = ? AND company_id = ? AND employee_id <> ?", [month, companyId, PAYROLL_REPORT_ROW_ID]);
+      await run("DELETE FROM payroll_entries WHERE month = ? AND company_id = ? AND employee_id NOT IN (?, ?)", [month, companyId, PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID]);
     },
 
     async replacePayrollRecords(month, companyId, records) {
@@ -971,6 +985,53 @@ function createSqliteStore(baseDir) {
         ]
       );
       return { id: result.lastID };
+    },
+
+    async listEmployeeVerificationsByCompany(companyId) {
+      return all(
+        `SELECT id, company_id, full_name, date_of_birth, payload_json, created_at, updated_at
+         FROM employee_verifications
+         WHERE company_id = ?
+         ORDER BY updated_at DESC, id DESC`,
+        [companyId]
+      );
+    },
+
+    async getEmployeeVerificationByIdCompany(id, companyId) {
+      return get(
+        `SELECT id, company_id, full_name, date_of_birth, payload_json, created_at, updated_at
+         FROM employee_verifications
+         WHERE id = ? AND company_id = ?
+         LIMIT 1`,
+        [id, companyId]
+      );
+    },
+
+    async saveEmployeeVerification(companyId, payload) {
+      const id = Number(payload?.id || 0);
+      const fullName = payload?.primaryBioData?.fullName || "";
+      const dateOfBirth = payload?.primaryBioData?.dateOfBirth || "";
+      const payloadJson = JSON.stringify(payload || {});
+      if (id > 0) {
+        await run(
+          `UPDATE employee_verifications
+           SET full_name = ?, date_of_birth = ?, payload_json = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND company_id = ?`,
+          [fullName, dateOfBirth, payloadJson, id, companyId]
+        );
+        return { id };
+      }
+      const result = await run(
+        `INSERT INTO employee_verifications (
+          company_id, full_name, date_of_birth, payload_json, updated_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [companyId, fullName, dateOfBirth, payloadJson]
+      );
+      return { id: result.lastID };
+    },
+
+    async deleteEmployeeVerificationByIdCompany(id, companyId) {
+      await run("DELETE FROM employee_verifications WHERE id = ? AND company_id = ?", [id, companyId]);
     },
 
     async setCompanyOwner(id, ownerId) {
@@ -1485,7 +1546,7 @@ function createFirebaseStore(baseDir) {
       const snapshot = await col("payroll_entries").get();
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
-        .filter((row) => String(row.employee_id || "") !== PAYROLL_REPORT_ROW_ID)
+        .filter((row) => ![PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID].includes(String(row.employee_id || "")))
         .sort((a, b) => {
           const aCompany = Number(a.company_id || 0);
           const bCompany = Number(b.company_id || 0);
@@ -1502,7 +1563,9 @@ function createFirebaseStore(baseDir) {
       const snapshot = await col("payroll_entries").get();
       return snapshot.docs
         .map((docSnap) => docSnap.data() || {})
-        .filter((row) => row.month === month && Number(row.company_id) === Number(companyId) && String(row.employee_id || "") !== PAYROLL_REPORT_ROW_ID)
+        .filter((row) => row.month === month
+          && Number(row.company_id) === Number(companyId)
+          && ![PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID].includes(String(row.employee_id || "")))
         .sort((a, b) => {
           const posCmp = Number(a.position_index || 0) - Number(b.position_index || 0);
           if (posCmp !== 0) return posCmp;
@@ -1682,6 +1745,44 @@ function createFirebaseStore(baseDir) {
       return { id: reportId };
     },
 
+    async listEmployeeVerificationsByCompany(companyId) {
+      const snapshot = await col("employee_verifications").get();
+      return snapshot.docs
+        .map((docSnap) => docSnap.data() || {})
+        .filter((row) => Number(row.company_id) === Number(companyId))
+        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || (Number(b.id || 0) - Number(a.id || 0)));
+    },
+
+    async getEmployeeVerificationByIdCompany(id, companyId) {
+      const snap = await col("employee_verifications").doc(String(id)).get();
+      if (!snap.exists) return null;
+      const row = snap.data() || {};
+      return Number(row.company_id) === Number(companyId) ? row : null;
+    },
+
+    async saveEmployeeVerification(companyId, payload) {
+      const existingId = Number(payload?.id || 0);
+      const id = existingId > 0 ? existingId : await getCounter("employee_verifications");
+      const existing = existingId > 0 ? await this.getEmployeeVerificationByIdCompany(existingId, companyId) : null;
+      await col("employee_verifications").doc(String(id)).set({
+        id,
+        company_id: Number(companyId),
+        full_name: payload?.primaryBioData?.fullName || "",
+        date_of_birth: payload?.primaryBioData?.dateOfBirth || "",
+        payload_json: JSON.stringify(payload || {}),
+        created_at: existing?.created_at || nowIso(),
+        updated_at: nowIso(),
+      }, { merge: true });
+      return { id };
+    },
+
+    async deleteEmployeeVerificationByIdCompany(id, companyId) {
+      const existing = await this.getEmployeeVerificationByIdCompany(id, companyId);
+      if (existing) {
+        await col("employee_verifications").doc(String(id)).delete();
+      }
+    },
+
     async setCompanyOwner(id, ownerId) {
       await col("companies").doc(String(id)).set({ owner_id: ownerId }, { merge: true });
     },
@@ -1696,6 +1797,7 @@ function createSupabaseStore() {
   const supabaseCapabilities = {
     requiredTablesChecked: false,
     payrollReportsTable: null,
+    employeeVerificationsTable: null,
   };
 
   if (!baseUrl || !serviceRoleKey) {
@@ -1916,12 +2018,31 @@ function createSupabaseStore() {
     }));
 
     supabaseCapabilities.payrollReportsTable = await probeTableExists("payroll_reports");
+    supabaseCapabilities.employeeVerificationsTable = await probeTableExists("employee_verifications");
     supabaseCapabilities.requiredTablesChecked = true;
   }
 
   async function canUsePayrollReportsTable() {
     await ensureSupabaseSchemaReady();
     return supabaseCapabilities.payrollReportsTable === true;
+  }
+
+  async function canUseEmployeeVerificationsTable() {
+    await ensureSupabaseSchemaReady();
+    return supabaseCapabilities.employeeVerificationsTable === true;
+  }
+
+  function legacyVerificationRowToRecord(row) {
+    return {
+      id: row.id,
+      company_id: row.company_id,
+      full_name: row.employee_name || "",
+      date_of_birth: row.designation || "",
+      payload_json: row.comment || "",
+      created_at: row.updated_at || "",
+      updated_at: row.updated_at || "",
+      legacy: true,
+    };
   }
 
   return {
@@ -2335,27 +2456,27 @@ function createSupabaseStore() {
     },
 
     async listPayrollEntriesAll() {
-      return supabaseRest("payroll_entries", {
+      const rows = await supabaseRest("payroll_entries", {
         query: {
           select: "*",
-          employee_id: `neq.${PAYROLL_REPORT_ROW_ID}`,
           order: "company_id.asc,month.asc,position_index.asc,id.asc",
         },
         allowEmpty: true,
       });
+      return (rows || []).filter((row) => ![PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID].includes(String(row.employee_id || "")));
     },
 
     async listPayrollByMonthCompany(month, companyId) {
-      return supabaseRest("payroll_entries", {
+      const rows = await supabaseRest("payroll_entries", {
         query: {
           select: "*",
           month: `eq.${month}`,
           company_id: `eq.${Number(companyId)}`,
-          employee_id: `neq.${PAYROLL_REPORT_ROW_ID}`,
           order: "position_index.asc,id.asc",
         },
         allowEmpty: true,
       });
+      return (rows || []).filter((row) => ![PAYROLL_REPORT_ROW_ID, EMPLOYEE_VERIFICATION_ROW_ID].includes(String(row.employee_id || "")));
     },
 
     async deletePayrollByMonthCompany(month, companyId) {
@@ -2677,6 +2798,133 @@ function createSupabaseStore() {
         updated_at: nowIso(),
       }]));
       return { id: legacyId };
+    },
+
+    async listEmployeeVerificationsByCompany(companyId) {
+      if (await canUseEmployeeVerificationsTable()) {
+        return supabaseRest("employee_verifications", {
+          query: {
+            select: "*",
+            company_id: `eq.${Number(companyId)}`,
+            order: "updated_at.desc,id.desc",
+          },
+          allowEmpty: true,
+        });
+      }
+
+      const rows = await supabaseRest("payroll_entries", {
+        query: {
+          select: "*",
+          company_id: `eq.${Number(companyId)}`,
+          month: `eq.${EMPLOYEE_VERIFICATION_LEGACY_MONTH}`,
+          employee_id: `eq.${EMPLOYEE_VERIFICATION_ROW_ID}`,
+          order: "updated_at.desc,id.desc",
+        },
+        allowEmpty: true,
+      });
+      return (rows || []).map(legacyVerificationRowToRecord);
+    },
+
+    async getEmployeeVerificationByIdCompany(id, companyId) {
+      if (await canUseEmployeeVerificationsTable()) {
+        return maybeSingle("employee_verifications", {
+          select: "*",
+          id: `eq.${Number(id)}`,
+          company_id: `eq.${Number(companyId)}`,
+        });
+      }
+
+      const row = await maybeSingle("payroll_entries", {
+        select: "*",
+        id: `eq.${Number(id)}`,
+        company_id: `eq.${Number(companyId)}`,
+        month: `eq.${EMPLOYEE_VERIFICATION_LEGACY_MONTH}`,
+        employee_id: `eq.${EMPLOYEE_VERIFICATION_ROW_ID}`,
+      });
+      return row ? legacyVerificationRowToRecord(row) : null;
+    },
+
+    async saveEmployeeVerification(companyId, payload) {
+      const id = Number(payload?.id || 0);
+      const body = {
+        company_id: Number(companyId),
+        full_name: payload?.primaryBioData?.fullName || "",
+        date_of_birth: payload?.primaryBioData?.dateOfBirth || "",
+        payload_json: JSON.stringify(payload || {}),
+        updated_at: nowIso(),
+      };
+
+      if (await canUseEmployeeVerificationsTable()) {
+        if (id > 0) {
+          await supabaseRest("employee_verifications", {
+            method: "PATCH",
+            query: { id: `eq.${id}`, company_id: `eq.${Number(companyId)}` },
+            body,
+          });
+          return { id };
+        }
+        const newId = await insertSupabaseRowWithRetry("employee_verifications", (generatedId) => [{
+          ...(generatedId === null ? {} : { id: generatedId }),
+          ...body,
+          created_at: nowIso(),
+        }]);
+        return { id: newId };
+      }
+
+      const legacyBody = {
+        company_id: Number(companyId),
+        month: EMPLOYEE_VERIFICATION_LEGACY_MONTH,
+        employee_id: EMPLOYEE_VERIFICATION_ROW_ID,
+        employee_name: body.full_name,
+        designation: body.date_of_birth,
+        present_salary: 0,
+        increment: 0,
+        old_advance_taken: 0,
+        extra_advance_added: 0,
+        deduction_entered: 0,
+        days_absent: 0,
+        comment: body.payload_json,
+        position_index: 999998,
+        updated_at: body.updated_at,
+      };
+      if (id > 0) {
+        await supabaseRest("payroll_entries", {
+          method: "PATCH",
+          query: {
+            id: `eq.${id}`,
+            company_id: `eq.${Number(companyId)}`,
+            month: `eq.${EMPLOYEE_VERIFICATION_LEGACY_MONTH}`,
+            employee_id: `eq.${EMPLOYEE_VERIFICATION_ROW_ID}`,
+          },
+          body: legacyBody,
+        });
+        return { id };
+      }
+      const legacyId = await insertSupabaseRowWithRetry("payroll_entries", (generatedId) => [{
+        ...(generatedId === null ? {} : { id: generatedId }),
+        ...legacyBody,
+      }]);
+      return { id: legacyId };
+    },
+
+    async deleteEmployeeVerificationByIdCompany(id, companyId) {
+      if (await canUseEmployeeVerificationsTable()) {
+        await supabaseRest("employee_verifications", {
+          method: "DELETE",
+          query: { id: `eq.${Number(id)}`, company_id: `eq.${Number(companyId)}` },
+        });
+        return;
+      }
+
+      await supabaseRest("payroll_entries", {
+        method: "DELETE",
+        query: {
+          id: `eq.${Number(id)}`,
+          company_id: `eq.${Number(companyId)}`,
+          month: `eq.${EMPLOYEE_VERIFICATION_LEGACY_MONTH}`,
+          employee_id: `eq.${EMPLOYEE_VERIFICATION_ROW_ID}`,
+        },
+      });
     },
 
     async setCompanyOwner(id, ownerId) {

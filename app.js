@@ -89,6 +89,45 @@ const SELECTORS = {
   payrollSection: document.getElementById("payrollSection"),
   settingsSection: document.getElementById("settingsSection"),
   reportsSection: document.getElementById("reportsSection"),
+  reportTabs: Array.from(document.querySelectorAll("[data-report-tab]")),
+  reportPanels: Array.from(document.querySelectorAll("[data-report-panel]")),
+  verificationSection: document.getElementById("verificationSection"),
+  verificationForm: document.getElementById("verificationForm"),
+  verificationIdInput: document.getElementById("verificationIdInput"),
+  verificationFullNameInput: document.getElementById("verificationFullNameInput"),
+  verificationDobInput: document.getElementById("verificationDobInput"),
+  verificationAgeInput: document.getElementById("verificationAgeInput"),
+  verificationCurrentAddressInput: document.getElementById("verificationCurrentAddressInput"),
+  verificationPermanentAddressInput: document.getElementById("verificationPermanentAddressInput"),
+  verificationCameraVideo: document.getElementById("verificationCameraVideo"),
+  verificationPhotoCanvas: document.getElementById("verificationPhotoCanvas"),
+  verificationPhotoPreview: document.getElementById("verificationPhotoPreview"),
+  startCameraBtn: document.getElementById("startCameraBtn"),
+  capturePhotoBtn: document.getElementById("capturePhotoBtn"),
+  verificationPhotoUploadInput: document.getElementById("verificationPhotoUploadInput"),
+  phoneCameraAccess: document.getElementById("phoneCameraAccess"),
+  phoneCameraUrlText: document.getElementById("phoneCameraUrlText"),
+  phoneCameraLink: document.getElementById("phoneCameraLink"),
+  copyPhoneCameraLinkBtn: document.getElementById("copyPhoneCameraLinkBtn"),
+  addIdProofBtn: document.getElementById("addIdProofBtn"),
+  idProofsList: document.getElementById("idProofsList"),
+  medicalEnabledInput: document.getElementById("medicalEnabledInput"),
+  medicalFields: document.getElementById("medicalFields"),
+  medicalFitnessStatusInput: document.getElementById("medicalFitnessStatusInput"),
+  medicalCertificateInput: document.getElementById("medicalCertificateInput"),
+  medicalCertificateName: document.getElementById("medicalCertificateName"),
+  screenTobaccoInput: document.getElementById("screenTobaccoInput"),
+  screenAlcoholInput: document.getElementById("screenAlcoholInput"),
+  screenSubstanceInput: document.getElementById("screenSubstanceInput"),
+  screenPolicyInput: document.getElementById("screenPolicyInput"),
+  emergencyNameInput: document.getElementById("emergencyNameInput"),
+  emergencyRelationshipInput: document.getElementById("emergencyRelationshipInput"),
+  emergencyPhoneInput: document.getElementById("emergencyPhoneInput"),
+  policeConsentInput: document.getElementById("policeConsentInput"),
+  printVerificationBtn: document.getElementById("printVerificationBtn"),
+  newVerificationBtn: document.getElementById("newVerificationBtn"),
+  verificationRecordsBody: document.getElementById("verificationRecordsBody"),
+  verificationMessage: document.getElementById("verificationMessage"),
   settingsUsernameValue: document.getElementById("settingsUsernameValue"),
   settingsEmailValue: document.getElementById("settingsEmailValue"),
   settingsEmailStatusValue: document.getElementById("settingsEmailStatusValue"),
@@ -164,6 +203,11 @@ let activePayrollReportSnapshot = null;
 let selectedGeneratedPayslipsByReport = new Map();
 let errorLogs = readStoredErrorLogs();
 let backupStatus = null;
+let employeeVerifications = [];
+let activeVerificationPhotoDataUrl = "";
+let activeMedicalCertificate = { fileName: "", dataUrl: "" };
+let verificationCameraStream = null;
+let phoneCameraUrl = "";
 
 const MOTIVATING_MESSAGES = [
   "Great job this month. Your effort and consistency are truly appreciated.",
@@ -359,6 +403,7 @@ async function init() {
   wireAuth();
   wirePasswordToggles();
   wireEmployeeManagement();
+  wireEmployeeVerification();
   wireAppActions();
   wireSettingsActions();
   wireGlobalErrorLogging();
@@ -1135,6 +1180,469 @@ function wireGlobalErrorLogging() {
   });
 }
 
+function wireEmployeeVerification() {
+  SELECTORS.verificationDobInput?.addEventListener("change", updateVerificationAge);
+  SELECTORS.medicalEnabledInput?.addEventListener("change", () => {
+    SELECTORS.medicalFields?.classList.toggle("hidden", !SELECTORS.medicalEnabledInput.checked);
+  });
+  SELECTORS.addIdProofBtn?.addEventListener("click", () => addIdProofRow());
+  SELECTORS.startCameraBtn?.addEventListener("click", toggleVerificationCamera);
+  SELECTORS.capturePhotoBtn?.addEventListener("click", captureVerificationPhoto);
+  SELECTORS.verificationPhotoUploadInput?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    stopVerificationCamera();
+    activeVerificationPhotoDataUrl = await fileToDataUrl(file);
+    renderVerificationPhoto();
+  });
+  SELECTORS.medicalCertificateInput?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    activeMedicalCertificate = {
+      fileName: file.name,
+      dataUrl: await fileToDataUrl(file),
+    };
+    if (SELECTORS.medicalCertificateName) {
+      SELECTORS.medicalCertificateName.textContent = file.name;
+    }
+  });
+  SELECTORS.copyPhoneCameraLinkBtn?.addEventListener("click", copyPhoneCameraLink);
+  SELECTORS.verificationForm?.addEventListener("submit", saveEmployeeVerification);
+  SELECTORS.newVerificationBtn?.addEventListener("click", resetVerificationForm);
+  SELECTORS.printVerificationBtn?.addEventListener("click", () => {
+    const payload = collectVerificationPayload();
+    printVerificationRecord(payload);
+  });
+  SELECTORS.verificationRecordsBody?.addEventListener("click", async (event) => {
+    const button = event.target instanceof HTMLElement ? event.target.closest("button") : null;
+    if (!button) return;
+    const id = Number(button.dataset.id || 0);
+    const record = employeeVerifications.find((item) => Number(item.id) === id);
+    if (!record) return;
+
+    if (button.dataset.action === "edit") {
+      fillVerificationForm(record);
+      SELECTORS.verificationSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (button.dataset.action === "print") {
+      printVerificationRecord(record);
+      return;
+    }
+
+    if (button.dataset.action === "delete") {
+      if (!window.confirm("Delete this verification record?")) return;
+      try {
+        await apiRequest(`/api/employee-verifications/${id}?companyId=${getSelectedCompanyId()}`, { method: "DELETE" });
+        await loadEmployeeVerifications();
+        showAppMessage("Verification record removed.");
+      } catch (error) {
+        setVerificationMessage(error.message || "Failed to delete verification record.");
+      }
+    }
+  });
+  addIdProofRow();
+  renderVerificationPhoto();
+  loadPhoneCameraAccess();
+}
+
+function calculateAgeFromDob(dob) {
+  if (!dob) return null;
+  const birthDate = new Date(`${dob}T00:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 && age <= 120 ? age : null;
+}
+
+function updateVerificationAge() {
+  const age = calculateAgeFromDob(SELECTORS.verificationDobInput?.value || "");
+  if (SELECTORS.verificationAgeInput) {
+    SELECTORS.verificationAgeInput.value = age === null ? "" : `${age}`;
+  }
+}
+
+function addIdProofRow(proof = {}) {
+  if (!SELECTORS.idProofsList) return;
+  const row = document.createElement("div");
+  row.className = "id-proof-row";
+  row.innerHTML = `
+    <label>
+      Type
+      <select data-proof-field="type">
+        <option value="">Select</option>
+        <option value="Aadhaar">Aadhaar</option>
+        <option value="PAN">PAN</option>
+        <option value="Voter ID">Voter ID</option>
+        <option value="Driving Licence">Driving Licence</option>
+        <option value="Other">Other</option>
+      </select>
+    </label>
+    <label>
+      Reference
+      <input type="text" data-proof-field="reference" maxlength="160" />
+    </label>
+    <label>
+      File
+      <input type="file" data-proof-field="file" accept="image/*,.pdf" />
+    </label>
+    <button type="button" class="mini ghost" data-proof-remove>Remove</button>
+  `;
+  row.querySelector('[data-proof-field="type"]').value = proof.type || "";
+  row.querySelector('[data-proof-field="reference"]').value = proof.reference || "";
+  row.dataset.fileName = proof.fileName || "";
+  row.dataset.fileDataUrl = proof.fileDataUrl || "";
+  row.querySelector('[data-proof-remove]')?.addEventListener("click", () => {
+    row.remove();
+    if (!SELECTORS.idProofsList.querySelector(".id-proof-row")) addIdProofRow();
+  });
+  row.querySelector('[data-proof-field="file"]')?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    row.dataset.fileName = file.name;
+    row.dataset.fileDataUrl = await fileToDataUrl(file);
+  });
+  SELECTORS.idProofsList.appendChild(row);
+}
+
+function collectIdProofs() {
+  return Array.from(SELECTORS.idProofsList?.querySelectorAll(".id-proof-row") || []).map((row) => ({
+    type: row.querySelector('[data-proof-field="type"]')?.value || "",
+    reference: row.querySelector('[data-proof-field="reference"]')?.value.trim() || "",
+    fileName: row.dataset.fileName || "",
+    fileDataUrl: row.dataset.fileDataUrl || "",
+  })).filter((proof) => proof.type || proof.reference || proof.fileName || proof.fileDataUrl);
+}
+
+function collectVerificationPayload() {
+  const dob = SELECTORS.verificationDobInput?.value || "";
+  return {
+    id: Number(SELECTORS.verificationIdInput?.value || 0) || null,
+    companyId: getSelectedCompanyId(),
+    primaryBioData: {
+      fullName: SELECTORS.verificationFullNameInput?.value.trim() || "",
+      dateOfBirth: dob,
+      age: calculateAgeFromDob(dob),
+      currentAddress: SELECTORS.verificationCurrentAddressInput?.value.trim() || "",
+      permanentAddress: SELECTORS.verificationPermanentAddressInput?.value.trim() || "",
+    },
+    mediaDocuments: {
+      photoDataUrl: activeVerificationPhotoDataUrl,
+      idProofs: collectIdProofs(),
+    },
+    medical: {
+      enabled: Boolean(SELECTORS.medicalEnabledInput?.checked),
+      fitnessStatus: SELECTORS.medicalFitnessStatusInput?.value || "",
+      certificateFileName: activeMedicalCertificate.fileName || "",
+      certificateDataUrl: activeMedicalCertificate.dataUrl || "",
+    },
+    internalScreening: {
+      classification: "sensitive/internal_only",
+      consumesTobacco: Boolean(SELECTORS.screenTobaccoInput?.checked),
+      consumesAlcohol: Boolean(SELECTORS.screenAlcoholInput?.checked),
+      substanceAbuseSigns: Boolean(SELECTORS.screenSubstanceInput?.checked),
+      zeroToleranceAcknowledged: Boolean(SELECTORS.screenPolicyInput?.checked),
+    },
+    emergencyVerification: {
+      emergencyContactName: SELECTORS.emergencyNameInput?.value.trim() || "",
+      relationship: SELECTORS.emergencyRelationshipInput?.value.trim() || "",
+      phoneNumber: SELECTORS.emergencyPhoneInput?.value.trim() || "",
+      consentToPoliceVerification: Boolean(SELECTORS.policeConsentInput?.checked),
+    },
+  };
+}
+
+async function saveEmployeeVerification(event) {
+  event.preventDefault();
+  const payload = collectVerificationPayload();
+  if (!payload.primaryBioData.fullName || !payload.primaryBioData.dateOfBirth) {
+    setVerificationMessage("Full name and DOB are required.");
+    return;
+  }
+  if (!payload.emergencyVerification.consentToPoliceVerification) {
+    setVerificationMessage("Police verification consent is required.");
+    return;
+  }
+  try {
+    SELECTORS.verificationForm?.querySelector('button[type="submit"]')?.setAttribute("disabled", "disabled");
+    const response = await apiRequest("/api/employee-verifications", {
+      method: "POST",
+      body: payload,
+    });
+    fillVerificationForm(response.verification || payload);
+    await loadEmployeeVerifications();
+    setVerificationMessage("Verification saved to database.");
+    showAppMessage("Verification saved.");
+  } catch (error) {
+    setVerificationMessage(error.message || "Failed to save verification.");
+  } finally {
+    SELECTORS.verificationForm?.querySelector('button[type="submit"]')?.removeAttribute("disabled");
+  }
+}
+
+async function loadEmployeeVerifications() {
+  if (!getSelectedCompanyId()) return;
+  try {
+    const response = await apiRequest(`/api/employee-verifications?companyId=${getSelectedCompanyId()}`);
+    employeeVerifications = Array.isArray(response.verifications) ? response.verifications : [];
+    renderVerificationRecords();
+  } catch (error) {
+    employeeVerifications = [];
+    renderVerificationRecords();
+    setVerificationMessage(error.message || "Failed to load verification records.");
+  }
+}
+
+function renderVerificationRecords() {
+  if (!SELECTORS.verificationRecordsBody) return;
+  if (!employeeVerifications.length) {
+    SELECTORS.verificationRecordsBody.innerHTML = '<tr><td colspan="6">No verification records saved yet.</td></tr>';
+    return;
+  }
+  SELECTORS.verificationRecordsBody.innerHTML = employeeVerifications.map((record) => `
+    <tr>
+      <td>${escapeHtml(record.primaryBioData?.fullName || "-")}</td>
+      <td>${escapeHtml(record.primaryBioData?.dateOfBirth || "-")}</td>
+      <td>${escapeHtml(record.emergencyVerification?.emergencyContactName || "-")}</td>
+      <td>${record.emergencyVerification?.consentToPoliceVerification ? "Yes" : "No"}</td>
+      <td>${escapeHtml(formatDateTime(record.updatedAt || ""))}</td>
+      <td class="row-actions">
+        <button type="button" class="mini ghost" data-action="edit" data-id="${record.id}">Edit</button>
+        <button type="button" class="mini ghost" data-action="print" data-id="${record.id}">Print</button>
+        <button type="button" class="mini danger" data-action="delete" data-id="${record.id}">Delete</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function fillVerificationForm(record) {
+  if (!record) return;
+  stopVerificationCamera();
+  SELECTORS.verificationIdInput.value = record.id || "";
+  SELECTORS.verificationFullNameInput.value = record.primaryBioData?.fullName || "";
+  SELECTORS.verificationDobInput.value = record.primaryBioData?.dateOfBirth || "";
+  SELECTORS.verificationCurrentAddressInput.value = record.primaryBioData?.currentAddress || "";
+  SELECTORS.verificationPermanentAddressInput.value = record.primaryBioData?.permanentAddress || "";
+  activeVerificationPhotoDataUrl = record.mediaDocuments?.photoDataUrl || "";
+  activeMedicalCertificate = {
+    fileName: record.medical?.certificateFileName || "",
+    dataUrl: record.medical?.certificateDataUrl || "",
+  };
+  SELECTORS.medicalEnabledInput.checked = Boolean(record.medical?.enabled);
+  SELECTORS.medicalFields?.classList.toggle("hidden", !SELECTORS.medicalEnabledInput.checked);
+  SELECTORS.medicalFitnessStatusInput.value = record.medical?.fitnessStatus || "";
+  if (SELECTORS.medicalCertificateName) SELECTORS.medicalCertificateName.textContent = activeMedicalCertificate.fileName || "";
+  SELECTORS.screenTobaccoInput.checked = Boolean(record.internalScreening?.consumesTobacco);
+  SELECTORS.screenAlcoholInput.checked = Boolean(record.internalScreening?.consumesAlcohol);
+  SELECTORS.screenSubstanceInput.checked = Boolean(record.internalScreening?.substanceAbuseSigns);
+  SELECTORS.screenPolicyInput.checked = Boolean(record.internalScreening?.zeroToleranceAcknowledged);
+  SELECTORS.emergencyNameInput.value = record.emergencyVerification?.emergencyContactName || "";
+  SELECTORS.emergencyRelationshipInput.value = record.emergencyVerification?.relationship || "";
+  SELECTORS.emergencyPhoneInput.value = record.emergencyVerification?.phoneNumber || "";
+  SELECTORS.policeConsentInput.checked = Boolean(record.emergencyVerification?.consentToPoliceVerification);
+  SELECTORS.idProofsList.innerHTML = "";
+  const proofs = record.mediaDocuments?.idProofs?.length ? record.mediaDocuments.idProofs : [{}];
+  proofs.forEach((proof) => addIdProofRow(proof));
+  updateVerificationAge();
+  renderVerificationPhoto();
+}
+
+function resetVerificationForm() {
+  stopVerificationCamera();
+  SELECTORS.verificationForm?.reset();
+  SELECTORS.verificationIdInput.value = "";
+  activeVerificationPhotoDataUrl = "";
+  activeMedicalCertificate = { fileName: "", dataUrl: "" };
+  SELECTORS.idProofsList.innerHTML = "";
+  addIdProofRow();
+  SELECTORS.medicalFields?.classList.add("hidden");
+  if (SELECTORS.medicalCertificateName) SELECTORS.medicalCertificateName.textContent = "";
+  updateVerificationAge();
+  renderVerificationPhoto();
+  setVerificationMessage("");
+}
+
+function renderVerificationPhoto() {
+  if (!SELECTORS.verificationPhotoPreview) return;
+  SELECTORS.verificationPhotoPreview.src = activeVerificationPhotoDataUrl || "";
+  SELECTORS.verificationPhotoPreview.classList.toggle("empty", !activeVerificationPhotoDataUrl);
+}
+
+async function loadPhoneCameraAccess() {
+  if (!SELECTORS.phoneCameraAccess) return;
+  try {
+    const response = await apiRequest("/api/access-url");
+    const url = response.lanUrl || response.localUrl || "";
+    phoneCameraUrl = url ? `${url}/?workspace=verification` : "";
+    if (!phoneCameraUrl) return;
+    SELECTORS.phoneCameraAccess.classList.remove("hidden");
+    SELECTORS.phoneCameraUrlText.textContent = phoneCameraUrl;
+    SELECTORS.phoneCameraLink.href = phoneCameraUrl;
+  } catch {
+    SELECTORS.phoneCameraAccess.classList.add("hidden");
+  }
+}
+
+async function copyPhoneCameraLink() {
+  if (!phoneCameraUrl) {
+    setVerificationMessage("Phone link is not available yet.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(phoneCameraUrl);
+    setVerificationMessage("Phone camera link copied.");
+  } catch {
+    setVerificationMessage(phoneCameraUrl);
+  }
+}
+
+function toggleVerificationCamera() {
+  if (verificationCameraStream) {
+    stopVerificationCamera();
+    setVerificationMessage("Camera stopped.");
+    return;
+  }
+  startVerificationCamera();
+}
+
+async function startVerificationCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setVerificationMessage("Camera is not available on this device.");
+    return;
+  }
+  try {
+    verificationCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    SELECTORS.verificationCameraVideo.srcObject = verificationCameraStream;
+    SELECTORS.verificationCameraVideo.classList.remove("hidden");
+    SELECTORS.verificationPhotoPreview.classList.add("hidden");
+    if (SELECTORS.startCameraBtn) SELECTORS.startCameraBtn.textContent = "Stop Camera";
+    setVerificationMessage("Camera ready.");
+  } catch (error) {
+    setVerificationMessage(error.message || "Unable to start camera.");
+  }
+}
+
+function stopVerificationCamera() {
+  if (verificationCameraStream) {
+    verificationCameraStream.getTracks().forEach((track) => track.stop());
+    verificationCameraStream = null;
+  }
+  if (SELECTORS.verificationCameraVideo) {
+    SELECTORS.verificationCameraVideo.srcObject = null;
+    SELECTORS.verificationCameraVideo.classList.add("hidden");
+  }
+  SELECTORS.verificationPhotoPreview?.classList.remove("hidden");
+  if (SELECTORS.startCameraBtn) SELECTORS.startCameraBtn.textContent = "Start Camera";
+}
+
+function captureVerificationPhoto() {
+  const video = SELECTORS.verificationCameraVideo;
+  const canvas = SELECTORS.verificationPhotoCanvas;
+  if (!video || !canvas || !verificationCameraStream) {
+    setVerificationMessage("Start the camera first, or upload a photo.");
+    return;
+  }
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+  activeVerificationPhotoDataUrl = canvas.toDataURL("image/jpeg", 0.86);
+  stopVerificationCamera();
+  renderVerificationPhoto();
+  setVerificationMessage("Photo captured.");
+}
+
+function setVerificationMessage(message) {
+  if (!SELECTORS.verificationMessage) return;
+  applyStatusTone(SELECTORS.verificationMessage, message);
+  SELECTORS.verificationMessage.textContent = message || "";
+}
+
+function printVerificationRecord(record) {
+  if (!record?.primaryBioData?.fullName) {
+    setVerificationMessage("Open or complete a verification record before printing.");
+    return;
+  }
+  const popup = window.open("", "_blank", "width=900,height=1100");
+  if (!popup) {
+    showAppMessage("Pop-up blocked. Allow pop-ups to print.");
+    return;
+  }
+  const idProofs = record.mediaDocuments?.idProofs || [];
+  popup.document.write(`<!doctype html>
+<html>
+<head>
+  <title>Employee Verification - ${escapeHtml(record.primaryBioData.fullName)}</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
+    .sheet { width: 100%; }
+    .head { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 18px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 14px; margin: 18px 0 8px; border-bottom: 1px solid #d1d5db; padding-bottom: 5px; }
+    p { margin: 3px 0; }
+    .photo { width: 112px; height: 136px; border: 1px solid #111827; object-fit: cover; background: #f3f4f6; }
+    .grid { display: grid; grid-template-columns: 150px 1fr; border: 1px solid #d1d5db; border-bottom: 0; }
+    .grid div { padding: 8px; border-bottom: 1px solid #d1d5db; }
+    .label { background: #f9fafb; font-weight: 700; border-right: 1px solid #d1d5db; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 12px; }
+    th { background: #f9fafb; }
+    .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; }
+    .line { border-top: 1px solid #111827; padding-top: 6px; }
+    .screen-only, .internal-only-card, [data-sensitive="internal_only"] { display: none !important; }
+    @media print {
+      .screen-only, .internal-only-card, [data-sensitive="internal_only"] { display: none !important; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <section class="head">
+      <div>
+        <h1>Employee Verification Form</h1>
+        <p>For local police verification submission</p>
+        <p>Generated: ${escapeHtml(new Date().toLocaleDateString("en-IN"))}</p>
+      </div>
+      ${record.mediaDocuments?.photoDataUrl ? `<img class="photo" src="${record.mediaDocuments.photoDataUrl}" alt="Employee photo" />` : '<div class="photo"></div>'}
+    </section>
+    <h2>Bio-Data</h2>
+    <div class="grid">
+      <div class="label">Full Name</div><div>${escapeHtml(record.primaryBioData.fullName)}</div>
+      <div class="label">Date of Birth</div><div>${escapeHtml(record.primaryBioData.dateOfBirth || "")}</div>
+      <div class="label">Age</div><div>${escapeHtml(record.primaryBioData.age ?? "")}</div>
+      <div class="label">Current Address</div><div>${escapeHtml(record.primaryBioData.currentAddress || "")}</div>
+      <div class="label">Permanent Address</div><div>${escapeHtml(record.primaryBioData.permanentAddress || "")}</div>
+    </div>
+    <h2>ID Proof References</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Reference</th><th>Attached File</th></tr></thead>
+      <tbody>${idProofs.length ? idProofs.map((proof) => `<tr><td>${escapeHtml(proof.type || "")}</td><td>${escapeHtml(proof.reference || "")}</td><td>${escapeHtml(proof.fileName || "")}</td></tr>`).join("") : '<tr><td colspan="3">No ID proof references added.</td></tr>'}</tbody>
+    </table>
+    <h2>Emergency Contact</h2>
+    <div class="grid">
+      <div class="label">Name</div><div>${escapeHtml(record.emergencyVerification?.emergencyContactName || "")}</div>
+      <div class="label">Relationship</div><div>${escapeHtml(record.emergencyVerification?.relationship || "")}</div>
+      <div class="label">Phone Number</div><div>${escapeHtml(record.emergencyVerification?.phoneNumber || "")}</div>
+      <div class="label">Police Verification Consent</div><div>${record.emergencyVerification?.consentToPoliceVerification ? "Yes" : "No"}</div>
+    </div>
+    <div class="sign">
+      <div class="line">Employee Signature</div>
+      <div class="line">Employer Signature / Stamp</div>
+    </div>
+  </main>
+</body>
+</html>`);
+  popup.document.close();
+  popup.focus();
+  setTimeout(() => popup.print(), 250);
+}
+
 function getPayrollEntries(month = getSelectedMonth()) {
   return currentRecords
     .map((record, index) => ({ record, index, calc: computePayroll(record, month) }))
@@ -1260,6 +1768,93 @@ function dashboardAttentionItems(month = getSelectedMonth()) {
   return items.slice(0, 6);
 }
 
+function dashboardPayrollDistribution(month = getSelectedMonth()) {
+  const groups = new Map();
+  for (const record of currentRecords) {
+    if (!isPayrollVisibleForMonth(record, month)) continue;
+    const calc = computePayroll(record, month);
+    const label = sanitizeDashboardLabel(record.designation || "Unassigned");
+    const existing = groups.get(label) || { label, net: 0, deductions: 0, advance: 0, employees: 0 };
+    existing.net += Math.max(0, calc.netSalary || 0);
+    existing.deductions += Math.max(0, (calc.deductionApplied || 0) + (calc.proratedAbsenceDeduction || 0));
+    existing.advance += Math.max(0, calc.advanceRemained || 0);
+    existing.employees += 1;
+    groups.set(label, existing);
+  }
+
+  return Array.from(groups.values())
+    .sort((a, b) => b.net - a.net || b.employees - a.employees || a.label.localeCompare(b.label))
+    .slice(0, 7);
+}
+
+function sanitizeDashboardLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "Other";
+  return text.length > 11 ? `${text.slice(0, 10)}...` : text;
+}
+
+function renderDashboardPayrollDistribution(month = getSelectedMonth()) {
+  const groups = dashboardPayrollDistribution(month);
+  if (!groups.length) {
+    return `
+      <div class="dashboard-payroll-chart empty-chart">
+        <div class="dashboard-chart-head">
+          <strong>Payroll Distribution</strong>
+          <span>No payroll entries for ${escapeHtml(formatMonth(month))}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const maxValue = Math.max(...groups.map((group) => group.net + group.deductions + group.advance), 1);
+  return `
+    <div class="dashboard-payroll-chart">
+      <div class="dashboard-chart-head">
+        <strong>Payroll Distribution</strong>
+        <span>${escapeHtml(formatMonth(month))} • live payroll records</span>
+      </div>
+      <div class="dashboard-chart-legend">
+        <span><i class="net"></i>Net Pay</span>
+        <span><i class="deduction"></i>Deductions</span>
+        <span><i class="advance"></i>Advance</span>
+      </div>
+      <div class="dashboard-chart-bars">
+        ${groups.map((group) => {
+          const netHeight = Math.max(8, Math.round((group.net / maxValue) * 118));
+          const deductionHeight = Math.max(group.deductions > 0 ? 8 : 0, Math.round((group.deductions / maxValue) * 118));
+          const advanceHeight = Math.max(group.advance > 0 ? 8 : 0, Math.round((group.advance / maxValue) * 118));
+          return `
+            <div class="dashboard-chart-group" title="${escapeHtml(`${group.label}: ${formatCurrency(group.net)} net, ${formatCurrency(group.deductions)} deductions, ${formatCurrency(group.advance)} advance`)}">
+              <div class="dashboard-chart-stack" aria-label="${escapeHtml(group.label)} payroll distribution">
+                <span class="bar net" style="height:${netHeight}px"></span>
+                <span class="bar deduction" style="height:${deductionHeight}px"></span>
+                <span class="bar advance" style="height:${advanceHeight}px"></span>
+              </div>
+              <b>${escapeHtml(group.label)}</b>
+              <small>${group.employees} emp.</small>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboardPanelFooter(items = []) {
+  const safeItems = items.filter((item) => item && item.label);
+  if (!safeItems.length) return "";
+  return `
+    <div class="dashboard-panel-footer">
+      ${safeItems.map((item) => `
+        <div>
+          <b>${escapeHtml(item.value ?? "-")}</b>
+          <span>${escapeHtml(item.label)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderDashboardInsights() {
   const currentMonth = getSelectedMonth();
   const status = payrollStatusInfo(currentMonth);
@@ -1327,13 +1922,16 @@ function renderDashboardInsights() {
       },
     ];
 
-    SELECTORS.dashboardSummaryCards.innerHTML = summaryCards.map((card) => `
+    SELECTORS.dashboardSummaryCards.innerHTML = `
+      ${summaryCards.map((card) => `
       <article class="dashboard-stat-card tone-${card.tone}">
         <p>${escapeHtml(card.label)}</p>
         <strong>${escapeHtml(card.value)}</strong>
         <span>${escapeHtml(card.note)}</span>
       </article>
-    `).join("");
+      `).join("")}
+      ${renderDashboardPayrollDistribution(currentMonth)}
+    `;
   }
 
   if (SELECTORS.dashboardHighlightsBody) {
@@ -1366,28 +1964,54 @@ function renderDashboardInsights() {
       },
     ];
 
-    SELECTORS.dashboardHighlightsBody.innerHTML = highlights.map((item) => `
-      <div class="dashboard-list-item">
-        <strong>${escapeHtml(item.title)}</strong>
-        <span>${escapeHtml(item.detail)}</span>
+    SELECTORS.dashboardHighlightsBody.innerHTML = `
+      <div class="dashboard-list-scroll">
+        ${highlights.map((item) => `
+          <div class="dashboard-list-item">
+            <strong>${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(item.detail)}</span>
+          </div>
+        `).join("")}
       </div>
-    `).join("");
+      ${renderDashboardPanelFooter([
+        { value: formatCompactCurrency(net), label: "Net Pay" },
+        { value: formatCompactCurrency(gross), label: "Gross" },
+        { value: String(blockedCount), label: "Blocked" },
+      ])}
+    `;
   }
 
   if (SELECTORS.dashboardActivityBody) {
     const items = payrollReports.slice(0, 4);
+    const totalPayslips = payrollReports.reduce((sum, report) => sum + Number(report.employeeCount || 0), 0);
     SELECTORS.dashboardActivityBody.innerHTML = items.length
-      ? items.map((report, index) => `
-        <div class="dashboard-list-item">
-          <strong>${escapeHtml(`${index === 0 ? "Latest report" : "Saved report"} • ${formatMonth(report.month)}`)}</strong>
-          <span>${escapeHtml(`${report.employeeCount || 0} employee payslip(s) • checked ${formatDateTime(report.checkedAt) || "-"} • generated ${formatDateTime(report.generatedAt) || "-"}`)}</span>
+      ? `
+        <div class="dashboard-list-scroll">
+          ${items.map((report, index) => `
+            <div class="dashboard-list-item">
+              <strong>${escapeHtml(`${index === 0 ? "Latest report" : "Saved report"} • ${formatMonth(report.month)}`)}</strong>
+              <span>${escapeHtml(`${report.employeeCount || 0} employee payslip(s) • checked ${formatDateTime(report.checkedAt) || "-"} • generated ${formatDateTime(report.generatedAt) || "-"}`)}</span>
+            </div>
+          `).join("")}
         </div>
-      `).join("")
+        ${renderDashboardPanelFooter([
+          { value: String(payrollReports.length), label: "Months" },
+          { value: String(totalPayslips), label: "Payslips" },
+          { value: payrollReports[0] ? formatMonth(payrollReports[0].month) : "-", label: "Latest" },
+        ])}
+      `
       : `
-        <div class="dashboard-list-item empty-dashboard-item">
-          <strong>No payroll reports generated yet</strong>
-          <span>Generate employee payslips from Payroll to build a month-wise report timeline here.</span>
+        <div class="dashboard-list-scroll">
+          <div class="dashboard-list-item empty-dashboard-item">
+            <strong>No payroll reports generated yet</strong>
+            <span>Generate employee payslips from Payroll to build a month-wise report timeline here.</span>
+          </div>
         </div>
+        ${renderDashboardPanelFooter([
+          { value: "0", label: "Months" },
+          { value: "0", label: "Payslips" },
+          { value: "-", label: "Latest" },
+        ])}
       `;
   }
 }
@@ -1786,6 +2410,16 @@ function wireAppActions() {
     }
   });
 
+  SELECTORS.reportTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      setWorkspace("reports");
+      SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "reports"));
+      setReportPanel(button.dataset.reportTab || "summary");
+      SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  setReportPanel("summary");
+
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
     activePayrollReportId = null;
@@ -2002,7 +2636,8 @@ function wireAppActions() {
         return;
       }
       await openPayrollReport(reportId);
-      SELECTORS.generatedPayrollDetailTitle?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setReportPanel("payslips");
+      SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       showAppMessage(error.message);
     }
@@ -2492,6 +3127,7 @@ function wireCompanyActions() {
     await loadMonthRecords();
     await loadDesignationPresets();
     await loadPayrollReports();
+    await loadEmployeeVerifications();
     resetEmployeeForm();
     setSettingsMessage("");
   });
@@ -2531,6 +3167,7 @@ function wireCompanyActions() {
       await loadMonthRecords();
       await loadDesignationPresets();
       await loadPayrollReports();
+      await loadEmployeeVerifications();
       SELECTORS.companyDialog.close();
       showAppMessage("Company created.");
     } catch (error) {
@@ -2579,6 +3216,16 @@ function wireRailActions() {
         return;
       }
 
+      if (action === "verification") {
+        setWorkspace("verification");
+        loadEmployeeVerifications();
+        SELECTORS.verificationSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => {
+          SELECTORS.verificationFullNameInput?.focus();
+        }, 220);
+        return;
+      }
+
       if (action === "settings") {
         setWorkspace("settings");
         SELECTORS.settingsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2596,6 +3243,7 @@ function setWorkspace(view) {
   const employeesView = view === "employees";
   const payrollView = view === "payroll";
   const reportsView = view === "reports";
+  const verificationView = view === "verification";
   const settingsView = view === "settings";
 
   SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
@@ -2604,10 +3252,23 @@ function setWorkspace(view) {
   SELECTORS.employeesSection?.classList.toggle("hidden", !employeesView);
   SELECTORS.payrollSection?.classList.toggle("hidden", !payrollView);
   SELECTORS.reportsSection?.classList.toggle("hidden", !reportsView);
+  SELECTORS.verificationSection?.classList.toggle("hidden", !verificationView);
   SELECTORS.settingsSection?.classList.toggle("hidden", !settingsView);
   SELECTORS.saveStatus?.classList.toggle("hidden", !payrollView);
   
   localStorage.setItem("activeWorkspace", view);
+}
+
+function setReportPanel(panel = "summary") {
+  const safePanel = ["summary", "payslips", "leave", "errors"].includes(panel) ? panel : "summary";
+  SELECTORS.reportTabs.forEach((button) => {
+    const active = button.dataset.reportTab === safePanel;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  SELECTORS.reportPanels.forEach((section) => {
+    section.classList.toggle("hidden", section.dataset.reportPanel !== safePanel);
+  });
 }
 
 function closeActionMenu() {
@@ -2704,13 +3365,17 @@ async function switchToApp() {
       loadMonthRecords(),
       loadDesignationPresets(),
       loadPayrollReports(),
+      loadEmployeeVerifications(),
       loadBackupStatus(),
     ]);
   } catch (error) {
     showAppMessage(error.message || "Failed to load some application data.");
   }
   
-  const savedWorkspace = localStorage.getItem("activeWorkspace") || "dashboard";
+  const urlWorkspace = new URLSearchParams(window.location.search).get("workspace") || "";
+  const savedWorkspace = ["dashboard", "employees", "payroll", "reports", "verification", "settings"].includes(urlWorkspace)
+    ? urlWorkspace
+    : localStorage.getItem("activeWorkspace") || "dashboard";
   setWorkspace(savedWorkspace);
   SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === savedWorkspace));
 }
@@ -6206,6 +6871,17 @@ function formatCurrency(number) {
     currency: "INR",
     maximumFractionDigits: 2,
   }).format(number || 0);
+}
+
+function formatCompactCurrency(number) {
+  const rawValue = Number(number) || 0;
+  const value = Math.abs(rawValue);
+  const sign = rawValue < 0 ? "-" : "";
+  const compact = (amount, suffix, digits) => `${sign}₹${amount.toFixed(digits).replace(/\.0$/, "")}${suffix}`;
+  if (value >= 10000000) return compact(value / 10000000, "Cr", value >= 100000000 ? 0 : 1);
+  if (value >= 100000) return compact(value / 100000, "L", value >= 1000000 ? 0 : 1);
+  if (value >= 1000) return compact(value / 1000, "K", value >= 10000 ? 0 : 1);
+  return formatCurrency(rawValue);
 }
 
 function formatMonth(isoMonth) {

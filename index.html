@@ -917,6 +917,1146 @@
         .kpi-metrics-row { grid-template-columns: 1fr !important; }
       }
     </style>
+    <style id="routes-worknest-theme">
+      :root {
+        --rn-bg: #e4eef5;
+        --rn-frame: #f6fafc;
+        --rn-surface: #ffffff;
+        --rn-ink: #17191a;
+        --rn-muted: #657489;
+        --rn-line: #cbdce7;
+        --rn-navy: #093546;
+        --rn-blue: #55c2ef;
+        --rn-blue-2: #449bbf;
+        --rn-lime: #34bc74;
+        --rn-lime-soft: #e4f7ee;
+        --rn-orange: #f49e4a;
+        --rn-red: #bc5656;
+        --rn-mint: #e4eef5;
+        --rn-steel: #a7b4c7;
+        --rn-soft: #f7f8fa;
+        --rn-radius-xl: 28px;
+        --rn-radius-lg: 22px;
+        --rn-radius-md: 16px;
+        --rn-shadow: 0 18px 45px rgba(17, 24, 39, 0.08);
+        --rn-shadow-soft: 0 8px 24px rgba(17, 24, 39, 0.045);
+      }
+
+      html,
+      body {
+        background: var(--rn-bg) !important;
+        color: var(--rn-ink) !important;
+        letter-spacing: 0 !important;
+      }
+
+      .shell {
+        width: min(1760px, calc(100vw - 28px)) !important;
+        margin: 34px auto !important;
+        border: 10px solid rgba(255, 255, 255, 0.72) !important;
+        border-radius: 34px !important;
+        background: var(--rn-frame) !important;
+        box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12) !important;
+        overflow: hidden !important;
+      }
+
+      .app-view {
+        grid-template-columns: 318px minmax(0, 1fr) !important;
+        gap: 0 !important;
+        min-height: calc(100vh - 88px) !important;
+        background: var(--rn-frame) !important;
+      }
+
+      .app-main {
+        padding: 28px !important;
+        background:
+          radial-gradient(circle at 82% 0%, rgba(85, 194, 239, 0.16), transparent 30%),
+          radial-gradient(circle at 100% 16%, rgba(52, 188, 116, 0.09), transparent 24%),
+          linear-gradient(180deg, #f8fbfd 0%, #e4eef5 100%) !important;
+      }
+
+      .side-rail {
+        margin: 22px 0 22px 22px !important;
+        padding: 28px 22px !important;
+        border-radius: 26px !important;
+        background: var(--rn-surface) !important;
+        border: 1px solid rgba(255, 255, 255, 0.85) !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+        gap: 9px !important;
+      }
+
+      .side-rail::before {
+        content: "◆ Routes Payroll" !important;
+        margin: 0 0 28px !important;
+        padding: 0 2px 22px !important;
+        border-bottom: 1px solid var(--rn-line) !important;
+        color: var(--rn-ink) !important;
+        font-size: 1.45rem !important;
+        letter-spacing: -0.03em !important;
+        font-weight: 900 !important;
+      }
+
+      .rail-btn {
+        position: relative !important;
+        width: 100% !important;
+        min-height: 50px !important;
+        margin: 0 !important;
+        padding: 0 18px !important;
+        border-radius: 16px !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        color: #263340 !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+      }
+
+      .rail-btn::before {
+        width: 20px !important;
+        height: 20px !important;
+        display: inline-grid !important;
+        place-items: center !important;
+        border: 1.6px solid currentColor !important;
+        border-radius: 7px !important;
+        opacity: 0.9 !important;
+      }
+
+      .rail-btn::after {
+        color: inherit !important;
+        font-size: 0.98rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0 !important;
+      }
+
+      .rail-btn:hover {
+        background: #e4eef5 !important;
+        color: var(--rn-navy) !important;
+        transform: none !important;
+      }
+
+      .rail-btn.active {
+        background: linear-gradient(135deg, #55c2ef 0%, #449bbf 100%) !important;
+        color: #ffffff !important;
+        border-color: #449bbf !important;
+        box-shadow: inset 0 -18px 35px rgba(0, 0, 0, 0.08), 0 12px 25px rgba(68, 155, 191, 0.24) !important;
+      }
+
+      .rail-btn.active::after,
+      .rail-btn.active::before {
+        color: #ffffff !important;
+      }
+
+      .rail-btn:not(.active):hover::after,
+      .rail-btn:not(.active):hover::before {
+        color: var(--rn-navy) !important;
+      }
+
+      .rail-btn:not(.active)::after,
+      .rail-btn:not(.active)::before {
+        color: inherit !important;
+      }
+
+      .rail-btn:not(.active):focus-visible {
+        background: #e4eef5 !important;
+        color: var(--rn-navy) !important;
+        outline: 3px solid rgba(85, 194, 239, 0.35) !important;
+        outline-offset: 2px !important;
+      }
+
+      .rail-report-submenu {
+        display: none !important;
+        width: calc(100% - 22px) !important;
+        margin: 2px 0 10px 22px !important;
+        padding: 6px 0 7px 14px !important;
+        border-left: 1px solid var(--rn-line) !important;
+        gap: 4px !important;
+      }
+
+      .rail-btn.active + .rail-report-submenu,
+      .rail-report-submenu:focus-within {
+        display: grid !important;
+      }
+
+      .rail-report-submenu button {
+        min-height: 36px !important;
+        padding: 0 10px !important;
+        justify-content: flex-start !important;
+        border: 0 !important;
+        border-radius: 9px !important;
+        background: transparent !important;
+        color: var(--rn-muted) !important;
+        box-shadow: none !important;
+        font-size: 0.86rem !important;
+        font-weight: 800 !important;
+        line-height: 1.15 !important;
+        text-align: left !important;
+        transform: none !important;
+      }
+
+      .rail-report-submenu button::before {
+        content: "›" !important;
+        display: inline-block !important;
+        width: 12px !important;
+        color: var(--rn-blue-2) !important;
+        font-weight: 950 !important;
+      }
+
+      .rail-report-submenu button:hover {
+        background: #e4eef5 !important;
+        color: var(--rn-navy) !important;
+      }
+
+      .rail-report-submenu button.active {
+        background: #e8f7fd !important;
+        color: var(--rn-navy) !important;
+        box-shadow: inset 3px 0 0 var(--rn-blue) !important;
+      }
+
+      .topbar {
+        position: static !important;
+        display: grid !important;
+        grid-template-columns: minmax(280px, 430px) minmax(0, 1fr) !important;
+        gap: 28px !important;
+        align-items: start !important;
+        margin: 0 0 26px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+      }
+
+      .topbar h1 {
+        margin: 0 !important;
+        color: var(--rn-ink) !important;
+        background: none !important;
+        -webkit-text-fill-color: var(--rn-ink) !important;
+        font-size: clamp(2.2rem, 3.55vw, 3.75rem) !important;
+        line-height: 0.98 !important;
+        text-transform: none !important;
+        letter-spacing: -0.055em !important;
+        font-weight: 900 !important;
+      }
+
+      .topbar .eyebrow {
+        display: block !important;
+        color: #526074 !important;
+        font-size: 0.88rem !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
+        font-weight: 700 !important;
+      }
+
+      .topbar .subtitle {
+        display: block !important;
+        margin-top: 8px !important;
+        max-width: 42rem !important;
+        color: var(--rn-muted) !important;
+        font-size: 0.98rem !important;
+      }
+
+      .toolbar {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 10px !important;
+        align-self: center !important;
+      }
+
+      .inline-field,
+      .action-menu summary,
+      .toolbar > button,
+      .toolbar .ghost {
+        min-height: 54px !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(229, 233, 240, 0.95) !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+      }
+
+      .inline-field {
+        padding: 7px 16px !important;
+        min-width: 240px !important;
+      }
+
+      .toolbar .inline-field:first-of-type {
+        min-width: 310px !important;
+      }
+
+      .toolbar .inline-field:nth-of-type(2),
+      .inline-field:has(#monthPicker) {
+        min-width: 240px !important;
+      }
+
+      .inline-field span {
+        color: var(--rn-muted) !important;
+        font-size: 0.78rem !important;
+      }
+
+      .inline-field input,
+      .inline-field select {
+        height: 36px !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        padding: 0 28px 0 8px !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+        color: var(--rn-ink) !important;
+        font-weight: 800 !important;
+      }
+
+      #addEmployeeBtn,
+      .dashboard-action-grid button:not(.ghost),
+      button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle):not(.mini) {
+        background: var(--rn-ink) !important;
+        color: #ffffff !important;
+        border-color: var(--rn-ink) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 12px 28px rgba(8, 13, 24, 0.16) !important;
+        font-weight: 800 !important;
+      }
+
+      .ghost,
+      button.ghost,
+      .link-button {
+        background: #ffffff !important;
+        color: #171d29 !important;
+        border-color: var(--rn-line) !important;
+        border-radius: 16px !important;
+        font-weight: 800 !important;
+      }
+
+      .side-rail .rail-report-submenu button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle):not(.mini) {
+        min-height: 36px !important;
+        padding: 0 10px !important;
+        justify-content: flex-start !important;
+        border: 0 !important;
+        border-radius: 11px !important;
+        background: transparent !important;
+        color: var(--rn-muted) !important;
+        box-shadow: none !important;
+        font-size: 0.86rem !important;
+        font-weight: 800 !important;
+        line-height: 1.15 !important;
+        text-align: left !important;
+        transform: none !important;
+      }
+
+      .side-rail .rail-report-submenu button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle):not(.mini):hover {
+        background: #f3f8fb !important;
+        color: var(--rn-navy) !important;
+      }
+
+      .side-rail .rail-report-submenu button:not(.ghost):not(.danger):not(.rail-btn):not(.password-toggle):not(.mini).active {
+        background: #e8f7fd !important;
+        color: var(--rn-navy) !important;
+        box-shadow: inset 3px 0 0 var(--rn-blue) !important;
+      }
+
+      .metrics,
+      .kpi-metrics-row,
+      .dashboard-command-center,
+      .dashboard-insights,
+      #employeesSection,
+      #payrollSection,
+      #settingsSection,
+      #reportsSection,
+      #verificationSection,
+      #saveStatus {
+        width: 100% !important;
+        max-width: none !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+      }
+
+      .kpi-metrics-row {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 18px !important;
+        margin-top: 0 !important;
+        margin-bottom: 20px !important;
+      }
+
+      .kpi-metric-card,
+      .dashboard-panel,
+      .settings-card,
+      .employee-mgmt,
+      .table-wrap,
+      .employee-form,
+      .verification-card,
+      .verification-schema-card,
+      .payroll-entry-card,
+      .payroll-control-panel,
+      .payroll-review-panel {
+        border: 1px solid rgba(232, 235, 241, 0.95) !important;
+        border-radius: var(--rn-radius-lg) !important;
+        background: var(--rn-surface) !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+        transform: none !important;
+      }
+
+      .kpi-metric-card::after,
+      .dashboard-panel::after,
+      .settings-card::after,
+      .payroll-entry-card::after,
+      .dashboard-stat-card::after {
+        display: none !important;
+      }
+
+      .kpi-metric-card {
+        min-height: 154px !important;
+        padding: 22px !important;
+        align-items: flex-start !important;
+        overflow: hidden !important;
+      }
+
+      .kpi-metric-card.primary { background: linear-gradient(145deg, #ffffff 0%, #e8f7fd 100%) !important; }
+      .kpi-metric-card.success { background: linear-gradient(145deg, #ffffff 0%, #e4f7ee 100%) !important; }
+      .kpi-metric-card.warning { background: linear-gradient(145deg, #ffffff 0%, #fff4e5 100%) !important; }
+      .kpi-metric-card.alert { background: linear-gradient(145deg, #ffffff 0%, #f7f9fc 100%) !important; }
+
+      .kpi-icon {
+        border-radius: 999px !important;
+        width: 48px !important;
+        height: 48px !important;
+        background: var(--rn-blue) !important;
+        color: #ffffff !important;
+        border-color: transparent !important;
+      }
+
+      .kpi-metric-card.success .kpi-icon {
+        background: var(--rn-lime) !important;
+        color: #ffffff !important;
+      }
+
+      .kpi-metric-card.warning .kpi-icon {
+        background: var(--rn-orange) !important;
+        color: #ffffff !important;
+      }
+
+      .kpi-metric-card.alert .kpi-icon {
+        background: var(--rn-red) !important;
+        color: #ffffff !important;
+      }
+
+      .kpi-data p,
+      .dashboard-kicker {
+        color: #677388 !important;
+        letter-spacing: 0.075em !important;
+        font-weight: 900 !important;
+      }
+
+      .kpi-data strong {
+        color: var(--rn-ink) !important;
+        font-size: clamp(1.65rem, 2.4vw, 2.35rem) !important;
+        letter-spacing: -0.055em !important;
+      }
+
+      .dashboard-command-center {
+        display: grid !important;
+        grid-template-columns: minmax(380px, 1.12fr) minmax(300px, 0.9fr) minmax(420px, 1.18fr) !important;
+        gap: 20px !important;
+        align-items: start !important;
+        margin-bottom: 22px !important;
+      }
+
+      .dashboard-insights {
+        display: grid !important;
+        grid-template-columns: minmax(560px, 1.42fr) minmax(360px, 0.88fr) !important;
+        gap: 20px !important;
+        align-items: start !important;
+      }
+
+      .dashboard-panel {
+        position: relative !important;
+        min-height: 0 !important;
+        padding: 24px !important;
+        overflow: visible !important;
+      }
+
+      .dashboard-command-center .dashboard-panel {
+        min-height: 218px !important;
+      }
+
+      .dashboard-command-center .dashboard-panel-head,
+      .dashboard-insights .dashboard-panel-head {
+        margin-bottom: 14px !important;
+      }
+
+      .dashboard-insights .dashboard-panel {
+        min-height: 0 !important;
+      }
+
+      .dashboard-insights .dashboard-panel-hero {
+        grid-row: span 2 !important;
+        align-self: start !important;
+      }
+
+      .dashboard-panel-head h3 {
+        color: var(--rn-ink) !important;
+        font-size: clamp(1.24rem, 1.6vw, 1.48rem) !important;
+        letter-spacing: -0.04em !important;
+        font-weight: 900 !important;
+      }
+
+      .dashboard-panel-note {
+        color: var(--rn-muted) !important;
+        text-align: left !important;
+        font-weight: 650 !important;
+      }
+
+      .dashboard-status-panel,
+      .dashboard-panel-hero {
+        background:
+          radial-gradient(circle at 94% 86%, rgba(85, 194, 239, 0.20), transparent 34%),
+          linear-gradient(135deg, #ffffff 0%, #ffffff 68%, #e4eef5 100%) !important;
+      }
+
+      .dashboard-status-panel {
+        display: grid !important;
+        align-content: start !important;
+        gap: 12px !important;
+      }
+
+      .dashboard-panel-hero::before {
+        content: none !important;
+      }
+
+      .dashboard-panel-hero .dashboard-panel-head,
+      .dashboard-panel-hero .dashboard-summary-cards {
+        position: relative !important;
+        z-index: 1 !important;
+        max-width: none !important;
+      }
+
+      .dashboard-panel-hero .dashboard-panel-head {
+        display: block !important;
+      }
+
+      .dashboard-panel-hero .dashboard-panel-note {
+        margin-top: 8px !important;
+        max-width: 520px !important;
+      }
+
+      .dashboard-actions-panel {
+        background: var(--rn-navy) !important;
+        color: #ffffff !important;
+        display: grid !important;
+        align-content: start !important;
+        gap: 14px !important;
+      }
+
+      .dashboard-action-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+      }
+
+      .dashboard-actions-panel h3,
+      .dashboard-actions-panel .dashboard-kicker {
+        color: #ffffff !important;
+      }
+
+      .dashboard-actions-panel .dashboard-action-grid button {
+        background: rgba(255, 255, 255, 0.12) !important;
+        color: #ffffff !important;
+        border-color: rgba(255, 255, 255, 0.18) !important;
+        box-shadow: none !important;
+        min-height: 44px !important;
+        padding: 0 16px !important;
+      }
+
+      .dashboard-actions-panel .dashboard-action-grid button:first-child {
+        background: var(--rn-blue) !important;
+        color: #ffffff !important;
+        border-color: var(--rn-blue) !important;
+      }
+
+      .dashboard-attention-panel {
+        background:
+          radial-gradient(circle at 86% 24%, rgba(85, 194, 239, 0.14), transparent 28%),
+          #ffffff !important;
+      }
+
+      .dashboard-attention-panel .dashboard-list {
+        max-height: 176px !important;
+        overflow: auto !important;
+        padding-right: 4px !important;
+      }
+
+      .dashboard-attention-panel .dashboard-list-item,
+      .dashboard-list-scroll .dashboard-list-item {
+        min-height: 68px !important;
+        padding: 13px 16px 13px 20px !important;
+        overflow: visible !important;
+      }
+
+      .dashboard-list-item strong {
+        display: block !important;
+        margin: 0 !important;
+        line-height: 1.2 !important;
+      }
+
+      .dashboard-list-item span {
+        display: block !important;
+        margin-top: 6px !important;
+        line-height: 1.35 !important;
+        overflow: visible !important;
+      }
+
+      .dashboard-summary-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+      }
+
+      .dashboard-stat-card,
+      .dashboard-list-item {
+        border-radius: 18px !important;
+        border: 0 !important;
+        background: #f7f8fa !important;
+        box-shadow: none !important;
+      }
+
+      .dashboard-stat-card strong {
+        color: var(--rn-ink) !important;
+        font-size: clamp(1.34rem, 1.75vw, 1.9rem) !important;
+      }
+
+      .dashboard-stat-card.tone-green {
+        background: var(--rn-lime-soft) !important;
+      }
+
+      .dashboard-stat-card.tone-blue {
+        background: #e8f7fd !important;
+      }
+
+      .dashboard-stat-card.tone-violet {
+        background: #eef6fb !important;
+      }
+
+      .dashboard-stat-card.tone-amber {
+        background: #fff3e3 !important;
+      }
+
+      .dashboard-payroll-chart {
+        grid-column: 1 / -1 !important;
+        margin-top: 4px !important;
+        padding: 18px !important;
+        border-radius: 18px !important;
+        background: #ffffff !important;
+        border: 1px solid #cbdce7 !important;
+        overflow: hidden !important;
+        max-height: none !important;
+      }
+
+      .dashboard-chart-head {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        gap: 12px !important;
+        align-items: center !important;
+        margin-bottom: 12px !important;
+      }
+
+      .dashboard-chart-head strong {
+        color: var(--rn-ink) !important;
+        font-size: 1rem !important;
+        font-weight: 900 !important;
+      }
+
+      .dashboard-chart-head span,
+      .dashboard-chart-legend span,
+      .dashboard-chart-group small {
+        color: var(--rn-muted) !important;
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
+      }
+
+      .dashboard-chart-legend {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 14px !important;
+        justify-content: flex-end !important;
+        margin-bottom: 12px !important;
+      }
+
+      .dashboard-chart-legend i {
+        display: inline-block !important;
+        width: 10px !important;
+        height: 10px !important;
+        margin-right: 6px !important;
+        border-radius: 999px !important;
+        vertical-align: middle !important;
+      }
+
+      .dashboard-chart-legend .net,
+      .dashboard-chart-stack .net {
+        background: var(--rn-blue) !important;
+      }
+
+      .dashboard-chart-legend .deduction,
+      .dashboard-chart-stack .deduction {
+        background: var(--rn-lime) !important;
+      }
+
+      .dashboard-chart-legend .advance,
+      .dashboard-chart-stack .advance {
+        background: var(--rn-orange) !important;
+      }
+
+      .dashboard-chart-bars {
+        min-height: 178px !important;
+        max-height: 196px !important;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 22px !important;
+        align-items: end !important;
+        padding-top: 10px !important;
+        border-top: 1px dashed #cbdce7 !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+      }
+
+      .dashboard-chart-group {
+        flex: 0 0 104px !important;
+        min-width: 104px !important;
+        display: grid !important;
+        gap: 7px !important;
+        justify-items: center !important;
+      }
+
+      .dashboard-chart-stack {
+        height: 132px !important;
+        display: flex !important;
+        align-items: end !important;
+        justify-content: center !important;
+        gap: 5px !important;
+      }
+
+      .dashboard-chart-stack .bar {
+        display: block !important;
+        width: 15px !important;
+        min-height: 0 !important;
+        border-radius: 999px 999px 6px 6px !important;
+        box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.08) !important;
+      }
+
+      .dashboard-chart-group b {
+        max-width: 100% !important;
+        color: var(--rn-ink) !important;
+        font-size: 0.76rem !important;
+        font-weight: 850 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      .empty-chart {
+        min-height: 112px !important;
+        display: grid !important;
+        align-items: center !important;
+      }
+
+      .dashboard-stat-card.tone-neutral {
+        background: #f2f4f7 !important;
+      }
+
+      .dashboard-list-item::before {
+        width: 6px !important;
+        border-radius: 999px !important;
+        background: var(--rn-blue) !important;
+      }
+
+      .dashboard-list {
+        display: flex !important;
+        min-height: 0 !important;
+        flex-direction: column !important;
+      }
+
+      .dashboard-list-scroll {
+        display: grid !important;
+        gap: 10px !important;
+        max-height: none !important;
+        overflow: auto !important;
+        padding-right: 4px !important;
+      }
+
+      .dashboard-panel-footer {
+        margin-top: 14px !important;
+        padding-top: 0 !important;
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+      }
+
+      .dashboard-panel-footer div {
+        min-height: 62px !important;
+        display: grid !important;
+        align-content: center !important;
+        gap: 4px !important;
+        padding: 10px 12px !important;
+        border-radius: 18px !important;
+        background: #e4eef5 !important;
+      }
+
+      .dashboard-panel-footer div:nth-child(2) {
+        background: #e4f7ee !important;
+      }
+
+      .dashboard-panel-footer div:nth-child(3) {
+        background: #fff3e3 !important;
+      }
+
+      .dashboard-panel-footer b {
+        color: var(--rn-ink) !important;
+        font-size: clamp(0.95rem, 1vw, 1.1rem) !important;
+        line-height: 1.05 !important;
+        font-weight: 950 !important;
+        letter-spacing: -0.02em !important;
+        overflow-wrap: normal !important;
+        white-space: nowrap !important;
+      }
+
+      .dashboard-panel-footer span {
+        color: #657489 !important;
+        font-size: 0.74rem !important;
+        font-weight: 850 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+      }
+
+      .dashboard-list-item strong {
+        color: var(--rn-ink) !important;
+        font-weight: 850 !important;
+      }
+
+      .employee-mgmt,
+      .table-wrap {
+        padding: 0 !important;
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+      }
+
+      .table-head {
+        padding: 20px 4px 18px !important;
+        background: transparent !important;
+      }
+
+      .table-head h2 {
+        color: var(--rn-ink) !important;
+        font-size: clamp(2rem, 3vw, 2.8rem) !important;
+        letter-spacing: -0.06em !important;
+        font-weight: 900 !important;
+      }
+
+      .table-head p,
+      .settings-card p {
+        color: var(--rn-muted) !important;
+      }
+
+      .employee-form,
+      .settings-card,
+      .employee-list-wrap,
+      .payroll-control-panel,
+      .payroll-review-panel,
+      .payroll-totals-bar,
+      .verification-card,
+      .verification-schema-card {
+        background: #ffffff !important;
+        border: 1px solid rgba(232, 235, 241, 0.95) !important;
+        border-radius: var(--rn-radius-lg) !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+      }
+
+      .employee-form,
+      .settings-card,
+      .verification-card,
+      .verification-schema-card {
+        padding: 26px !important;
+      }
+
+      .reports-subnav {
+        position: sticky !important;
+        top: 12px !important;
+        z-index: 5 !important;
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+        margin: 0 0 18px !important;
+        padding: 8px !important;
+        border: 1px solid var(--rn-line) !important;
+        border-radius: 22px !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+        backdrop-filter: blur(12px) !important;
+      }
+
+      .reports-subnav button {
+        min-height: 48px !important;
+        padding: 0 14px !important;
+        border-radius: 16px !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        color: var(--rn-muted) !important;
+        box-shadow: none !important;
+        font-size: 0.9rem !important;
+        font-weight: 850 !important;
+        line-height: 1.15 !important;
+        transform: none !important;
+      }
+
+      .reports-subnav button:hover {
+        background: #e4eef5 !important;
+        color: var(--rn-navy) !important;
+      }
+
+      .reports-subnav button.active {
+        background: var(--rn-navy) !important;
+        color: #ffffff !important;
+        border-color: var(--rn-navy) !important;
+      }
+
+      #reportsSection [data-report-panel].hidden {
+        display: none !important;
+      }
+
+      .employee-list-wrap,
+      #employeesSection .employee-list-wrap,
+      #reportsSection .employee-list-wrap {
+        margin: 0 !important;
+        max-width: 100% !important;
+      }
+
+      input,
+      select,
+      textarea {
+        min-height: 48px !important;
+        border-radius: 14px !important;
+        border: 1px solid #dde3ec !important;
+        background: #f9fafc !important;
+        color: var(--rn-ink) !important;
+        box-shadow: none !important;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--rn-blue) !important;
+        box-shadow: 0 0 0 4px rgba(85, 194, 239, 0.22) !important;
+      }
+
+      th {
+        background: #f8f9fb !important;
+        color: #7a8494 !important;
+        font-size: 0.76rem !important;
+        letter-spacing: 0.07em !important;
+        font-weight: 900 !important;
+      }
+
+      td {
+        color: #141b27 !important;
+        font-weight: 650 !important;
+      }
+
+      .status-pill {
+        border-radius: 999px !important;
+        min-height: 30px !important;
+        padding: 0 13px !important;
+        border: 0 !important;
+      }
+
+      .status-pill.working {
+        background: var(--rn-lime-soft) !important;
+        color: #15734a !important;
+      }
+
+      .status-pill.leave {
+        background: #e8f7fd !important;
+        color: #246f8e !important;
+      }
+
+      .status-pill.terminated {
+        background: #ffe8e8 !important;
+        color: var(--rn-red) !important;
+      }
+
+      .payroll-modern {
+        border-radius: 24px !important;
+        box-shadow: var(--rn-shadow-soft) !important;
+      }
+
+      .payroll-stack-section {
+        background: #ffffff !important;
+      }
+
+      .payroll-stack-section::before {
+        background: var(--rn-blue) !important;
+        width: 6px !important;
+      }
+
+      .phone-camera-access,
+      .camera-shell,
+      .id-proof-row,
+      .internal-only-card {
+        border-radius: 18px !important;
+      }
+
+      .phone-camera-access {
+        background: #f7f9fc !important;
+      }
+
+      .internal-only-card {
+        background: linear-gradient(145deg, #ffffff 0%, #fff8ed 100%) !important;
+      }
+
+      .sensitive-pill {
+        border: 0 !important;
+        background: #111827 !important;
+        color: #ffffff !important;
+      }
+
+      @media (max-width: 1180px) {
+        .app-view {
+          grid-template-columns: 1fr !important;
+        }
+
+        .side-rail {
+          margin: 14px !important;
+          display: grid !important;
+          grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+        }
+
+        .side-rail::before {
+          grid-column: 1 / -1 !important;
+          margin-bottom: 8px !important;
+        }
+
+        .rail-report-submenu {
+          grid-column: 1 / -1 !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          margin: 0 !important;
+          padding: 8px !important;
+          border-left: 0 !important;
+          border-radius: 16px !important;
+          background: #f7f9fc !important;
+        }
+
+        .kpi-metrics-row {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        .dashboard-command-center {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+        }
+
+        .dashboard-attention-panel {
+          grid-column: 1 / -1 !important;
+        }
+
+        .dashboard-insights {
+          grid-template-columns: 1fr !important;
+        }
+
+        .dashboard-insights .dashboard-panel-hero {
+          grid-row: auto !important;
+        }
+
+        .dashboard-panel-footer {
+          grid-template-columns: 1fr !important;
+        }
+
+        .reports-subnav {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        .dashboard-panel-hero .dashboard-panel-head,
+        .dashboard-panel-hero .dashboard-summary-cards {
+          max-width: none !important;
+        }
+
+        .dashboard-panel-hero::before {
+          content: none !important;
+        }
+      }
+
+      @media (max-width: 850px) {
+        .shell {
+          width: 100% !important;
+          margin: 0 !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+        }
+
+        .app-main {
+          padding: 16px 14px calc(92px + env(safe-area-inset-bottom)) !important;
+        }
+
+        .side-rail {
+          display: flex !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+          background: #ffffff !important;
+          border-top: 1px solid var(--rn-line) !important;
+        }
+
+        .rail-btn {
+          min-height: 62px !important;
+          border-radius: 0 !important;
+          padding: 0 !important;
+          justify-content: center !important;
+        }
+
+        .rail-btn.active {
+          color: var(--rn-blue) !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+
+        .rail-btn.active::before {
+          background: var(--rn-blue) !important;
+          color: #ffffff !important;
+        }
+
+        .rail-report-submenu,
+        .rail-btn.active + .rail-report-submenu,
+        .rail-report-submenu:focus-within {
+          display: none !important;
+        }
+
+        .topbar {
+          grid-template-columns: 1fr !important;
+          gap: 18px !important;
+        }
+
+        .toolbar {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+        }
+
+        .kpi-metrics-row,
+        .dashboard-command-center,
+        .dashboard-insights,
+        .dashboard-summary-cards,
+        .verification-grid {
+          grid-template-columns: 1fr !important;
+        }
+
+        .dashboard-panel-footer {
+          grid-template-columns: 1fr !important;
+        }
+
+        .reports-subnav {
+          position: static !important;
+          grid-template-columns: 1fr !important;
+        }
+      }
+
+      .hidden,
+      [hidden] {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
     <main class="shell">
@@ -1021,6 +2161,13 @@
           <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees">◎</button>
           <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll">◫</button>
           <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports">◧</button>
+          <div class="rail-report-submenu" aria-label="Reports submenu">
+            <button type="button" class="active" data-report-tab="summary">Generated Payroll Summary</button>
+            <button type="button" data-report-tab="payslips">Generated Payslips</button>
+            <button type="button" data-report-tab="leave">Leave / Resume Work</button>
+            <button type="button" data-report-tab="errors">Error Log</button>
+          </div>
+          <button class="rail-btn" type="button" aria-label="Employee Verification" data-rail-action="verification">▤</button>
           <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings">⚙</button>
         </aside>
 
@@ -1372,7 +2519,7 @@
               <p>Leave records plus generated monthly payroll reports for the selected company.</p>
             </div>
 
-            <article class="settings-card reports-summary-card">
+            <article class="settings-card reports-summary-card" data-report-panel="summary">
               <div class="dashboard-panel-head reports-summary-head">
                 <div>
                   <p class="dashboard-kicker">Reports Snapshot</p>
@@ -1381,9 +2528,6 @@
                 <p class="dashboard-panel-note">Saved payroll months, payslip coverage, and currently opened report.</p>
               </div>
               <div id="reportsSummaryCards" class="dashboard-summary-cards reports-summary-cards"></div>
-            </article>
-
-            <article class="settings-card">
               <h3>Generated Payroll Reports</h3>
               <p>Once payroll is checked and generated, it will appear here month-wise so you can reopen employee payslips later.</p>
               <div class="employee-list-wrap">
@@ -1402,8 +2546,8 @@
               </div>
             </article>
 
-            <article class="settings-card">
-              <h3 id="generatedPayrollDetailTitle">Generated Payslips</h3>
+            <article class="settings-card" data-report-panel="payslips">
+              <h3 id="generatedPayrollDetailTitle">Generated Payslips For</h3>
               <p>Open any generated payroll month below, then print or save PDF employee-wise, or print only the selected payslips together.</p>
               <div class="reports-selection-bar">
                 <label class="reports-check-all">
@@ -1432,7 +2576,7 @@
               </div>
             </article>
 
-            <article class="settings-card">
+            <article class="settings-card" data-report-panel="leave">
               <h3>Leave / Resume Work</h3>
               <p>Track who went on leave, when they resumed work, and any termination date on record.</p>
               <div class="employee-list-wrap">
@@ -1455,7 +2599,7 @@
               </div>
             </article>
 
-            <article class="settings-card">
+            <article class="settings-card" data-report-panel="errors">
               <div class="error-log-head">
                 <div>
                   <h3>Error Log</h3>
@@ -1482,6 +2626,229 @@
             </article>
 
             <p id="reportsMessage" class="status-msg"></p>
+          </section>
+
+          <section id="verificationSection" class="employee-mgmt verification-section hidden">
+            <div class="table-head verification-head">
+              <div>
+                <h2>Employee Verification</h2>
+                <p>Capture onboarding details, ID references, consent, and private internal screening for the selected company.</p>
+              </div>
+              <button id="printVerificationBtn" type="button" class="ghost">Print Verification Form</button>
+            </div>
+
+            <div class="verification-schema-card">
+              <details>
+                <summary>Data schema / type definition</summary>
+                <pre><code>interface EmployeeVerificationRecord {
+  id?: number;
+  companyId: number;
+  primaryBioData: {
+    fullName: string;
+    dateOfBirth: string;
+    age: number | null;
+    currentAddress: string;
+    permanentAddress: string;
+  };
+  mediaDocuments: {
+    photoDataUrl: string;
+    idProofs: Array&lt;{ type: string; reference: string; fileName: string; fileDataUrl: string }&gt;;
+  };
+  medical: {
+    enabled: boolean;
+    fitnessStatus: "fit" | "review" | "unfit" | "";
+    certificateFileName: string;
+    certificateDataUrl: string;
+  };
+  internalScreening: {
+    classification: "sensitive/internal_only";
+    consumesTobacco: boolean;
+    consumesAlcohol: boolean;
+    substanceAbuseSigns: boolean;
+    zeroToleranceAcknowledged: boolean;
+  };
+  emergencyVerification: {
+    emergencyContactName: string;
+    relationship: string;
+    phoneNumber: string;
+    consentToPoliceVerification: boolean;
+  };
+}</code></pre>
+              </details>
+            </div>
+
+            <form id="verificationForm" class="verification-grid" autocomplete="off">
+              <input id="verificationIdInput" type="hidden" />
+
+              <article class="verification-card span-2">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Primary Bio-Data</p>
+                    <h3>Employee Identity</h3>
+                  </div>
+                </div>
+                <div class="verification-fields">
+                  <label>
+                    Full Name
+                    <input id="verificationFullNameInput" type="text" required maxlength="120" />
+                  </label>
+                  <label>
+                    Date of Birth
+                    <input id="verificationDobInput" type="date" required />
+                  </label>
+                  <label>
+                    Age
+                    <input id="verificationAgeInput" type="text" readonly class="locked-field" />
+                  </label>
+                  <label class="span-2">
+                    Current Address
+                    <textarea id="verificationCurrentAddressInput" required maxlength="800"></textarea>
+                  </label>
+                  <label class="span-2">
+                    Permanent Address
+                    <textarea id="verificationPermanentAddressInput" required maxlength="800"></textarea>
+                  </label>
+                </div>
+              </article>
+
+              <article class="verification-card">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Media</p>
+                    <h3>Live Photo</h3>
+                  </div>
+                  <button id="startCameraBtn" type="button" class="mini ghost">Start Camera</button>
+                </div>
+                <div id="phoneCameraAccess" class="phone-camera-access hidden">
+                  <div>
+                    <strong>Phone camera access</strong>
+                    <span id="phoneCameraUrlText">Loading phone link...</span>
+                  </div>
+                  <div class="phone-camera-actions">
+                    <a id="phoneCameraLink" class="ghost link-button" href="#" target="_blank" rel="noopener">Open Link</a>
+                    <button id="copyPhoneCameraLinkBtn" type="button" class="mini ghost">Copy</button>
+                  </div>
+                </div>
+                <div class="camera-shell">
+                  <video id="verificationCameraVideo" playsinline autoplay muted class="hidden"></video>
+                  <img id="verificationPhotoPreview" alt="Employee photo preview" />
+                  <canvas id="verificationPhotoCanvas" class="hidden"></canvas>
+                </div>
+                <div class="verification-actions">
+                  <button id="capturePhotoBtn" type="button">Snap Photo</button>
+                  <label class="settings-file-label compact">Upload Photo
+                    <input id="verificationPhotoUploadInput" type="file" accept="image/*" capture="environment" />
+                  </label>
+                </div>
+              </article>
+
+              <article class="verification-card">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Documents</p>
+                    <h3>ID Proofs</h3>
+                  </div>
+                  <button id="addIdProofBtn" type="button" class="mini ghost">Add Proof</button>
+                </div>
+                <div id="idProofsList" class="id-proof-list"></div>
+              </article>
+
+              <article class="verification-card">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Optional</p>
+                    <h3>Medical Fitness</h3>
+                  </div>
+                  <label class="switch-row">
+                    <input id="medicalEnabledInput" type="checkbox" />
+                    <span>Enable</span>
+                  </label>
+                </div>
+                <div id="medicalFields" class="verification-fields hidden">
+                  <label>
+                    Fitness Status
+                    <select id="medicalFitnessStatusInput">
+                      <option value="">Select status</option>
+                      <option value="fit">Fit</option>
+                      <option value="review">Needs Review</option>
+                      <option value="unfit">Unfit</option>
+                    </select>
+                  </label>
+                  <label>
+                    Certificate
+                    <input id="medicalCertificateInput" type="file" accept="image/*,.pdf" />
+                  </label>
+                  <p id="medicalCertificateName" class="verification-note"></p>
+                </div>
+              </article>
+
+              <article class="verification-card internal-only-card">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Private</p>
+                    <h3>Internal Screening</h3>
+                  </div>
+                  <span class="sensitive-pill">sensitive/internal_only</span>
+                </div>
+                <label class="check-row"><input id="screenTobaccoInput" type="checkbox" /> Consumes Tobacco/Smokes?</label>
+                <label class="check-row"><input id="screenAlcoholInput" type="checkbox" /> Consumes Alcohol?</label>
+                <label class="check-row"><input id="screenSubstanceInput" type="checkbox" /> History or signs of substance/drug abuse?</label>
+                <label class="check-row"><input id="screenPolicyInput" type="checkbox" /> Acknowledged strict policy: Zero tolerance for intoxication during work hours?</label>
+              </article>
+
+              <article class="verification-card span-2">
+                <div class="verification-card-head">
+                  <div>
+                    <p class="dashboard-kicker">Emergency & Verification</p>
+                    <h3>Contact and Consent</h3>
+                  </div>
+                </div>
+                <div class="verification-fields">
+                  <label>
+                    Emergency Contact Name
+                    <input id="emergencyNameInput" type="text" required maxlength="120" />
+                  </label>
+                  <label>
+                    Relationship
+                    <input id="emergencyRelationshipInput" type="text" required maxlength="80" />
+                  </label>
+                  <label>
+                    Phone Number
+                    <input id="emergencyPhoneInput" type="tel" required maxlength="30" />
+                  </label>
+                  <label class="check-row span-2">
+                    <input id="policeConsentInput" type="checkbox" required />
+                    Consent to Police Verification
+                  </label>
+                </div>
+              </article>
+
+              <div class="verification-form-actions span-2">
+                <button id="saveVerificationBtn" type="submit">Save Verification</button>
+                <button id="newVerificationBtn" type="button" class="ghost">New Form</button>
+              </div>
+            </form>
+
+            <article class="settings-card">
+              <h3>Saved Verification Records</h3>
+              <p>Open a record to edit it or print the police-verification copy.</p>
+              <div class="employee-list-wrap">
+                <table>
+                  <thead>
+                    <tr class="detail-row">
+                      <th>Name</th>
+                      <th>DOB</th>
+                      <th>Emergency Contact</th>
+                      <th>Police Consent</th>
+                      <th>Updated</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="verificationRecordsBody"></tbody>
+                </table>
+              </div>
+            </article>
+            <p id="verificationMessage" class="status-msg"></p>
           </section>
 
           <section id="payrollSection" class="table-wrap">

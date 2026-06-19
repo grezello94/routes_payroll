@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
@@ -55,6 +56,7 @@ const { createStore } = require("./datastore");
 
 const app = express();
 const PORT = Number(process.env.PORT || 5501);
+const HOST = process.env.HOST || "0.0.0.0";
 const IS_VERCEL = String(process.env.VERCEL || "").toLowerCase() === "1";
 const IS_PRODUCTION = String(process.env.NODE_ENV || "").toLowerCase() === "production";
 const JWT_SECRET = process.env.JWT_SECRET || "routes_payroll_dev_secret_change_me";
@@ -112,6 +114,18 @@ function isStrongPassword(value) {
   if (!/[A-Z]/.test(raw)) return false;
   if (!/[0-9]/.test(raw)) return false;
   return true;
+}
+
+function getLanAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry.family === "IPv4" && !entry.internal && entry.address) {
+        return entry.address;
+      }
+    }
+  }
+  return "";
 }
 
 function isUserEmailVerified(user) {
@@ -1014,6 +1028,85 @@ function dbRowToEmployee(row) {
   };
 }
 
+function sanitizeDataUrl(value, maxLength = 2_500_000) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (!/^data:(image\/[a-z0-9.+-]+|application\/pdf);base64,/i.test(raw)) return "";
+  return raw.slice(0, maxLength);
+}
+
+function sanitizeVerificationProofs(value) {
+  const proofs = Array.isArray(value) ? value : [];
+  return proofs.slice(0, 12).map((proof) => ({
+    type: sanitizeText(proof?.type, 80),
+    reference: sanitizeText(proof?.reference, 160),
+    fileName: sanitizeText(proof?.fileName, 180),
+    fileDataUrl: sanitizeDataUrl(proof?.fileDataUrl),
+  })).filter((proof) => proof.type || proof.reference || proof.fileName || proof.fileDataUrl);
+}
+
+function normalizeEmployeeVerification(raw, companyId) {
+  const primary = raw?.primaryBioData || {};
+  const media = raw?.mediaDocuments || {};
+  const medical = raw?.medical || {};
+  const screening = raw?.internalScreening || {};
+  const emergency = raw?.emergencyVerification || {};
+  const fitnessStatus = ["fit", "review", "unfit"].includes(String(medical.fitnessStatus || ""))
+    ? String(medical.fitnessStatus)
+    : "";
+
+  return {
+    id: Number.isFinite(Number(raw?.id)) ? Number(raw.id) : null,
+    companyId: Number(companyId),
+    primaryBioData: {
+      fullName: sanitizeText(primary.fullName, 120),
+      dateOfBirth: isIsoDate(primary.dateOfBirth) ? String(primary.dateOfBirth) : "",
+      age: Number.isFinite(Number(primary.age)) ? clamp(Math.floor(Number(primary.age)), 0, 120) : null,
+      currentAddress: sanitizeText(primary.currentAddress, 800),
+      permanentAddress: sanitizeText(primary.permanentAddress, 800),
+    },
+    mediaDocuments: {
+      photoDataUrl: sanitizeDataUrl(media.photoDataUrl),
+      idProofs: sanitizeVerificationProofs(media.idProofs),
+    },
+    medical: {
+      enabled: Boolean(medical.enabled),
+      fitnessStatus,
+      certificateFileName: sanitizeText(medical.certificateFileName, 180),
+      certificateDataUrl: sanitizeDataUrl(medical.certificateDataUrl),
+    },
+    internalScreening: {
+      classification: "sensitive/internal_only",
+      consumesTobacco: Boolean(screening.consumesTobacco),
+      consumesAlcohol: Boolean(screening.consumesAlcohol),
+      substanceAbuseSigns: Boolean(screening.substanceAbuseSigns),
+      zeroToleranceAcknowledged: Boolean(screening.zeroToleranceAcknowledged),
+    },
+    emergencyVerification: {
+      emergencyContactName: sanitizeText(emergency.emergencyContactName, 120),
+      relationship: sanitizeText(emergency.relationship, 80),
+      phoneNumber: sanitizeText(emergency.phoneNumber, 30),
+      consentToPoliceVerification: Boolean(emergency.consentToPoliceVerification),
+    },
+  };
+}
+
+function dbRowToEmployeeVerification(row) {
+  let payload = {};
+  try {
+    payload = JSON.parse(row?.payload_json || "{}");
+  } catch {
+    payload = {};
+  }
+  return {
+    ...payload,
+    id: Number(row.id),
+    companyId: Number(row.company_id),
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
+  };
+}
+
 function advanceRemainedFromPayrollRow(row) {
   const oldAdvance = Math.max(0, toNumber(row?.old_advance_taken));
   const extraAdvance = Math.max(0, toNumber(row?.extra_advance_added));
@@ -1254,6 +1347,16 @@ function authMiddleware(req, res, next) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ...startupStatusPayload(), time: new Date().toISOString() });
+});
+
+app.get("/api/access-url", (_req, res) => {
+  const lanAddress = getLanAddress();
+  res.json({
+    localUrl: `http://127.0.0.1:${PORT}`,
+    lanUrl: lanAddress ? `http://${lanAddress}:${PORT}` : "",
+    host: HOST,
+    port: PORT,
+  });
 });
 
 app.get("/api/debug/smtp", async (_req, res) => {
@@ -1833,6 +1936,70 @@ app.delete("/api/employees/:id", authMiddleware, async (req, res) => {
   }
 });
 
+app.get("/api/employee-verifications", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  try {
+    const rows = await store.listEmployeeVerificationsByCompany(companyId);
+    res.json({ verifications: rows.map(dbRowToEmployeeVerification) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to fetch employee verifications." });
+  }
+});
+
+app.post("/api/employee-verifications", authMiddleware, async (req, res) => {
+  const companyId = await resolveCompanyId(req, res, "body");
+  if (!companyId) return;
+
+  const normalized = normalizeEmployeeVerification(req.body, companyId);
+  if (
+    normalized.primaryBioData.fullName.length < 2
+    || normalized.primaryBioData.dateOfBirth.length !== 10
+    || normalized.primaryBioData.currentAddress.length < 4
+    || normalized.primaryBioData.permanentAddress.length < 4
+    || normalized.emergencyVerification.emergencyContactName.length < 2
+    || normalized.emergencyVerification.relationship.length < 2
+    || normalized.emergencyVerification.phoneNumber.length < 6
+    || !normalized.emergencyVerification.consentToPoliceVerification
+  ) {
+    res.status(400).json({ error: "Bio-data, emergency contact, and police verification consent are required." });
+    return;
+  }
+
+  try {
+    if (normalized.id) {
+      const existing = await store.getEmployeeVerificationByIdCompany(normalized.id, companyId);
+      if (!existing) {
+        res.status(404).json({ error: "Verification record not found." });
+        return;
+      }
+    }
+    const result = await store.saveEmployeeVerification(companyId, normalized);
+    const saved = await store.getEmployeeVerificationByIdCompany(result.id, companyId);
+    res.status(normalized.id ? 200 : 201).json({ verification: dbRowToEmployeeVerification(saved) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to save employee verification." });
+  }
+});
+
+app.delete("/api/employee-verifications/:id", authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid verification id." });
+    return;
+  }
+  const companyId = await resolveCompanyId(req, res, "query");
+  if (!companyId) return;
+
+  try {
+    await store.deleteEmployeeVerificationByIdCompany(id, companyId);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to delete employee verification." });
+  }
+});
+
 app.post("/api/companies", authMiddleware, async (req, res) => {
   const name = sanitizeText(req.body?.name, 120);
   const logoDataUrl = sanitizeLogoDataUrl(req.body?.logoDataUrl);
@@ -2393,9 +2560,11 @@ function ensureStartupInit() {
 ensureStartupInit();
 
 if (require.main === module) {
-  app.listen(PORT, "127.0.0.1", () => {
+  app.listen(PORT, HOST, () => {
+    const lanAddress = getLanAddress();
+    const displayUrl = HOST === "127.0.0.1" ? `http://127.0.0.1:${PORT}` : `http://127.0.0.1:${PORT}${lanAddress ? ` / phone: http://${lanAddress}:${PORT}` : ""}`;
     // eslint-disable-next-line no-console
-    console.log(`Routes Payroll API running at http://127.0.0.1:${PORT} (db: ${store.provider}, startup: ${startupState})`);
+    console.log(`Routes Payroll API running at ${displayUrl} (db: ${store.provider}, startup: ${startupState})`);
   });
 }
 

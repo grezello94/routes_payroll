@@ -85,6 +85,16 @@ create table if not exists public.payroll_reports (
   unique (company_id, month)
 );
 
+create table if not exists public.employee_verifications (
+  id bigint primary key,
+  company_id bigint not null references public.companies(id) on delete cascade,
+  full_name text not null default '',
+  date_of_birth text not null default '',
+  payload_json text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create sequence if not exists public.designation_presets_id_seq;
 alter table public.designation_presets alter column id set default nextval('public.designation_presets_id_seq');
 select setval('public.designation_presets_id_seq', coalesce((select max(id) from public.designation_presets), 1), (select exists(select 1 from public.designation_presets)));
@@ -101,10 +111,15 @@ create sequence if not exists public.payroll_reports_id_seq;
 alter table public.payroll_reports alter column id set default nextval('public.payroll_reports_id_seq');
 select setval('public.payroll_reports_id_seq', coalesce((select max(id) from public.payroll_reports), 1), (select exists(select 1 from public.payroll_reports)));
 
+create sequence if not exists public.employee_verifications_id_seq;
+alter table public.employee_verifications alter column id set default nextval('public.employee_verifications_id_seq');
+select setval('public.employee_verifications_id_seq', coalesce((select max(id) from public.employee_verifications), 1), (select exists(select 1 from public.employee_verifications)));
+
 create index if not exists idx_designation_company_position on public.designation_presets(company_id, position_index);
 create index if not exists idx_employees_company_position on public.employees(company_id, position_index);
 create index if not exists idx_payroll_company_month_position on public.payroll_entries(company_id, month, position_index);
 create index if not exists idx_payroll_reports_company_month on public.payroll_reports(company_id, month);
+create index if not exists idx_employee_verifications_company_updated on public.employee_verifications(company_id, updated_at desc);
 
 -- Add owner_id to existing companies table if applying to an older database
 do $$ begin
