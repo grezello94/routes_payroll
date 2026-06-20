@@ -39,7 +39,7 @@ create table if not exists public.employees (
   employee_name text not null,
   joining_date text not null default '',
   birth_date text not null default '',
-  nationality text not null default '',
+  nationality text not null default 'Indian',
   state text not null default '',
   base_salary numeric not null default 0,
   opening_advance numeric not null default 0,
@@ -130,12 +130,17 @@ exception when duplicate_column then null; end $$;
 
 -- Add newer employee profile fields to existing employees table if applying to an older database
 do $$ begin
-  alter table public.employees add column nationality text not null default '';
+  alter table public.employees add column nationality text not null default 'Indian';
 exception when duplicate_column then null; end $$;
 
 do $$ begin
   alter table public.employees add column state text not null default '';
 exception when duplicate_column then null; end $$;
+
+-- Backfill existing employee records. This is internal profile data and is not used for payroll calculations.
+update public.employees
+set nationality = 'Indian'
+where nationality is null or btrim(nationality) = '';
 
 insert into public.companies (id, name, name_lc, logo_data_url)
 values (1, 'Routes Payroll', 'routes payroll', '')

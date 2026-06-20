@@ -216,7 +216,7 @@ function createSqliteStore(baseDir) {
           employee_name TEXT NOT NULL,
           joining_date TEXT NOT NULL DEFAULT '',
           birth_date TEXT NOT NULL DEFAULT '',
-          nationality TEXT NOT NULL DEFAULT '',
+          nationality TEXT NOT NULL DEFAULT 'Indian',
           state TEXT NOT NULL DEFAULT '',
           base_salary REAL NOT NULL DEFAULT 0,
           opening_advance REAL NOT NULL DEFAULT 0,
@@ -338,7 +338,7 @@ function createSqliteStore(baseDir) {
       }
 
       try {
-        await run("ALTER TABLE employees ADD COLUMN nationality TEXT NOT NULL DEFAULT ''");
+        await run("ALTER TABLE employees ADD COLUMN nationality TEXT NOT NULL DEFAULT 'Indian'");
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
           throw error;
@@ -352,6 +352,8 @@ function createSqliteStore(baseDir) {
           throw error;
         }
       }
+
+      await run("UPDATE employees SET nationality = 'Indian' WHERE nationality IS NULL OR trim(nationality) = ''");
 
       await run("UPDATE users SET username_lc = lower(username) WHERE username_lc = ''");
       await run("UPDATE users SET email_lc = lower(email) WHERE email_lc = ''");
