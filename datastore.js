@@ -1961,6 +1961,24 @@ function createSupabaseStore() {
       || details.includes("null value in column \"id\""));
   }
 
+  function isSupabaseMissingColumn(error, table, columns = []) {
+    const code = String(error?.code || "");
+    const message = String(error?.message || "").toLowerCase();
+    const details = getSupabaseErrorDetails(error).toLowerCase();
+    const combined = `${message} ${details}`;
+    const tableName = String(table || "").toLowerCase();
+    return (code === "42703" || code === "PGRST204")
+      && combined.includes(tableName)
+      && columns.some((column) => combined.includes(String(column || "").toLowerCase()));
+  }
+
+  function throwEmployeeProfileMigrationError(error) {
+    if (!isSupabaseMissingColumn(error, "employees", ["nationality", "state"])) return false;
+    const migrationError = new Error("Employee profile fields are missing in Supabase. Run supabase-employee-profile-migration.sql, or the latest supabase-setup.sql, so existing employees can store nationality and optional state.");
+    migrationError.code = "schema_migration_required";
+    throw migrationError;
+  }
+
   async function insertSupabaseRows(table, buildRows, {
     count = 1,
     fallbackLabel = table,
@@ -2392,6 +2410,7 @@ function createSupabaseStore() {
         }]);
         return { id };
       } catch (error) {
+        throwEmployeeProfileMigrationError(error);
         mapConflict(error, "Employee ID already exists for this company.");
       }
     },
@@ -2425,6 +2444,7 @@ function createSupabaseStore() {
           },
         });
       } catch (error) {
+        throwEmployeeProfileMigrationError(error);
         mapConflict(error, "Employee ID already exists for this company.");
       }
     },

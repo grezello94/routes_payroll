@@ -1885,6 +1885,10 @@ app.post("/api/employees", authMiddleware, async (req, res) => {
       res.status(409).json({ error: "Employee ID already exists for this company." });
       return;
     }
+    if (error?.code === "schema_migration_required") {
+      res.status(500).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Failed to create employee." });
   }
 });
@@ -1924,6 +1928,10 @@ app.put("/api/employees/:id", authMiddleware, async (req, res) => {
   } catch (error) {
     if (error?.code === "unique") {
       res.status(409).json({ error: "Employee ID already exists for this company." });
+      return;
+    }
+    if (error?.code === "schema_migration_required") {
+      res.status(500).json({ error: error.message });
       return;
     }
     res.status(500).json({ error: "Failed to update employee." });
