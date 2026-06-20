@@ -998,64 +998,90 @@
       .rail-btn {
         position: relative !important;
         width: 100% !important;
-        min-height: 52px !important;
+        min-height: 48px !important;
         margin: 0 !important;
-        padding: 0 16px !important;
-        border-radius: 16px !important;
+        padding: 0 15px !important;
+        border-radius: 14px !important;
         border: 1px solid transparent !important;
         background: transparent !important;
-        color: #263340 !important;
+        color: #273545 !important;
         justify-content: flex-start !important;
-        gap: 13px !important;
+        gap: 12px !important;
         box-shadow: none !important;
         overflow: visible !important;
       }
 
+      .rail-btn::before,
+      .rail-btn::after {
+        position: relative !important;
+        z-index: 1 !important;
+      }
+
       .rail-btn::before {
-        content: attr(data-icon) !important;
-        width: 30px !important;
-        height: 30px !important;
-        display: inline-grid !important;
-        place-items: center !important;
-        flex: 0 0 30px !important;
-        border: 1px solid #cbdce7 !important;
-        border-radius: 10px !important;
-        background: #f7fafc !important;
-        color: var(--rn-navy) !important;
-        font-size: 0.82rem !important;
-        font-weight: 950 !important;
-        line-height: 1 !important;
+        content: "" !important;
+        width: 20px !important;
+        height: 20px !important;
+        flex: 0 0 20px !important;
+        display: block !important;
+        background: currentColor !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        -webkit-mask: var(--rail-icon) center / 20px 20px no-repeat !important;
+        mask: var(--rail-icon) center / 20px 20px no-repeat !important;
         opacity: 1 !important;
+      }
+
+      .rail-btn[data-rail-action="dashboard"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 5a2 2 0 0 1 2-2h5v8H4V5Zm0 8h7v8H6a2 2 0 0 1-2-2v-6Zm9-10h5a2 2 0 0 1 2 2v6h-7V3Zm0 10h7v6a2 2 0 0 1-2 2h-5v-8Z'/%3E%3C/svg%3E");
+      }
+
+      .rail-btn[data-rail-action="employees"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M9 11a4 4 0 1 1 0-8a4 4 0 0 1 0 8Zm0 2c3.31 0 6 2.02 6 4.5V20H3v-2.5C3 15.02 5.69 13 9 13Zm7.5-1.5a3.5 3.5 0 1 1 0-7a3.5 3.5 0 0 1 0 7Zm.5 1.5c2.76 0 5 1.79 5 4v2h-5v-1.5c0-1.62-.78-3.06-2.03-4.14A7.7 7.7 0 0 1 17 13Z'/%3E%3C/svg%3E");
+      }
+
+      .rail-btn[data-rail-action="payroll"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5Zm4 2v2h8V7H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z'/%3E%3C/svg%3E");
+      }
+
+      .rail-btn[data-rail-action="reports"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M5 3h10l4 4v14H5V3Zm9 1.5V8h3.5L14 4.5ZM8 12v2h8v-2H8Zm0 4v2h8v-2H8Z'/%3E%3C/svg%3E");
+      }
+
+      .rail-btn[data-rail-action="verification"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2l8 3v6c0 5.05-3.41 9.76-8 11c-4.59-1.24-8-5.95-8-11V5l8-3Zm-1 13.2l5.3-5.3l-1.4-1.4l-3.9 3.9l-1.9-1.9l-1.4 1.4l3.3 3.3Z'/%3E%3C/svg%3E");
+      }
+
+      .rail-btn[data-rail-action="settings"] {
+        --rail-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65l-2-3.46l-2.49 1a7.2 7.2 0 0 0-1.69-.98L15 3.25h-4l-.36 2.68c-.6.24-1.17.56-1.69.98l-2.49-1l-2 3.46l2.11 1.65c-.04.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65l2 3.46l2.49-1c.52.4 1.09.73 1.69.98L11 20.75h4l.36-2.68c.6-.24 1.17-.56 1.69-.98l2.49 1l2-3.46l-2.11-1.65ZM13 15.5a3.5 3.5 0 1 1 0-7a3.5 3.5 0 0 1 0 7Z'/%3E%3C/svg%3E");
       }
 
       .rail-btn::after {
         color: inherit !important;
-        font-size: 0.98rem !important;
-        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        font-weight: 800 !important;
         letter-spacing: 0 !important;
       }
 
       .rail-btn:hover {
-        background: #e4eef5 !important;
+        background: #f3f8fb !important;
         color: var(--rn-navy) !important;
         transform: none !important;
       }
 
       .rail-btn.active {
-        background: linear-gradient(135deg, #55c2ef 0%, #449bbf 100%) !important;
-        color: #ffffff !important;
-        border-color: #449bbf !important;
-        box-shadow: inset 0 -18px 35px rgba(0, 0, 0, 0.08), 0 12px 25px rgba(68, 155, 191, 0.24) !important;
+        background: linear-gradient(135deg, #e8f7fd 0%, #d8eef7 100%) !important;
+        color: var(--rn-navy) !important;
+        border-color: #cbdce7 !important;
+        box-shadow: inset 4px 0 0 var(--rn-blue), 0 10px 24px rgba(68, 155, 191, 0.16) !important;
       }
 
       .rail-btn.active::after,
       .rail-btn.active::before {
-        color: #ffffff !important;
+        color: var(--rn-navy) !important;
       }
 
       .rail-btn.active::before {
-        background: rgba(255, 255, 255, 0.18) !important;
-        border-color: rgba(255, 255, 255, 0.42) !important;
+        background: var(--rn-blue-2) !important;
       }
 
       .rail-btn:not(.active):hover::after,
@@ -2169,18 +2195,18 @@
 
       <section id="appView" class="app-view hidden">
         <aside class="side-rail" aria-label="Quick Navigation">
-          <button class="rail-btn active" type="button" aria-label="Dashboard" data-rail-action="dashboard" data-icon="D"></button>
-          <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees" data-icon="E"></button>
-          <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll" data-icon="P"></button>
-          <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports" data-icon="R"></button>
+          <button class="rail-btn active" type="button" aria-label="Dashboard" data-rail-action="dashboard"></button>
+          <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees"></button>
+          <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll"></button>
+          <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports"></button>
           <div class="rail-report-submenu" aria-label="Reports submenu">
             <button type="button" class="active" data-report-tab="summary">Generated Payroll Summary</button>
             <button type="button" data-report-tab="payslips">Generated Payslips</button>
             <button type="button" data-report-tab="leave">Leave / Resume Work</button>
             <button type="button" data-report-tab="errors">Error Log</button>
           </div>
-          <button class="rail-btn" type="button" aria-label="Employee Verification" data-rail-action="verification" data-icon="V"></button>
-          <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings" data-icon="S"></button>
+          <button class="rail-btn" type="button" aria-label="Employee Verification" data-rail-action="verification"></button>
+          <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings"></button>
         </aside>
 
         <div class="app-main">
