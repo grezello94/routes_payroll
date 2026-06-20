@@ -998,27 +998,34 @@
       .rail-btn {
         position: relative !important;
         width: 100% !important;
-        min-height: 50px !important;
+        min-height: 52px !important;
         margin: 0 !important;
-        padding: 0 18px !important;
+        padding: 0 16px !important;
         border-radius: 16px !important;
         border: 1px solid transparent !important;
         background: transparent !important;
         color: #263340 !important;
         justify-content: flex-start !important;
-        gap: 12px !important;
+        gap: 13px !important;
         box-shadow: none !important;
         overflow: visible !important;
       }
 
       .rail-btn::before {
-        width: 20px !important;
-        height: 20px !important;
+        content: attr(data-icon) !important;
+        width: 30px !important;
+        height: 30px !important;
         display: inline-grid !important;
         place-items: center !important;
-        border: 1.6px solid currentColor !important;
-        border-radius: 7px !important;
-        opacity: 0.9 !important;
+        flex: 0 0 30px !important;
+        border: 1px solid #cbdce7 !important;
+        border-radius: 10px !important;
+        background: #f7fafc !important;
+        color: var(--rn-navy) !important;
+        font-size: 0.82rem !important;
+        font-weight: 950 !important;
+        line-height: 1 !important;
+        opacity: 1 !important;
       }
 
       .rail-btn::after {
@@ -1044,6 +1051,11 @@
       .rail-btn.active::after,
       .rail-btn.active::before {
         color: #ffffff !important;
+      }
+
+      .rail-btn.active::before {
+        background: rgba(255, 255, 255, 0.18) !important;
+        border-color: rgba(255, 255, 255, 0.42) !important;
       }
 
       .rail-btn:not(.active):hover::after,
@@ -2157,18 +2169,18 @@
 
       <section id="appView" class="app-view hidden">
         <aside class="side-rail" aria-label="Quick Navigation">
-          <button class="rail-btn active" type="button" aria-label="Dashboard" data-rail-action="dashboard">▣</button>
-          <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees">◎</button>
-          <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll">◫</button>
-          <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports">◧</button>
+          <button class="rail-btn active" type="button" aria-label="Dashboard" data-rail-action="dashboard" data-icon="D"></button>
+          <button class="rail-btn" type="button" aria-label="Employees" data-rail-action="employees" data-icon="E"></button>
+          <button class="rail-btn" type="button" aria-label="Payroll" data-rail-action="payroll" data-icon="P"></button>
+          <button class="rail-btn" type="button" aria-label="Reports" data-rail-action="reports" data-icon="R"></button>
           <div class="rail-report-submenu" aria-label="Reports submenu">
             <button type="button" class="active" data-report-tab="summary">Generated Payroll Summary</button>
             <button type="button" data-report-tab="payslips">Generated Payslips</button>
             <button type="button" data-report-tab="leave">Leave / Resume Work</button>
             <button type="button" data-report-tab="errors">Error Log</button>
           </div>
-          <button class="rail-btn" type="button" aria-label="Employee Verification" data-rail-action="verification">▤</button>
-          <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings">⚙</button>
+          <button class="rail-btn" type="button" aria-label="Employee Verification" data-rail-action="verification" data-icon="V"></button>
+          <button class="rail-btn" type="button" aria-label="Settings" data-rail-action="settings" data-icon="S"></button>
         </aside>
 
         <div class="app-main">
