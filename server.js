@@ -998,6 +998,8 @@ function normalizeEmployee(employee, index) {
     employeeName: sanitizeText(employee?.employeeName, 120),
     joiningDate: isIsoDate(employee?.joiningDate) ? String(employee.joiningDate) : "",
     birthDate: isIsoDate(employee?.birthDate) ? String(employee.birthDate) : "",
+    nationality: sanitizeText(employee?.nationality, 80),
+    state: sanitizeText(employee?.state, 80),
     baseSalary: Math.max(0, toNumber(employee?.baseSalary)),
     openingAdvance: Math.max(0, toNumber(employee?.openingAdvance)),
     designation: sanitizeText(employee?.designation, 120),
@@ -1019,6 +1021,8 @@ function dbRowToEmployee(row) {
     employeeName: row.employee_name,
     joiningDate: row.joining_date || "",
     birthDate: row.birth_date || "",
+    nationality: row.nationality || "",
+    state: row.state || "",
     baseSalary: Number(row.base_salary || 0),
     openingAdvance: Number(row.opening_advance || 0),
     designation: row.designation || "",
@@ -1865,9 +1869,10 @@ app.post("/api/employees", authMiddleware, async (req, res) => {
     normalized.employeeName.length < 2
     || normalized.employeeId.length < 2
     || normalized.joiningDate.length !== 10
+    || normalized.nationality.length < 2
     || normalized.designation.length < 2
   ) {
-    res.status(400).json({ error: "Employee name, ID, joining date, and designation are required." });
+    res.status(400).json({ error: "Employee name, ID, joining date, nationality, and designation are required." });
     return;
   }
 
@@ -1905,9 +1910,10 @@ app.put("/api/employees/:id", authMiddleware, async (req, res) => {
     normalized.employeeName.length < 2
     || normalized.employeeId.length < 2
     || normalized.joiningDate.length !== 10
+    || normalized.nationality.length < 2
     || normalized.designation.length < 2
   ) {
-    res.status(400).json({ error: "Employee name, ID, joining date, and designation are required." });
+    res.status(400).json({ error: "Employee name, ID, joining date, nationality, and designation are required." });
     return;
   }
 

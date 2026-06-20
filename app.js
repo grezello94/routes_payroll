@@ -29,6 +29,8 @@ const SELECTORS = {
   employeeNameInput: document.getElementById("employeeNameInput"),
   employeeJoiningDateInput: document.getElementById("employeeJoiningDateInput"),
   employeeBirthDateInput: document.getElementById("employeeBirthDateInput"),
+  employeeNationalityInput: document.getElementById("employeeNationalityInput"),
+  employeeStateInput: document.getElementById("employeeStateInput"),
   employeeSalaryInput: document.getElementById("employeeSalaryInput"),
   employeeOpeningAdvanceInput: document.getElementById("employeeOpeningAdvanceInput"),
   employeeDesignationInput: document.getElementById("employeeDesignationInput"),
@@ -586,6 +588,8 @@ function wireEmployeeManagement() {
       employeeName: SELECTORS.employeeNameInput.value.trim(),
       joiningDate: SELECTORS.employeeJoiningDateInput.value || "",
       birthDate: SELECTORS.employeeBirthDateInput.value || "",
+      nationality: SELECTORS.employeeNationalityInput.value.trim(),
+      state: SELECTORS.employeeStateInput.value.trim(),
       baseSalary: Number(SELECTORS.employeeSalaryInput.value || 0),
       openingAdvance: Math.max(0, Number(SELECTORS.employeeOpeningAdvanceInput.value || 0)),
       designation: SELECTORS.employeeDesignationInput.value.trim(),
@@ -603,6 +607,10 @@ function wireEmployeeManagement() {
     }
     if (!payload.joiningDate) {
       setEmployeeMessage("Joining date is required.");
+      return;
+    }
+    if (payload.nationality.length < 2) {
+      setEmployeeMessage("Nationality is required.");
       return;
     }
     if (payload.openingAdvance < 0) {
@@ -733,6 +741,8 @@ function fillEmployeeForm(employee) {
   SELECTORS.employeeNameInput.value = employee.employeeName || "";
   SELECTORS.employeeJoiningDateInput.value = employee.joiningDate || "";
   SELECTORS.employeeBirthDateInput.value = employee.birthDate || "";
+  SELECTORS.employeeNationalityInput.value = employee.nationality || "";
+  SELECTORS.employeeStateInput.value = employee.state || "";
   SELECTORS.employeeSalaryInput.value = Number(employee.baseSalary || 0);
   SELECTORS.employeeOpeningAdvanceInput.value = Number(employee.openingAdvance || 0);
   const designationValue = String(employee.designation || "");
@@ -6537,6 +6547,8 @@ function analyzeLegacyRows(rows) {
         employeeName,
         joiningDate: importedJoiningDate || fallbackJoiningDate,
         birthDate: parseIsoFromImport(pickCellFromSchema(row, detectedHeaders, "birthDate")),
+        nationality: "Indian",
+        state: "",
         baseSalary: presentSalary,
         openingAdvance: oldAdvanceTaken,
         designation: designation || "Staff",
@@ -6722,6 +6734,8 @@ async function importLegacyAnalysis(analyzed, onProgress = () => {}) {
       employeeName: incoming.employeeName || existing?.employeeName || "",
       joiningDate: incoming.joiningDate || existing?.joiningDate || "",
       birthDate: incoming.birthDate || existing?.birthDate || "",
+      nationality: incoming.nationality || existing?.nationality || "Indian",
+      state: incoming.state || existing?.state || "",
       baseSalary: Number(incoming.baseSalary || 0) > 0 ? incoming.baseSalary : Number(existing?.baseSalary || 0),
       openingAdvance: Number(incoming.openingAdvance || 0) > 0 ? incoming.openingAdvance : Number(existing?.openingAdvance || 0),
       designation: incoming.designation || existing?.designation || "Staff",

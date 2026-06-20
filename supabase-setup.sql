@@ -39,6 +39,8 @@ create table if not exists public.employees (
   employee_name text not null,
   joining_date text not null default '',
   birth_date text not null default '',
+  nationality text not null default '',
+  state text not null default '',
   base_salary numeric not null default 0,
   opening_advance numeric not null default 0,
   designation text not null default '',
@@ -124,6 +126,15 @@ create index if not exists idx_employee_verifications_company_updated on public.
 -- Add owner_id to existing companies table if applying to an older database
 do $$ begin
   alter table public.companies add column owner_id text not null default '';
+exception when duplicate_column then null; end $$;
+
+-- Add newer employee profile fields to existing employees table if applying to an older database
+do $$ begin
+  alter table public.employees add column nationality text not null default '';
+exception when duplicate_column then null; end $$;
+
+do $$ begin
+  alter table public.employees add column state text not null default '';
 exception when duplicate_column then null; end $$;
 
 insert into public.companies (id, name, name_lc, logo_data_url)

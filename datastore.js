@@ -216,6 +216,8 @@ function createSqliteStore(baseDir) {
           employee_name TEXT NOT NULL,
           joining_date TEXT NOT NULL DEFAULT '',
           birth_date TEXT NOT NULL DEFAULT '',
+          nationality TEXT NOT NULL DEFAULT '',
+          state TEXT NOT NULL DEFAULT '',
           base_salary REAL NOT NULL DEFAULT 0,
           opening_advance REAL NOT NULL DEFAULT 0,
           designation TEXT NOT NULL DEFAULT '',
@@ -329,6 +331,22 @@ function createSqliteStore(baseDir) {
 
       try {
         await run("ALTER TABLE users ADD COLUMN reset_code_expires_at TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE employees ADD COLUMN nationality TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
+          throw error;
+        }
+      }
+
+      try {
+        await run("ALTER TABLE employees ADD COLUMN state TEXT NOT NULL DEFAULT ''");
       } catch (error) {
         if (!String(error?.message || "").toLowerCase().includes("duplicate column name")) {
           throw error;
@@ -622,7 +640,7 @@ function createSqliteStore(baseDir) {
 
     async listEmployeesByCompany(companyId) {
       return all(
-        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date,
+        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date, nationality, state,
                 base_salary, opening_advance, designation, mobile_number, status, leave_from, leave_to,
                 terminated_on, notes, position_index
          FROM employees
@@ -634,7 +652,7 @@ function createSqliteStore(baseDir) {
 
     async getEmployeeByIdCompany(id, companyId) {
       return get(
-        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date,
+        `SELECT id, company_id, employee_id, employee_name, joining_date, birth_date, nationality, state,
                 base_salary, opening_advance, designation, mobile_number, status, leave_from, leave_to,
                 terminated_on, notes, position_index
          FROM employees
@@ -647,16 +665,18 @@ function createSqliteStore(baseDir) {
       try {
         const result = await run(
           `INSERT INTO employees (
-            company_id, employee_id, employee_name, joining_date, birth_date, base_salary,
+            company_id, employee_id, employee_name, joining_date, birth_date, nationality, state, base_salary,
             opening_advance, designation, mobile_number, status, leave_from, leave_to, terminated_on, notes,
             position_index, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
           [
             companyId,
             employee.employeeId,
             employee.employeeName,
             employee.joiningDate,
             employee.birthDate,
+            employee.nationality,
+            employee.state,
             employee.baseSalary,
             employee.openingAdvance,
             employee.designation,
@@ -684,7 +704,7 @@ function createSqliteStore(baseDir) {
       try {
         await run(
           `UPDATE employees
-           SET employee_id = ?, employee_name = ?, joining_date = ?, birth_date = ?, base_salary = ?,
+           SET employee_id = ?, employee_name = ?, joining_date = ?, birth_date = ?, nationality = ?, state = ?, base_salary = ?,
                opening_advance = ?, designation = ?, mobile_number = ?, status = ?, leave_from = ?, leave_to = ?,
                terminated_on = ?, notes = ?, position_index = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND company_id = ?`,
@@ -693,6 +713,8 @@ function createSqliteStore(baseDir) {
             employee.employeeName,
             employee.joiningDate,
             employee.birthDate,
+            employee.nationality,
+            employee.state,
             employee.baseSalary,
             employee.openingAdvance,
             employee.designation,
@@ -1441,6 +1463,8 @@ function createFirebaseStore(baseDir) {
         employee_name: employee.employeeName,
         joining_date: employee.joiningDate,
         birth_date: employee.birthDate,
+        nationality: employee.nationality,
+        state: employee.state,
         base_salary: Number(employee.baseSalary || 0),
         opening_advance: Number(employee.openingAdvance || 0),
         designation: employee.designation,
@@ -1475,6 +1499,8 @@ function createFirebaseStore(baseDir) {
           employee_name: employee.employeeName,
           joining_date: employee.joiningDate,
           birth_date: employee.birthDate,
+          nationality: employee.nationality,
+          state: employee.state,
           base_salary: Number(employee.baseSalary || 0),
           opening_advance: Number(employee.openingAdvance || 0),
           designation: employee.designation,
@@ -2347,6 +2373,8 @@ function createSupabaseStore() {
           employee_name: employee.employeeName,
           joining_date: employee.joiningDate,
           birth_date: employee.birthDate,
+          nationality: employee.nationality,
+          state: employee.state,
           base_salary: Number(employee.baseSalary || 0),
           opening_advance: Number(employee.openingAdvance || 0),
           designation: employee.designation,
@@ -2379,6 +2407,8 @@ function createSupabaseStore() {
             employee_name: employee.employeeName,
             joining_date: employee.joiningDate,
             birth_date: employee.birthDate,
+            nationality: employee.nationality,
+            state: employee.state,
             base_salary: Number(employee.baseSalary || 0),
             opening_advance: Number(employee.openingAdvance || 0),
             designation: employee.designation,
