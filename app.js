@@ -2,6 +2,8 @@ const STORAGE_KEYS = {
   authToken: "routes_payroll_auth_token_v1",
   payrollMonthMode: "routes_payroll_month_mode_v1",
   errorLogs: "routes_payroll_error_logs_v1",
+  activeWorkspace: "routes_payroll_active_workspace_v1",
+  activeReportPanel: "routes_payroll_active_report_panel_v1",
 };
 
 const SELECTORS = {
@@ -2425,7 +2427,7 @@ function wireAppActions() {
       SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
-  setReportPanel("summary");
+  setReportPanel(preferredReportPanelFromStorage());
 
   SELECTORS.monthPicker.addEventListener("change", async () => {
     await flushPendingSave();
@@ -3263,11 +3265,13 @@ function setWorkspace(view) {
   SELECTORS.settingsSection?.classList.toggle("hidden", !settingsView);
   SELECTORS.saveStatus?.classList.toggle("hidden", !payrollView);
   
+  localStorage.setItem(STORAGE_KEYS.activeWorkspace, view);
   localStorage.setItem("activeWorkspace", view);
 }
 
 function setReportPanel(panel = "summary") {
   const safePanel = ["summary", "payslips", "leave", "errors"].includes(panel) ? panel : "summary";
+  localStorage.setItem(STORAGE_KEYS.activeReportPanel, safePanel);
   SELECTORS.reportTabs.forEach((button) => {
     const active = button.dataset.reportTab === safePanel;
     button.classList.toggle("active", active);
@@ -3276,6 +3280,25 @@ function setReportPanel(panel = "summary") {
   SELECTORS.reportPanels.forEach((section) => {
     section.classList.toggle("hidden", section.dataset.reportPanel !== safePanel);
   });
+}
+
+function preferredWorkspaceFromStorage() {
+  const urlWorkspace = new URLSearchParams(window.location.search).get("workspace") || "";
+  if (["dashboard", "employees", "payroll", "reports", "verification", "settings"].includes(urlWorkspace)) {
+    return urlWorkspace;
+  }
+  const saved = localStorage.getItem(STORAGE_KEYS.activeWorkspace) || localStorage.getItem("activeWorkspace") || "dashboard";
+  return ["dashboard", "employees", "payroll", "reports", "verification", "settings"].includes(saved) ? saved : "dashboard";
+}
+
+function preferredReportPanelFromStorage() {
+  const saved = localStorage.getItem(STORAGE_KEYS.activeReportPanel) || "summary";
+  return ["summary", "payslips", "leave", "errors"].includes(saved) ? saved : "summary";
+}
+
+function applyWorkspaceNavigation(view) {
+  setWorkspace(view);
+  SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === view));
 }
 
 function closeActionMenu() {
@@ -3362,7 +3385,11 @@ async function validateToken() {
 
 async function switchToApp() {
   stopServerReconnectPolling();
+  const savedWorkspace = preferredWorkspaceFromStorage();
+  const savedReportPanel = preferredReportPanelFromStorage();
   SELECTORS.authView.classList.add("hidden");
+  applyWorkspaceNavigation(savedWorkspace);
+  setReportPanel(savedReportPanel);
   SELECTORS.appView.classList.remove("hidden");
   hydrateSettingsAccount();
   try {
@@ -3372,19 +3399,16 @@ async function switchToApp() {
       loadMonthRecords(),
       loadDesignationPresets(),
       loadPayrollReports(),
-      loadEmployeeVerifications(),
-      loadBackupStatus(),
     ]);
+    if (savedWorkspace === "verification") {
+      await loadEmployeeVerifications();
+    }
+    if (savedWorkspace === "settings") {
+      await loadBackupStatus();
+    }
   } catch (error) {
     showAppMessage(error.message || "Failed to load some application data.");
   }
-  
-  const urlWorkspace = new URLSearchParams(window.location.search).get("workspace") || "";
-  const savedWorkspace = ["dashboard", "employees", "payroll", "reports", "verification", "settings"].includes(urlWorkspace)
-    ? urlWorkspace
-    : localStorage.getItem("activeWorkspace") || "dashboard";
-  setWorkspace(savedWorkspace);
-  SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === savedWorkspace));
 }
 
 async function isServerReachable() {
