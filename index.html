@@ -2021,39 +2021,86 @@
       @media (max-width: 850px) {
         .shell {
           width: 100% !important;
+          min-height: 100dvh !important;
           margin: 0 !important;
           border: 0 !important;
           border-radius: 0 !important;
+          background: #e4eef5 !important;
+        }
+
+        .app-view {
+          display: block !important;
+          min-height: 100dvh !important;
+          background: #e4eef5 !important;
         }
 
         .app-main {
-          padding: 16px 14px calc(92px + env(safe-area-inset-bottom)) !important;
+          padding: 14px 12px calc(98px + env(safe-area-inset-bottom)) !important;
+          background: linear-gradient(180deg, #f8fbfd 0%, #e4eef5 100%) !important;
         }
 
         .side-rail {
-          display: flex !important;
+          position: fixed !important;
+          left: 10px !important;
+          right: 10px !important;
+          bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+          z-index: 50 !important;
+          display: grid !important;
+          grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+          gap: 2px !important;
           margin: 0 !important;
-          border-radius: 0 !important;
-          background: #ffffff !important;
-          border-top: 1px solid var(--rn-line) !important;
+          padding: 8px !important;
+          border-radius: 24px !important;
+          background: rgba(255, 255, 255, 0.94) !important;
+          border: 1px solid rgba(203, 220, 231, 0.9) !important;
+          box-shadow: 0 18px 40px rgba(23, 25, 26, 0.14) !important;
+          backdrop-filter: blur(16px) !important;
+        }
+
+        .side-rail::before {
+          content: none !important;
         }
 
         .rail-btn {
-          min-height: 62px !important;
-          border-radius: 0 !important;
+          min-height: 54px !important;
+          display: grid !important;
+          grid-template-rows: 22px auto !important;
+          justify-items: center !important;
+          align-content: center !important;
+          gap: 4px !important;
+          border-radius: 18px !important;
           padding: 0 !important;
-          justify-content: center !important;
+          color: #657489 !important;
         }
 
         .rail-btn.active {
-          color: var(--rn-blue) !important;
-          background: transparent !important;
-          box-shadow: none !important;
+          color: var(--rn-navy) !important;
+          background: #e8f7fd !important;
+          border-color: #cbdce7 !important;
+          box-shadow: inset 0 3px 0 var(--rn-blue) !important;
         }
 
+        .rail-btn::before,
         .rail-btn.active::before {
-          background: var(--rn-blue) !important;
-          color: #ffffff !important;
+          width: 20px !important;
+          height: 20px !important;
+          flex: 0 0 20px !important;
+          background: currentColor !important;
+        }
+
+        .rail-btn::after {
+          max-width: 100% !important;
+          font-size: 0.58rem !important;
+          font-weight: 850 !important;
+          line-height: 1.05 !important;
+          text-align: center !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+
+        .rail-btn[data-rail-action="verification"]::after {
+          content: "Verify" !important;
         }
 
         .rail-report-submenu,
@@ -2064,12 +2111,72 @@
 
         .topbar {
           grid-template-columns: 1fr !important;
-          gap: 18px !important;
+          gap: 12px !important;
+          margin-bottom: 14px !important;
+          padding: 14px !important;
+          border: 1px solid rgba(203, 220, 231, 0.8) !important;
+          border-radius: 24px !important;
+          background: rgba(255, 255, 255, 0.86) !important;
+          box-shadow: 0 10px 30px rgba(23, 25, 26, 0.08) !important;
+        }
+
+        .topbar h1 {
+          font-size: clamp(2rem, 12vw, 3rem) !important;
+          line-height: 0.94 !important;
+        }
+
+        .topbar .subtitle {
+          max-width: 18rem !important;
+          font-size: 0.92rem !important;
+          line-height: 1.45 !important;
         }
 
         .toolbar {
-          display: grid !important;
-          grid-template-columns: 1fr 1fr !important;
+          display: flex !important;
+          flex-wrap: nowrap !important;
+          gap: 8px !important;
+          justify-content: flex-start !important;
+          overflow-x: auto !important;
+          padding-bottom: 3px !important;
+          scrollbar-width: none !important;
+        }
+
+        .toolbar::-webkit-scrollbar {
+          display: none !important;
+        }
+
+        .inline-field,
+        .toolbar .inline-field:first-of-type,
+        .toolbar .inline-field:nth-of-type(2),
+        .inline-field:has(#monthPicker),
+        .toolbar > button,
+        .toolbar .ghost,
+        .action-menu summary {
+          min-width: max-content !important;
+          min-height: 46px !important;
+          flex: 0 0 auto !important;
+          border-radius: 999px !important;
+          box-shadow: none !important;
+        }
+
+        .inline-field {
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 8px !important;
+          padding: 6px 12px !important;
+        }
+
+        .inline-field span {
+          margin: 0 !important;
+          font-size: 0.68rem !important;
+        }
+
+        .inline-field input,
+        .inline-field select {
+          width: auto !important;
+          min-width: 104px !important;
+          height: 30px !important;
+          padding: 0 20px 0 4px !important;
         }
 
         .kpi-metrics-row,
@@ -2082,6 +2189,127 @@
 
         .dashboard-panel-footer {
           grid-template-columns: 1fr !important;
+        }
+
+        .kpi-metrics-row {
+          gap: 10px !important;
+          margin-bottom: 12px !important;
+        }
+
+        .kpi-metric-card,
+        .dashboard-panel,
+        .settings-card,
+        .employee-form,
+        .employee-list-wrap,
+        .payroll-control-panel,
+        .payroll-review-panel,
+        .payroll-totals-bar,
+        .verification-card,
+        .verification-schema-card {
+          border-radius: 20px !important;
+          box-shadow: 0 10px 28px rgba(23, 25, 26, 0.08) !important;
+        }
+
+        .kpi-metric-card {
+          min-height: 116px !important;
+          padding: 16px !important;
+        }
+
+        .dashboard-panel,
+        .settings-card,
+        .employee-form,
+        .verification-card,
+        .verification-schema-card {
+          padding: 18px !important;
+        }
+
+        .dashboard-command-center,
+        .dashboard-insights {
+          gap: 12px !important;
+        }
+
+        .dashboard-command-center .dashboard-panel {
+          min-height: 0 !important;
+        }
+
+        .dashboard-summary-cards {
+          gap: 10px !important;
+        }
+
+        .dashboard-payroll-chart {
+          padding: 14px !important;
+        }
+
+        .dashboard-chart-head {
+          grid-template-columns: 1fr !important;
+        }
+
+        .dashboard-chart-legend {
+          justify-content: flex-start !important;
+        }
+
+        .table-head {
+          padding: 14px 2px 12px !important;
+        }
+
+        .table-head h2 {
+          font-size: clamp(1.75rem, 9vw, 2.35rem) !important;
+          letter-spacing: -0.045em !important;
+        }
+
+        .employee-form,
+        .employee-status-fields,
+        .payroll-search-row,
+        .payroll-bulk-panel,
+        .verification-fields {
+          grid-template-columns: 1fr !important;
+        }
+
+        .employee-form-actions,
+        .verification-form-actions,
+        .verification-actions,
+        .settings-inline,
+        .reports-selection-bar,
+        .reports-selection-actions {
+          display: grid !important;
+          grid-template-columns: 1fr !important;
+          gap: 10px !important;
+        }
+
+        .employee-list-wrap,
+        #employeesSection .employee-list-wrap,
+        #reportsSection .employee-list-wrap {
+          max-width: 100% !important;
+          margin-left: 0 !important;
+          margin-right: 0 !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
+
+        .payroll-cards,
+        #payrollSection .payroll-cards {
+          padding: 0 0 18px !important;
+        }
+
+        .payroll-modern-grid,
+        .payroll-modern-main,
+        .payroll-modern-side,
+        .payroll-fields,
+        .payroll-footer,
+        .payroll-review-body,
+        .payroll-review-grid,
+        .payroll-totals-bar {
+          grid-template-columns: 1fr !important;
+        }
+
+        .phone-camera-access {
+          display: grid !important;
+          grid-template-columns: 1fr !important;
+          gap: 10px !important;
+        }
+
+        .camera-shell {
+          min-height: 260px !important;
         }
 
         .reports-subnav {
