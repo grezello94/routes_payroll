@@ -3283,8 +3283,13 @@ function setReportPanel(panel = "summary") {
 }
 
 function preferredWorkspaceFromStorage() {
-  const urlWorkspace = new URLSearchParams(window.location.search).get("workspace") || "";
+  const params = new URLSearchParams(window.location.search);
+  const urlWorkspace = params.get("workspace") || "";
   if (["dashboard", "employees", "payroll", "reports", "verification", "settings"].includes(urlWorkspace)) {
+    params.delete("workspace");
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", nextUrl);
     return urlWorkspace;
   }
   const saved = localStorage.getItem(STORAGE_KEYS.activeWorkspace) || localStorage.getItem("activeWorkspace") || "dashboard";
