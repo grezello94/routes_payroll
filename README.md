@@ -277,7 +277,18 @@ SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 JWT_SECRET=replace-this-with-a-long-random-secret
+CRON_SECRET=replace-this-with-a-random-string-at-least-16-characters-long
 ```
+
+`vercel.json` schedules a daily request to `/api/keepalive`. The endpoint is
+authenticated with `CRON_SECRET` and performs a real Supabase query, so it both
+generates database activity and fails visibly in the Vercel Cron logs if the
+database cannot be reached. Add `CRON_SECRET` to the Production environment and
+redeploy; Vercel automatically sends it as a Bearer token to scheduled jobs.
+
+This is a practical safeguard for a Free Supabase project, but the only way to
+guarantee that Supabase will not automatically pause the project is to move the
+project's organization to a paid plan.
 
 Optional mail settings if you use email verification or password reset:
 

@@ -65,6 +65,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const SUPABASE_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.SUPABASE_REQUEST_TIMEOUT_MS || 30000));
+const CRON_SECRET = String(process.env.CRON_SECRET || "").trim();
 const store = createStore({ baseDir: __dirname });
 const RATE_BUCKETS = new Map();
 const AUTH_CACHE = new Map();
@@ -1356,6 +1357,32 @@ function authMiddleware(req, res, next) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ...startupStatusPayload(), time: new Date().toISOString() });
+});
+
+app.get("/api/keepalive", async (req, res) => {
+  if (!CRON_SECRET) {
+    res.status(503).json({ ok: false, error: "CRON_SECRET is not configured." });
+    return;
+  }
+
+  if (req.headers.authorization !== `Bearer ${CRON_SECRET}`) {
+    res.status(401).json({ ok: false, error: "Unauthorized." });
+    return;
+  }
+
+  if (store.provider !== "supabase") {
+    res.status(503).json({ ok: false, error: "Supabase is not the active database provider." });
+    return;
+  }
+
+  try {
+    await ensureStartupInit();
+    await store.countUsers();
+    res.json({ ok: true, provider: store.provider, checkedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error("Supabase keep-alive check failed:", error);
+    res.status(503).json({ ok: false, error: "Supabase database check failed." });
+  }
 });
 
 app.get("/api/access-url", (_req, res) => {
