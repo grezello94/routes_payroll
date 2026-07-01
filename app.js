@@ -43,6 +43,8 @@ const SELECTORS = {
   employeeSaveBtn: document.getElementById("employeeSaveBtn"),
   employeeCancelBtn: document.getElementById("employeeCancelBtn"),
   employeeMessage: document.getElementById("employeeMessage"),
+  employeeStatusFilter: document.getElementById("employeeStatusFilter"),
+  employeeFilterCount: document.getElementById("employeeFilterCount"),
   employeesBody: document.getElementById("employeesBody"),
   companyPicker: document.getElementById("companyPicker"),
   addCompanyBtn: document.getElementById("addCompanyBtn"),
@@ -576,6 +578,10 @@ function wireEmployeeManagement() {
     syncEmployeeStatusFields();
   });
 
+  SELECTORS.employeeStatusFilter?.addEventListener("change", () => {
+    renderEmployeeTable();
+  });
+
   SELECTORS.employeeForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitBtn = SELECTORS.employeeSaveBtn;
@@ -640,24 +646,25 @@ function wireEmployeeManagement() {
         submitBtn.textContent = isEditMode ? "Updating..." : "Saving...";
       }
       if (editingId > 0) {
-        await apiRequest(`/api/employees/${editingId}`, {
+        const response = await apiRequest(`/api/employees/${editingId}`, {
           method: "PUT",
           body: payload,
         });
+        applySavedEmployee(response.employee);
         showAppMessage("Employee updated.");
       } else {
         payload.employeeId = nextEmployeeCode(employeeMaster);
-        await apiRequest("/api/employees", {
+        const response = await apiRequest("/api/employees", {
           method: "POST",
           body: payload,
         });
+        applySavedEmployee(response.employee);
         showAppMessage("Employee added.");
       }
 
-      await loadEmployees();
-      await loadMonthRecords();
       resetEmployeeForm();
       setEmployeeMessage("");
+      await loadMonthRecords();
     } catch (error) {
       setEmployeeMessage(employeeApiErrorMessage(error));
     } finally {
@@ -780,6 +787,33 @@ function nextEmployeeCode(employees) {
   return `EMP${String(maxId + 1).padStart(3, "0")}`;
 }
 
+function applySavedEmployee(savedEmployee) {
+  if (!savedEmployee || !Number(savedEmployee.id)) return;
+  const savedId = Number(savedEmployee.id);
+  const existingIndex = employeeMaster.findIndex((employee) => Number(employee.id) === savedId);
+
+  if (existingIndex >= 0) {
+    employeeMaster[existingIndex] = savedEmployee;
+  } else {
+    employeeMaster.push(savedEmployee);
+  }
+
+  employeeMaster.sort((a, b) => (
+    Number(a.positionIndex || 0) - Number(b.positionIndex || 0)
+    || Number(a.id || 0) - Number(b.id || 0)
+  ));
+  renderEmployeeTable();
+  renderLeaveResumeReport();
+  renderDesignationSuggestions();
+  renderDashboardInsights();
+}
+
+function currentEmployeeStatus(employee) {
+  const status = String(employee?.status || "working").toLowerCase();
+  if (status === "leave" || status === "terminated") return status;
+  return "working";
+}
+
 async function loadEmployees() {
   try {
     const companyId = getSelectedCompanyId();
@@ -809,9 +843,28 @@ async function loadEmployees() {
 
 function renderEmployeeTable() {
   if (!SELECTORS.employeesBody) return;
+  const statusFilter = SELECTORS.employeeStatusFilter?.value || "all";
+  const visibleEmployees = statusFilter === "all"
+    ? employeeMaster
+    : employeeMaster.filter((employee) => currentEmployeeStatus(employee) === statusFilter);
+
+  if (SELECTORS.employeeFilterCount) {
+    SELECTORS.employeeFilterCount.textContent = statusFilter === "all"
+      ? `${employeeMaster.length} employee${employeeMaster.length === 1 ? "" : "s"}`
+      : `${visibleEmployees.length} of ${employeeMaster.length} employees`;
+  }
+
   if (employeeMaster.length === 0) {
     SELECTORS.employeesBody.innerHTML = `
       <tr><td colspan="9" class="empty">No employees yet. Add employee details above.</td></tr>
+    `;
+    return;
+  }
+
+  if (visibleEmployees.length === 0) {
+    const filterLabel = SELECTORS.employeeStatusFilter?.selectedOptions?.[0]?.textContent || "selected status";
+    SELECTORS.employeesBody.innerHTML = `
+      <tr><td colspan="9" class="empty">No employees match ${escapeHtml(filterLabel)}.</td></tr>
     `;
     return;
   }
@@ -833,16 +886,17 @@ function renderEmployeeTable() {
     }
   }
 
-  SELECTORS.employeesBody.innerHTML = employeeMaster
+  SELECTORS.employeesBody.innerHTML = visibleEmployees
     .map((employee) => {
-      const statusLabel = employee.status === "leave"
+      const currentStatus = currentEmployeeStatus(employee);
+      const statusLabel = currentStatus === "leave"
         ? "On Leave"
-        : employee.status === "terminated"
+        : currentStatus === "terminated"
           ? "Terminated"
           : "Working";
-      const statusClass = employee.status === "leave"
+      const statusClass = currentStatus === "leave"
         ? "status-pill leave"
-        : employee.status === "terminated"
+        : currentStatus === "terminated"
           ? "status-pill terminated"
           : "status-pill working";
       let advanceRemainedDisplay = Number(employee.openingAdvance || 0);

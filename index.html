@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260603a" />
+    <link rel="stylesheet" href="styles.css?v=20260701a" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -2655,6 +2655,19 @@
             </form>
             <p id="employeeMessage" class="status-msg"></p>
 
+            <div class="employee-list-tools">
+              <label for="employeeStatusFilter">
+                Filter by Status
+                <select id="employeeStatusFilter">
+                  <option value="all">All Employees</option>
+                  <option value="working">Working</option>
+                  <option value="leave">On Leave</option>
+                  <option value="terminated">Terminated</option>
+                </select>
+              </label>
+              <span id="employeeFilterCount" class="employee-filter-count" aria-live="polite"></span>
+            </div>
+
             <div class="employee-list-wrap">
               <table>
                 <thead>
@@ -3229,6 +3242,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260603a"></script>
+    <script src="app.js?v=20260701a"></script>
   </body>
 </html>
