@@ -639,6 +639,18 @@ function wireEmployeeManagement() {
       setEmployeeMessage("For terminated status, terminated date is required.");
       return;
     }
+    if (payload.leaveFrom && payload.leaveFrom < payload.joiningDate) {
+      setEmployeeMessage("Leave date cannot be before the employee's joining date.");
+      return;
+    }
+    if (payload.leaveTo && payload.leaveTo < payload.leaveFrom) {
+      setEmployeeMessage("Resume date cannot be before the leave date.");
+      return;
+    }
+    if (payload.terminatedOn && payload.terminatedOn < payload.joiningDate) {
+      setEmployeeMessage("Termination date cannot be before the employee's joining date.");
+      return;
+    }
 
     try {
       if (submitBtn) {
@@ -871,6 +883,7 @@ function renderEmployeeTable() {
 
   // Advance Remained is the carried balance left after the latest month's deduction is applied.
   const payrollByEmployee = {};
+  const payrollRowsByEmployee = {};
   const companyId = getSelectedCompanyId && getSelectedCompanyId();
   const activeMonth = getSelectedMonth();
   if (window.allPayrollRecords) {
@@ -880,8 +893,12 @@ function renderEmployeeTable() {
       // Strictly ignore any future months beyond the currently selected month dropdown
       if (String(rec.month || "") > String(activeMonth)) continue;
 
-      if (!payrollByEmployee[rec.employeeId] || (rec.month > payrollByEmployee[rec.employeeId].month)) {
-        payrollByEmployee[rec.employeeId] = rec;
+      const employeeId = String(rec.employeeId);
+      if (!payrollRowsByEmployee[employeeId]) payrollRowsByEmployee[employeeId] = [];
+      payrollRowsByEmployee[employeeId].push(rec);
+
+      if (!payrollByEmployee[employeeId] || (rec.month > payrollByEmployee[employeeId].month)) {
+        payrollByEmployee[employeeId] = rec;
       }
     }
   }
@@ -900,15 +917,17 @@ function renderEmployeeTable() {
           ? "status-pill terminated"
           : "status-pill working";
       let advanceRemainedDisplay = Number(employee.openingAdvance || 0);
-      let salaryDisplay = Number(employee.baseSalary || 0);
+      // A payroll row is a salary checkpoint (present salary + that month's
+      // increment). Taking the highest checkpoint carries raises forward without
+      // adding the same raise repeatedly across monthly records.
+      const salaryDisplay = window.SalaryProgression.effectiveSalary(
+        employee.baseSalary,
+        payrollRowsByEmployee[String(employee.employeeId)] || [],
+        activeMonth,
+        true
+      );
       const payroll = payrollByEmployee[employee.employeeId];
       if (payroll) {
-        const latestPresentSalary = Number(
-          payroll.presentSalary ?? payroll.present_salary ?? payroll.baseSalary ?? payroll.base_salary
-        );
-        if (Number.isFinite(latestPresentSalary) && latestPresentSalary > 0) {
-          salaryDisplay = latestPresentSalary;
-        }
         if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained))) {
           advanceRemainedDisplay = Number(payroll.advanceRemained);
         }

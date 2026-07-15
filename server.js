@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const admin = require("firebase-admin");
+const { effectiveSalary } = require("./salary-progression");
 
 function loadLocalEnv(baseDir) {
   const possiblePaths = [".env.local", ".env.local.txt", "env.local", ".env", ".env.txt"];
@@ -1014,6 +1015,26 @@ function normalizeEmployee(employee, index) {
   };
 }
 
+function employeeTimelineError(employee) {
+  const joiningDate = String(employee?.joiningDate || "");
+  const leaveFrom = String(employee?.leaveFrom || "");
+  const resumeOn = String(employee?.leaveTo || "");
+  const terminatedOn = String(employee?.terminatedOn || "");
+  if (leaveFrom && joiningDate && leaveFrom < joiningDate) {
+    return "Leave date cannot be before the employee's joining date.";
+  }
+  if (resumeOn && !leaveFrom) {
+    return "A leave date is required before setting a resume date.";
+  }
+  if (resumeOn && resumeOn < leaveFrom) {
+    return "Resume date cannot be before the leave date.";
+  }
+  if (terminatedOn && joiningDate && terminatedOn < joiningDate) {
+    return "Termination date cannot be before the employee's joining date.";
+  }
+  return "";
+}
+
 function dbRowToEmployee(row) {
   return {
     id: Number(row.id),
@@ -1223,6 +1244,9 @@ async function listMergedPayrollMonthRecords(month, companyId) {
     store.listEmployeesByCompany(companyId),
   ]);
   const allCompanyRows = await store.listPayrollEntriesAll();
+  const companyPayrollRows = allCompanyRows.filter(
+    (row) => Number(row.company_id) === Number(companyId)
+  );
   const openingAdvanceByEmployeeId = new Map(
     employees.map((employee) => [
       String(employee.employee_id || ""),
@@ -1233,7 +1257,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
     employees.map((employee) => [String(employee.employee_id || ""), employee])
   );
   const advanceLedger = buildAdvanceLedger(
-    allCompanyRows.filter((row) => Number(row.company_id) === Number(companyId)),
+    companyPayrollRows,
     openingAdvanceByEmployeeId,
     month
   );
@@ -1241,8 +1265,18 @@ async function listMergedPayrollMonthRecords(month, companyId) {
   const records = [];
 
   employees.forEach((employee, index) => {
-    const linked = byEmployeeId.get(String(employee.employee_id || "")) || null;
-    const carriedAdvance = advanceLedger.latestAdvanceByEmployeeId.get(String(employee.employee_id || "")) ?? null;
+    const employeeId = String(employee.employee_id || "");
+    const linked = byEmployeeId.get(employeeId) || null;
+    const carriedAdvance = advanceLedger.latestAdvanceByEmployeeId.get(employeeId) ?? null;
+    // Each payroll row is a salary checkpoint: its present salary plus that
+    // month's increment. Use the highest prior checkpoint so an increment carries
+    // forward without being counted again if a later row already includes it.
+    const effectivePresentSalary = effectiveSalary(
+      employee.base_salary,
+      companyPayrollRows.filter((row) => String(row.employee_id || "") === employeeId),
+      month,
+      false
+    );
     const monthStatus = resolveEmployeeStatusForMonth(employee, month);
     records.push({
       id: linked?.id || null,
@@ -1252,7 +1286,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       employeeName: employee.employee_name,
       joiningDate: employee.joining_date || "",
       designation: linked?.designation || employee.designation || "",
-      presentSalary: linked?.present_salary ?? Number(employee.base_salary || 0),
+      presentSalary: effectivePresentSalary,
       increment: linked?.increment ?? 0,
       oldAdvanceTaken: carriedAdvance !== null ? carriedAdvance : (linked?.old_advance_taken ?? Number(employee.opening_advance || 0)),
       extraAdvanceAdded: linked?.extra_advance_added ?? 0,
@@ -1265,7 +1299,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       leaveTo: monthStatus.leaveTo,
       terminatedOn: monthStatus.terminatedOn,
     });
-    byEmployeeId.delete(String(employee.employee_id || ""));
+    byEmployeeId.delete(employeeId);
   });
 
   for (const extra of byEmployeeId.values()) {
@@ -1902,6 +1936,11 @@ app.post("/api/employees", authMiddleware, async (req, res) => {
     res.status(400).json({ error: "Employee name, ID, joining date, nationality, and designation are required." });
     return;
   }
+  const timelineError = employeeTimelineError(normalized);
+  if (timelineError) {
+    res.status(400).json({ error: timelineError });
+    return;
+  }
 
   try {
     const result = await store.createEmployee(companyId, normalized);
@@ -1945,6 +1984,11 @@ app.put("/api/employees/:id", authMiddleware, async (req, res) => {
     || normalized.designation.length < 2
   ) {
     res.status(400).json({ error: "Employee name, ID, joining date, nationality, and designation are required." });
+    return;
+  }
+  const timelineError = employeeTimelineError(normalized);
+  if (timelineError) {
+    res.status(400).json({ error: timelineError });
     return;
   }
 
