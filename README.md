@@ -247,6 +247,27 @@ The launcher loads `.env.local` automatically.
 http://127.0.0.1:5501
 ```
 
+## Deploy To Coolify On Contabo
+
+This repo includes Docker support for Coolify.
+
+Files for Coolify:
+
+- [Dockerfile](/Users/grezello/Desktop/routes_payroll/Dockerfile)
+- [.dockerignore](/Users/grezello/Desktop/routes_payroll/.dockerignore)
+- [.env.coolify.example](/Users/grezello/Desktop/routes_payroll/.env.coolify.example)
+- [COOLIFY_MIGRATION.md](/Users/grezello/Desktop/routes_payroll/COOLIFY_MIGRATION.md)
+
+Recommended migration path:
+
+1. Keep Supabase as the production database.
+2. Copy Vercel environment variables into Coolify.
+3. Deploy this repo as a Dockerfile app in Coolify.
+4. Set the exposed port to `5501`.
+5. Point your domain to Coolify after `/api/health` is healthy.
+
+See [COOLIFY_MIGRATION.md](/Users/grezello/Desktop/routes_payroll/COOLIFY_MIGRATION.md) for the full migration checklist.
+
 ## Deploy To Vercel
 
 This repo is now configured so Vercel can run the Express app through a serverless entrypoint.
