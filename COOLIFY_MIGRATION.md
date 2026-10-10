@@ -128,3 +128,21 @@ If anything fails after DNS cutover, point DNS back to Vercel. Because the recom
 - payslip preview/export works
 - password reset or email verification works if SMTP is configured
 - scheduled keepalive returns `ok: true`
+
+## Weekly backups to personal Google Drive
+
+The app can upload weekly backups to folder `1LNxVNKGYa3pQWNzcgrW9GyIDX_Y7XVyW`. It retains the server copy and retries pending uploads every minute. Successful uploads have local receipts; Drive metadata prevents duplicates if a receipt is lost. Names contain the year, numeric month, month name, and creation date/time in Asia/Kolkata, for example `Routes-Payroll-Backup-2026-10-October-2026-10-10_11-56-56-IST.json`. This is the snapshot creation month, not a filter on the payroll records included in the backup.
+
+Add these as secret environment variables in Coolify after granting Google OAuth offline access:
+
+```text
+GOOGLE_DRIVE_CLIENT_ID=<Google OAuth client ID>
+GOOGLE_DRIVE_CLIENT_SECRET=<Google OAuth client secret>
+GOOGLE_DRIVE_REFRESH_TOKEN=<offline refresh token>
+GOOGLE_DRIVE_BACKUP_FOLDER_ID=1LNxVNKGYa3pQWNzcgrW9GyIDX_Y7XVyW
+BACKUP_DIR=/app/data/monthly-backups
+```
+
+Mount persistent storage at the backup directory. Enable the Google Drive API in your Google Cloud project and create an OAuth client. Authorize using the personal Google account with write access to the destination folder. The authorization must permit access to this existing folder: use Google Picker with `drive.file`, or an appropriately authorized Drive scope. An arbitrary folder link alone does not grant `drive.file` access. Request offline access to obtain a refresh token. Keep credentials in Coolify secrets, never in Git or chat. External OAuth apps in Testing can have short-lived refresh tokens; configure the consent app appropriately for unattended backups.
+
+Settings reports whether Drive is waiting for authorization, connected, or needs attention. Uploads remain disabled until all three OAuth credentials are configured.

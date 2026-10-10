@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20260701a" />
+    <link rel="stylesheet" href="styles.css?v=20261010a" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -2675,6 +2675,7 @@
                     <th>Employee ID</th>
                     <th>Name</th>
                     <th>Salary (₹)</th>
+                    <th class="employee-increment-heading" title="Recorded increments up to the selected payroll month">Increment History</th>
                     <th>Advance Remained (₹)</th>
                     <th>Status</th>
                     <th>Leave From</th>
@@ -2786,9 +2787,9 @@
               </article>
 
               <article class="settings-card">
-                <h3>Monthly Emergency Backup</h3>
-                <p>Creates one server-side JSON backup on the last calendar day of each month while the app is running, so you have an emergency recovery file ready.</p>
-                <div id="backupStatusSummary" class="settings-inline-summary">Loading monthly backup status...</div>
+                <h3>Automatic Weekly Backup</h3>
+                <p>Automatically saves a payroll data backup every 7 days while the server is running. Overdue backups run when the server restarts. Keep a downloaded copy separately for added protection.</p>
+                <div id="backupStatusSummary" class="settings-inline-summary">Loading automatic backup status...</div>
                 <div class="settings-inline">
                   <button id="refreshBackupStatusBtn" type="button" class="ghost">Refresh Status</button>
                   <button id="downloadLatestBackupBtn" type="button" class="ghost">Download Latest Backup</button>
@@ -3243,6 +3244,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="salary-progression.js?v=20260715a"></script>
-    <script src="app.js?v=20260715a"></script>
+    <script src="app.js?v=20261010h"></script>
   </body>
 </html>

@@ -538,3 +538,9 @@ Restart the backend and refresh the browser so the latest filtering logic is use
 4. Open Payroll Register for the target payroll month.
 5. Complete payroll values and review computed payout.
 6. Export payslips, Excel, CSV, or backup JSON as needed.
+
+## Automatic weekly payroll backups
+
+The running Node server creates an initial JSON payroll backup and another every seven days. It checks once per minute and catches up after a restart. Settings shows the latest backup and next scheduled time, with a download button. Existing monthly backup files remain available. Failed backups are retried without deleting older copies, and files are written atomically with owner-only permissions.
+
+By default files are stored in `data/monthly-backups` for compatibility. Set `BACKUP_DIR` to a persistent mounted directory for hosted deployments. Backups export companies, employee records, designations, payroll entries, and generated reports; they are not a full provider-level database or authentication backup. Downloaded automatic backup files can be restored with Restore DB JSON. The timer requires a continuously running server; serverless deployments need an external scheduler and durable storage.

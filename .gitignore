@@ -3,6 +3,8 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/monthly-backups/*.json
+data/monthly-backups/*.tmp
+data/monthly-backups/*.drive-uploaded
 npm-debug.log*
 payroll-backup.json
 firebase-service-account.json

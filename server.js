@@ -8,6 +8,8 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const admin = require("firebase-admin");
 const { effectiveSalary } = require("./salary-progression");
+const { createBackupScheduler } = require("./backup-scheduler");
+const { createDriveBackupUploader } = require("./google-drive-backup");
 
 function loadLocalEnv(baseDir) {
   const possiblePaths = [".env.local", ".env.local.txt", "env.local", ".env", ".env.txt"];
@@ -76,7 +78,31 @@ let startupState = "pending";
 let startupInitPromise = null;
 
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(__dirname, { index: "index.html" }));
+// Serve only public application assets; database files and backups stay private.
+const PUBLIC_ASSETS = new Set([
+  "/", "/index.html", "/styles.css", "/app.js", "/salary-progression.js",
+  "/sw.js", "/manifest.webmanifest", "/reset-password.html", "/reset-password.js",
+  "/verify-email.html", "/verify-email.js",
+  "/icons/icon-192.svg", "/icons/icon-512.svg",
+  "/icons/routes-logo.png", "/icons/routes-logo-no-bg.png",
+]);
+app.use((req, res, next) => {
+  if (req.path === "/api" || req.path.startsWith("/api/")) {
+    res.set("Cache-Control", "no-store");
+    return next();
+  }
+  if (PUBLIC_ASSETS.has(req.path)) return next();
+  // Preserve client-side navigation while blocking direct access to private files.
+  if (req.path.includes(".") || req.path.startsWith("/data/") || req.path.startsWith("/node_modules/")) {
+    return res.status(404).end();
+  }
+  next();
+});
+const servePublicAsset = express.static(__dirname, { index: "index.html", dotfiles: "deny" });
+app.use((req, res, next) => {
+  if (!PUBLIC_ASSETS.has(req.path)) return next();
+  return servePublicAsset(req, res, next);
+});
 
 function isValidMonth(month) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
@@ -293,48 +319,12 @@ function resolveEmployeeStatusForMonth(employee, month) {
   };
 }
 
-function isLastCalendarDay(date) {
-  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  return date.getDate() === lastDay;
-}
-
-function nextScheduledBackupDate(date = new Date()) {
-  const candidate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  if (date.getDate() <= candidate.getDate() && !isLastCalendarDay(date)) {
-    return candidate;
-  }
-  return new Date(date.getFullYear(), date.getMonth() + 2, 0);
-}
-
-function parseBackupFilename(fileName) {
-  const match = String(fileName || "").match(/^monthly-backup-(\d{4}-\d{2})-(.+)\.json$/);
-  if (!match) return null;
-  return {
-    month: match[1],
-    stamp: match[2],
-  };
-}
-
-function listMonthlyBackupFiles() {
-  ensureMonthlyBackupDir();
-  return fs.readdirSync(MONTHLY_BACKUP_DIR)
-    .filter((fileName) => fileName.endsWith(".json"))
-    .map((fileName) => {
-      const parsed = parseBackupFilename(fileName);
-      if (!parsed) return null;
-      const fullPath = path.join(MONTHLY_BACKUP_DIR, fileName);
-      const stats = fs.statSync(fullPath);
-      return {
-        fileName,
-        fullPath,
-        month: parsed.month,
-        createdAt: stats.mtime.toISOString(),
-        sizeBytes: Number(stats.size || 0),
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-}
+const backupScheduler = createBackupScheduler({
+  driveUploader: createDriveBackupUploader(),
+  directory: process.env.BACKUP_DIR || MONTHLY_BACKUP_DIR,
+  getPayload: () => getSystemBackupPayload(),
+  getProvider: () => store.provider,
+});
 
 async function getSystemBackupPayload(userId = null) {
   let companies = await store.listCompaniesById();
@@ -396,58 +386,6 @@ async function getSystemBackupPayload(userId = null) {
   };
 }
 
-async function ensureMonthlyEmergencyBackup({ force = false } = {}) {
-  const now = new Date();
-  const currentMonth = monthIsoFromDate(now);
-  const recentFiles = listMonthlyBackupFiles();
-  const currentMonthBackup = recentFiles.find((item) => item.month === currentMonth) || null;
-  const dueToday = isLastCalendarDay(now);
-
-  if (!force && !dueToday) {
-    return {
-      createdThisCheck: false,
-      hasCurrentMonthBackup: Boolean(currentMonthBackup),
-      latestBackup: recentFiles[0] || null,
-      recentBackups: recentFiles.slice(0, 12),
-      isLastDayOfMonth: false,
-      nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
-    };
-  }
-
-  if (!force && currentMonthBackup) {
-    return {
-      createdThisCheck: false,
-      hasCurrentMonthBackup: true,
-      latestBackup: recentFiles[0] || null,
-      recentBackups: recentFiles.slice(0, 12),
-      isLastDayOfMonth: dueToday,
-      nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
-    };
-  }
-
-  const payload = await getSystemBackupPayload();
-  ensureMonthlyBackupDir();
-  const stamp = now.toISOString().replace(/[:.]/g, "-");
-  const fileName = `monthly-backup-${currentMonth}-${stamp}.json`;
-  const fullPath = path.join(MONTHLY_BACKUP_DIR, fileName);
-  const backupEnvelope = {
-    kind: "routes-payroll-monthly-emergency-backup",
-    createdAt: now.toISOString(),
-    backupMonth: currentMonth,
-    provider: store.provider,
-    payload,
-  };
-  fs.writeFileSync(fullPath, JSON.stringify(backupEnvelope, null, 2), "utf8");
-  const updatedFiles = listMonthlyBackupFiles();
-  return {
-    createdThisCheck: true,
-    hasCurrentMonthBackup: true,
-    latestBackup: updatedFiles[0] || null,
-    recentBackups: updatedFiles.slice(0, 12),
-    isLastDayOfMonth: dueToday,
-    nextScheduledDate: nextScheduledBackupDate(now).toISOString().slice(0, 10),
-  };
-}
 
 function authProvider() {
   return store.provider === "supabase" ? "supabase" : "firebase";
@@ -904,7 +842,13 @@ function normalizeRecord(record, index) {
 }
 
 function isIsoDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  const raw = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const date = new Date(`${raw}T00:00:00`);
+  return !Number.isNaN(date.getTime())
+    && date.getFullYear() === Number(raw.slice(0, 4))
+    && date.getMonth() + 1 === Number(raw.slice(5, 7))
+    && date.getDate() === Number(raw.slice(8, 10));
 }
 
 function normalizeLeaveHistoryItems(history) {
@@ -1239,14 +1183,20 @@ async function buildPayrollReportSnapshot(month, companyId) {
 }
 
 async function listMergedPayrollMonthRecords(month, companyId) {
-  const [rows, employees] = await Promise.all([
+  const [rows, employees, allCompanyRows] = await Promise.all([
     store.listPayrollByMonthCompany(month, companyId),
     store.listEmployeesByCompany(companyId),
+    store.listPayrollEntriesAll(),
   ]);
-  const allCompanyRows = await store.listPayrollEntriesAll();
   const companyPayrollRows = allCompanyRows.filter(
     (row) => Number(row.company_id) === Number(companyId)
   );
+  const salaryRowsByEmployeeId = new Map();
+  for (const row of companyPayrollRows) {
+    const employeeId = String(row.employee_id || "");
+    if (!salaryRowsByEmployeeId.has(employeeId)) salaryRowsByEmployeeId.set(employeeId, []);
+    salaryRowsByEmployeeId.get(employeeId).push(row);
+  }
   const openingAdvanceByEmployeeId = new Map(
     employees.map((employee) => [
       String(employee.employee_id || ""),
@@ -1273,7 +1223,7 @@ async function listMergedPayrollMonthRecords(month, companyId) {
     // forward without being counted again if a later row already includes it.
     const effectivePresentSalary = effectiveSalary(
       employee.base_salary,
-      companyPayrollRows.filter((row) => String(row.employee_id || "") === employeeId),
+      salaryRowsByEmployeeId.get(employeeId) || [],
       month,
       false
     );
@@ -1285,7 +1235,11 @@ async function listMergedPayrollMonthRecords(month, companyId) {
       employeeId: employee.employee_id,
       employeeName: employee.employee_name,
       joiningDate: employee.joining_date || "",
-      designation: linked?.designation || employee.designation || "",
+      birthDate: employee.birth_date || "",
+      nationality: employee.nationality || "",
+      state: employee.state || "",
+      mobileNumber: employee.mobile_number || "",
+      designation: employee.designation || linked?.designation || "",
       presentSalary: effectivePresentSalary,
       increment: linked?.increment ?? 0,
       oldAdvanceTaken: carriedAdvance !== null ? carriedAdvance : (linked?.old_advance_taken ?? Number(employee.opening_advance || 0)),
@@ -1346,6 +1300,7 @@ async function ensurePayrollCheckedForMonth(month, companyId) {
       checkedAt: String(existing.checked_at || ""),
       reportId: existing.id,
       snapshot,
+      existingReport: existing,
     };
   }
 
@@ -1355,6 +1310,7 @@ async function ensurePayrollCheckedForMonth(month, companyId) {
     checkedAt,
     reportId: result.id,
     snapshot,
+    existingReport: existing,
   };
 }
 
@@ -2258,26 +2214,27 @@ app.get("/api/payroll/all", authMiddleware, async (req, res) => {
 
 app.get("/api/system-backups/status", authMiddleware, async (_req, res) => {
   try {
-    const status = await ensureMonthlyEmergencyBackup();
+    await backupScheduler.check();
+    const status = backupScheduler.status();
     res.json(status);
   } catch {
-    res.status(500).json({ error: "Failed to fetch monthly backup status." });
+    res.status(500).json({ error: "Failed to fetch automatic backup status." });
   }
 });
 
 app.get("/api/system-backups/latest", authMiddleware, async (_req, res) => {
   try {
-    const recent = listMonthlyBackupFiles();
+    const recent = backupScheduler.list();
     const latest = recent[0];
     if (!latest) {
-      res.status(404).json({ error: "No monthly emergency backup found yet." });
+      res.status(404).json({ error: "No automatic backup found yet." });
       return;
     }
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Content-Disposition", `attachment; filename="${latest.fileName}"`);
     res.sendFile(latest.fullPath);
   } catch {
-    res.status(500).json({ error: "Failed to download monthly backup." });
+    res.status(500).json({ error: "Failed to download automatic backup." });
   }
 });
 
@@ -2358,7 +2315,26 @@ app.post("/api/payroll-reports/generate", authMiddleware, async (req, res) => {
 
   try {
     const ensured = await ensurePayrollCheckedForMonth(month, companyId);
-    const snapshot = ensured.snapshot;
+    let snapshot = ensured.snapshot;
+    const requestedIds = req.body?.employeeIds;
+    let generatedCount = snapshot.records.length;
+    if (requestedIds !== undefined) {
+      if (!Array.isArray(requestedIds) || !requestedIds.length) {
+        return res.status(400).json({ error: "employeeIds must be a non-empty array." });
+      }
+      const selectedIds = new Set(requestedIds.map((id) => sanitizeText(id, 60)));
+      const selectedRecords = snapshot.records.filter((record) => selectedIds.has(String(record.employeeId)));
+      if (selectedRecords.length !== selectedIds.size) {
+        return res.status(404).json({ error: "Payroll record not found for a selected employee." });
+      }
+      const previous = await store.getPayrollReportByMonthCompany(month, companyId);
+      const previousSnapshot = parseSnapshotJson(previous?.snapshot_json);
+      const previousRecords = Array.isArray(previousSnapshot.records) ? previousSnapshot.records : [];
+      const merged = new Map(previousRecords.map((record) => [String(record.employeeId), record]));
+      selectedRecords.forEach((record) => merged.set(String(record.employeeId), record));
+      snapshot = { ...snapshot, records: Array.from(merged.values()).sort((a, b) => Number(a.positionIndex || 0) - Number(b.positionIndex || 0)) };
+      generatedCount = selectedRecords.length;
+    }
 
     const generatedAt = new Date().toISOString();
     const saved = await store.savePayrollReportSnapshot(month, companyId, {
@@ -2371,6 +2347,7 @@ app.post("/api/payroll-reports/generate", authMiddleware, async (req, res) => {
     res.json({
       report: report ? dbRowToPayrollReport(report) : null,
       snapshot,
+      generatedCount,
     });
   } catch {
     res.status(500).json({ error: "Failed to generate payroll report." });
@@ -2394,13 +2371,14 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
 
   try {
     const ensured = await ensurePayrollCheckedForMonth(month, companyId);
-    const payload = await buildPayrollReportRecord(month, companyId, employeeId);
+    const record = ensured.snapshot.records.find((item) => String(item.employeeId) === employeeId);
+    const payload = record ? { company: ensured.snapshot.company, month, record } : null;
     if (!payload?.record) {
       res.status(404).json({ error: "Payroll record not found for this employee." });
       return;
     }
 
-    const existing = await store.getPayrollReportByMonthCompany(month, companyId);
+    const existing = ensured.existingReport;
     const existingSnapshot = parseSnapshotJson(existing?.snapshot_json);
     const existingRecords = Array.isArray(existingSnapshot.records) ? existingSnapshot.records : [];
     const mergedByEmployee = new Map(existingRecords.map((record) => [String(record.employeeId || ""), record]));
@@ -2441,6 +2419,9 @@ app.post("/api/payroll-reports/generate-entry", authMiddleware, async (req, res)
 });
 
 app.post("/api/payroll/restore", authMiddleware, async (req, res) => {
+  if (["routes-payroll-weekly-emergency-backup", "routes-payroll-monthly-emergency-backup"].includes(req.body?.kind)) {
+    req.body = req.body.payload;
+  }
   const companiesPayload = req.body?.companies;
   const employeesPayload = req.body?.employees;
   const designationsPayload = req.body?.designations;
@@ -2633,6 +2614,7 @@ function ensureStartupInit() {
       .then(() => {
         startupReady = true;
         startupState = "ready";
+        if (!IS_VERCEL) backupScheduler.start();
         // eslint-disable-next-line no-console
         console.log(`Routes Payroll cloud startup completed (db: ${store.provider})`);
       })

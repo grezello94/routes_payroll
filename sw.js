@@ -1,11 +1,11 @@
-const CACHE_NAME = "routes-payroll-v23";
+const CACHE_NAME = "routes-payroll-v32";
 const ASSETS = [
   "./",
   "./index.html",
   "./reset-password.html",
-  "./styles.css?v=20260701a",
+  "./styles.css?v=20261010a",
   "./salary-progression.js?v=20260715a",
-  "./app.js?v=20260715a",
+  "./app.js?v=20261010h",
   "./reset-password.js?v=20260407e",
   "./manifest.webmanifest",
   "./icons/icon-192.svg",
@@ -34,6 +34,8 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   const isSameOrigin = url.origin === self.location.origin;
+  // Authenticated API data must always come from the server.
+  if (isSameOrigin && (url.pathname === "/api" || url.pathname.startsWith("/api/"))) return;
   const isCriticalAsset =
     event.request.mode === "navigate"
     || event.request.destination === "document"
@@ -46,13 +48,14 @@ self.addEventListener("fetch", (event) => {
       fetch(event.request)
         .then((response) => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           return response;
         })
         .catch(async () => {
           const cached = await caches.match(event.request);
           if (cached) return cached;
-          return caches.match("./index.html");
+          if (event.request.mode === "navigate") return caches.match("./index.html");
+          return Response.error();
         })
     );
     return;
@@ -63,7 +66,7 @@ self.addEventListener("fetch", (event) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         return response;
       });
     })

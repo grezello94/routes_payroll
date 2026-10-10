@@ -3839,32 +3839,32 @@ textarea {
 
 #employeesSection .employee-list-wrap th:nth-child(3),
 #employeesSection .employee-list-wrap td:nth-child(3),
-#employeesSection .employee-list-wrap th:nth-child(4),
-#employeesSection .employee-list-wrap td:nth-child(4) {
+#employeesSection .employee-list-wrap th:nth-child(5),
+#employeesSection .employee-list-wrap td:nth-child(5) {
   min-width: 175px;
   white-space: nowrap;
 }
 
-#employeesSection .employee-list-wrap th:nth-child(5),
-#employeesSection .employee-list-wrap td:nth-child(5) {
+#employeesSection .employee-list-wrap th:nth-child(6),
+#employeesSection .employee-list-wrap td:nth-child(6) {
   min-width: 150px;
 }
 
-#employeesSection .employee-list-wrap th:nth-child(6),
-#employeesSection .employee-list-wrap td:nth-child(6),
 #employeesSection .employee-list-wrap th:nth-child(7),
-#employeesSection .employee-list-wrap td:nth-child(7) {
+#employeesSection .employee-list-wrap td:nth-child(7),
+#employeesSection .employee-list-wrap th:nth-child(8),
+#employeesSection .employee-list-wrap td:nth-child(8) {
   min-width: 145px;
   white-space: nowrap;
 }
 
-#employeesSection .employee-list-wrap th:nth-child(8),
-#employeesSection .employee-list-wrap td:nth-child(8) {
+#employeesSection .employee-list-wrap th:nth-child(9),
+#employeesSection .employee-list-wrap td:nth-child(9) {
   min-width: 210px;
 }
 
-#employeesSection .employee-list-wrap th:nth-child(9),
-#employeesSection .employee-list-wrap td:nth-child(9) {
+#employeesSection .employee-list-wrap th:nth-child(10),
+#employeesSection .employee-list-wrap td:nth-child(10) {
   min-width: 170px;
 }
 
@@ -4220,4 +4220,30 @@ body {
     border-right: 1px solid rgba(226, 232, 240, 0.8) !important;
     border-radius: 14px !important;
   }
+}
+
+/* Salary increment history in the employee register. */
+#employeesSection .employee-increment-heading {
+  color: #7e22ce;
+}
+#employeesSection .employee-increment-history {
+  min-width: 200px;
+}
+.employee-increment-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  border-left: 3px solid #9333ea;
+  border-radius: 8px;
+  background: #f3e8ff;
+  color: #6b21a8;
+  white-space: nowrap;
+}
+.employee-increment-entry + .employee-increment-entry {
+  margin-top: 8px;
+}
+.employee-increment-entry span {
+  font-size: 12px;
+  font-weight: 600;
 }
