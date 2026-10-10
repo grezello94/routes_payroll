@@ -2225,11 +2225,7 @@ async function generatePayslipForCurrentRecord(index) {
     if (Number(getSelectedCompanyId()) === Number(companyId) && getSelectedMonth() === month) {
       applyGeneratedPayrollResponse(response);
       renderPayrollWorkflow();
-      setWorkspace("reports");
-      SELECTORS.railButtons.forEach((button) => button.classList.toggle("active", button.dataset.railAction === "reports"));
-      setReportPanel("payslips");
-      SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
-      showAppMessage(`Payslip saved for ${record.employeeName || record.employeeId}.`);
+      showAppMessage(`Payslip generated for ${record.employeeName || record.employeeId}.`);
     }
   } catch (error) {
     showAppMessage(`Payslip generation failed: ${error.message || "Please retry."}`);

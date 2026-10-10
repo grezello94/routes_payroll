@@ -16,8 +16,8 @@ const context = vm.createContext({
   getSelectedCompanyId: () => 1,
   getActiveCompany: () => ({ id: 1, name: 'Test Company' }),
   openPayslip: () => assert.fail('Generation must not open the preview'),
-  setWorkspace: (view) => { assert.equal(view, 'reports'); navigations++; },
-  setReportPanel: (panel) => assert.equal(panel, 'payslips'),
+  setWorkspace: () => { navigations++; assert.fail('Generation must stay in Payroll'); },
+  setReportPanel: () => assert.fail('Generation must not switch report tabs'),
   SELECTORS: { railButtons: [{ dataset: { railAction: 'reports' }, classList: { toggle: (name, active) => assert.equal(active, true) } }], reportsSection: { scrollIntoView() {} } },
   showAppMessage: (message) => messages.push(message),
   flushPendingSave: () => saveBarrier,
@@ -54,6 +54,7 @@ vm.runInContext(source.slice(start, end), context);
   await context.generatePayslipForCurrentRecord(0);
   assert.equal(updates, 1, 'Generation can be retried after failure');
   assert.equal(requests, 3);
-  assert.equal(navigations, 1, "Successful generation opens Reports → Generated Payslips");
-  console.log('Payslip navigation tests passed: no automatic preview, reports navigation after saving, duplicate prevention, workspace isolation, failure, and retry.');
+  assert.equal(navigations, 0, "Successful generation stays in Payroll");
+  assert.ok(messages.some((message) => message === "Payslip generated for Test Employee."));
+  console.log('Payslip navigation tests passed: no automatic preview, stays in payroll after saving, duplicate prevention, workspace isolation, failure, and retry.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
