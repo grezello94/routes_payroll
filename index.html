@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20261010a" />
+    <link rel="stylesheet" href="styles.css?v=20261010k" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -2844,6 +2844,7 @@
                 </label>
                 <div class="reports-selection-actions">
                   <span id="generatedPayslipsSelectionCount" class="reports-selection-count">0 selected</span>
+                  <span class="reports-selected-net" role="status" aria-live="polite">Selected Net Salary: <strong id="generatedPayslipsNetTotal">₹0.00</strong></span>
                   <button id="printSelectedPayslipsBtn" type="button" class="ghost">Print Selected</button>
                 </div>
               </div>
@@ -3244,6 +3245,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="salary-progression.js?v=20260715a"></script>
-    <script src="app.js?v=20261010j"></script>
+    <script src="app.js?v=20261010k"></script>
   </body>
 </html>

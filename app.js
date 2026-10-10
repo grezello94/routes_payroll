@@ -169,6 +169,7 @@ const SELECTORS = {
   generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
   generatedPayslipsCheckAll: document.getElementById("generatedPayslipsCheckAll"),
   generatedPayslipsSelectionCount: document.getElementById("generatedPayslipsSelectionCount"),
+  generatedPayslipsNetTotal: document.getElementById("generatedPayslipsNetTotal"),
   printSelectedPayslipsBtn: document.getElementById("printSelectedPayslipsBtn"),
   generatedPayrollEmployeesBody: document.getElementById("generatedPayrollEmployeesBody"),
   payslipDialog: document.getElementById("payslipDialog"),
@@ -2406,7 +2407,17 @@ function syncGeneratedPayslipSelectionControls(snapshot = activePayrollReportSna
   const hasSnapshot = Boolean(snapshot && Array.isArray(snapshot.records) && snapshot.records.length);
   const total = hasSnapshot ? snapshot.records.length : 0;
   const selection = getGeneratedPayslipSelection();
-  const selectedCount = hasSnapshot ? selection.size : 0;
+  const selectedRecords = hasSnapshot
+    ? snapshot.records.filter((record, index) => selection.has(getGeneratedPayslipRecordKey(record, index)))
+    : [];
+  const selectedCount = selectedRecords.length;
+  const selectedNetSalary = selectedRecords.reduce((totalPaise, record) => {
+    const netSalary = Number(computePayroll(record, snapshot.month).netSalary);
+    return totalPaise + (Number.isFinite(netSalary) ? Math.round(netSalary * 100) : 0);
+  }, 0) / 100;
+  if (SELECTORS.generatedPayslipsNetTotal) {
+    SELECTORS.generatedPayslipsNetTotal.textContent = formatCurrency(selectedNetSalary);
+  }
   const allSelected = hasSnapshot && total > 0 && selectedCount === total;
 
   if (SELECTORS.generatedPayslipsSelectionCount) {
