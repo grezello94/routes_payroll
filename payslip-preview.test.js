@@ -5,7 +5,7 @@ const source = fs.readFileSync('app.js', 'utf8');
 let releaseSave;
 let saveBarrier = new Promise((resolve) => { releaseSave = resolve; });
 let requests = 0;
-let previews = 0;
+let navigations = 0;
 let updates = 0;
 let month = '2026-09';
 let shouldFail = false;
@@ -15,7 +15,10 @@ const context = vm.createContext({
   getSelectedMonth: () => month,
   getSelectedCompanyId: () => 1,
   getActiveCompany: () => ({ id: 1, name: 'Test Company' }),
-  openPayslip: (record) => { previews++; assert.equal(record.presentSalary, 15000); },
+  openPayslip: () => assert.fail('Generation must not open the preview'),
+  setWorkspace: (view) => { assert.equal(view, 'reports'); navigations++; },
+  setReportPanel: (panel) => assert.equal(panel, 'payslips'),
+  SELECTORS: { railButtons: [{ dataset: { railAction: 'reports' }, classList: { toggle: (name, active) => assert.equal(active, true) } }], reportsSection: { scrollIntoView() {} } },
   showAppMessage: (message) => messages.push(message),
   flushPendingSave: () => saveBarrier,
   apiRequest: async (url, options) => {
@@ -32,10 +35,10 @@ const end = source.indexOf('\nasync function generatePayslipsForEntries', start)
 vm.runInContext(source.slice(start, end), context);
 (async () => {
   const first = context.generatePayslipForCurrentRecord(0);
-  assert.equal(previews, 1, 'Preview opens before saving or network requests');
+  assert.equal(navigations, 0, 'Wait for successful generation before opening reports');
   assert.equal(requests, 0);
   await context.generatePayslipForCurrentRecord(0);
-  assert.equal(previews, 1, 'Repeated clicks do not duplicate pending generation');
+  assert.equal(navigations, 0, 'Repeated clicks do not duplicate pending generation');
   month = '2026-10';
   releaseSave();
   await first;
@@ -45,10 +48,12 @@ vm.runInContext(source.slice(start, end), context);
   saveBarrier = Promise.resolve();
   shouldFail = true;
   await context.generatePayslipForCurrentRecord(0);
-  assert.ok(messages.some((message) => message.includes('saving failed')));
+  assert.ok(messages.some((message) => message.includes('generation failed')));
+  assert.equal(navigations, 0, 'Failed generation stays in payroll');
   shouldFail = false;
   await context.generatePayslipForCurrentRecord(0);
   assert.equal(updates, 1, 'Generation can be retried after failure');
   assert.equal(requests, 3);
-  console.log('Payslip preview tests passed: immediate preview, duplicate prevention, workspace isolation, save failure, and retry.');
+  assert.equal(navigations, 1, "Successful generation opens Reports → Generated Payslips");
+  console.log('Payslip navigation tests passed: no automatic preview, reports navigation after saving, duplicate prevention, workspace isolation, failure, and retry.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

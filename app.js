@@ -2210,13 +2210,10 @@ async function generatePayslipForCurrentRecord(index) {
   const record = { ...currentRecord };
   const month = getSelectedMonth();
   const companyId = getSelectedCompanyId();
-  const company = { ...getActiveCompany() };
   const requestKey = `${companyId}:${month}:${record.employeeId}`;
   if (pendingPayslipGenerations.has(requestKey)) return;
 
-  // Preview needs no network round trip; persistence continues independently.
-  openPayslip(record, month, company);
-  showAppMessage("Payslip ready. Saving report...");
+  showAppMessage("Generating payslip...");
   pendingPayslipGenerations.add(requestKey);
   try {
     await flushPendingSave();
@@ -2228,10 +2225,14 @@ async function generatePayslipForCurrentRecord(index) {
     if (Number(getSelectedCompanyId()) === Number(companyId) && getSelectedMonth() === month) {
       applyGeneratedPayrollResponse(response);
       renderPayrollWorkflow();
+      setWorkspace("reports");
+      SELECTORS.railButtons.forEach((button) => button.classList.toggle("active", button.dataset.railAction === "reports"));
+      setReportPanel("payslips");
+      SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
       showAppMessage(`Payslip saved for ${record.employeeName || record.employeeId}.`);
     }
   } catch (error) {
-    showAppMessage(`Payslip preview is ready, but saving failed: ${error.message || "Please retry."}`);
+    showAppMessage(`Payslip generation failed: ${error.message || "Please retry."}`);
   } finally {
     pendingPayslipGenerations.delete(requestKey);
   }
