@@ -24,6 +24,22 @@ const SELECTORS = {
   appMessage: document.getElementById("appMessage"),
   saveStatus: document.getElementById("saveStatus"),
   employeesSection: document.getElementById("employeesSection"),
+  employeeEditorDialog: document.getElementById("employeeEditorDialog"),
+  deleteConfirmationDialog: document.getElementById("deleteConfirmationDialog"),
+  deleteConfirmationForm: document.getElementById("deleteConfirmationForm"),
+  deleteConfirmationInput: document.getElementById("deleteConfirmationInput"),
+  deleteConfirmationSubmitBtn: document.getElementById("deleteConfirmationSubmitBtn"),
+  deleteConfirmationCancelBtn: document.getElementById("deleteConfirmationCancelBtn"),
+  deleteConfirmationCloseBtn: document.getElementById("deleteConfirmationCloseBtn"),
+  deleteConfirmationTitle: document.getElementById("deleteConfirmationTitle"),
+  deleteConfirmationDescription: document.getElementById("deleteConfirmationDescription"),
+  deleteConfirmationEmployeeName: document.getElementById("deleteConfirmationEmployeeName"),
+  deleteConfirmationEmployeeId: document.getElementById("deleteConfirmationEmployeeId"),
+  employeeEditorTitle: document.getElementById("employeeEditorTitle"),
+  employeeEditorDescription: document.getElementById("employeeEditorDescription"),
+  employeeEditorMessage: document.getElementById("employeeEditorMessage"),
+  employeeEditorCloseBtn: document.getElementById("employeeEditorCloseBtn"),
+  employeeAddBtn: document.getElementById("employeeAddBtn"),
   employeeForm: document.getElementById("employeeForm"),
   employeeFormId: document.getElementById("employeeFormId"),
   employeeNameInput: document.getElementById("employeeNameInput"),
@@ -44,6 +60,11 @@ const SELECTORS = {
   employeeCancelBtn: document.getElementById("employeeCancelBtn"),
   employeeMessage: document.getElementById("employeeMessage"),
   employeeStatusFilter: document.getElementById("employeeStatusFilter"),
+  employeeSearchInput: document.getElementById("employeeSearchInput"),
+  employeeTotalCount: document.getElementById("employeeTotalCount"),
+  employeeWorkingCount: document.getElementById("employeeWorkingCount"),
+  employeeLeaveCount: document.getElementById("employeeLeaveCount"),
+  employeeAdvanceTotal: document.getElementById("employeeAdvanceTotal"),
   employeeFilterCount: document.getElementById("employeeFilterCount"),
   employeesBody: document.getElementById("employeesBody"),
   companyPicker: document.getElementById("companyPicker"),
@@ -60,6 +81,8 @@ const SELECTORS = {
   payrollFilterSelect: document.getElementById("payrollFilterSelect"),
   payrollTotalsBar: document.getElementById("payrollTotalsBar"),
   payrollReviewPanel: document.getElementById("payrollReviewPanel"),
+  payrollVisibleCount: document.getElementById("payrollVisibleCount"),
+  payrollBulkScope: document.getElementById("payrollBulkScope"),
   bulkIncrementInput: document.getElementById("bulkIncrementInput"),
   bulkAdvanceInput: document.getElementById("bulkAdvanceInput"),
   bulkDeductionInput: document.getElementById("bulkDeductionInput"),
@@ -74,14 +97,18 @@ const SELECTORS = {
   backupBtn: document.getElementById("backupBtn"),
   restoreInput: document.getElementById("restoreInput"),
   logoutBtn: document.getElementById("logoutBtn"),
+  dashboardHome: document.getElementById("dashboardHome"),
   dashboardSummaryCards: document.getElementById("dashboardSummaryCards"),
-  dashboardHighlightsBody: document.getElementById("dashboardHighlightsBody"),
+  dashboardDistributionBody: document.getElementById("dashboardDistributionBody"),
   dashboardActivityBody: document.getElementById("dashboardActivityBody"),
   dashboardCommandCenter: document.getElementById("dashboardCommandCenter"),
   dashboardMonthStatusTitle: document.getElementById("dashboardMonthStatusTitle"),
   dashboardMonthStatusBadge: document.getElementById("dashboardMonthStatusBadge"),
   dashboardMonthStatusDetail: document.getElementById("dashboardMonthStatusDetail"),
   dashboardAttentionBody: document.getElementById("dashboardAttentionBody"),
+  dashboardAttentionCount: document.getElementById("dashboardAttentionCount"),
+  dashboardReportsCount: document.getElementById("dashboardReportsCount"),
+  dashboardPeriodLabel: document.getElementById("dashboardPeriodLabel"),
   metricEmployees: document.getElementById("metricEmployees"),
   metricGross: document.getElementById("metricGross"),
   metricNet: document.getElementById("metricNet"),
@@ -160,6 +187,13 @@ const SELECTORS = {
   changePasswordBtn: document.getElementById("changePasswordBtn"),
   settingsMessage: document.getElementById("settingsMessage"),
   leaveResumeReportBody: document.getElementById("leaveResumeReportBody"),
+  leaveReportSearchInput: document.getElementById("leaveReportSearchInput"),
+  leaveReportStatusFilter: document.getElementById("leaveReportStatusFilter"),
+  leaveReportCount: document.getElementById("leaveReportCount"),
+  leaveReportEmployeeCount: document.getElementById("leaveReportEmployeeCount"),
+  leaveReportOnLeaveCount: document.getElementById("leaveReportOnLeaveCount"),
+  leaveReportReturnedCount: document.getElementById("leaveReportReturnedCount"),
+  leaveReportEndedCount: document.getElementById("leaveReportEndedCount"),
   reportsMessage: document.getElementById("reportsMessage"),
   reportsSummaryCards: document.getElementById("reportsSummaryCards"),
   errorLogBody: document.getElementById("errorLogBody"),
@@ -167,6 +201,12 @@ const SELECTORS = {
   clearErrorLogsBtn: document.getElementById("clearErrorLogsBtn"),
   generatedPayrollBody: document.getElementById("generatedPayrollBody"),
   generatedPayrollDetailTitle: document.getElementById("generatedPayrollDetailTitle"),
+  reportsMonthPicker: document.getElementById("reportsMonthPicker"),
+  reportsPayslipSearchInput: document.getElementById("reportsPayslipSearchInput"),
+  reportsPayslipCount: document.getElementById("reportsPayslipCount"),
+  reportsPayslipTotalCount: document.getElementById("reportsPayslipTotalCount"),
+  reportsPayslipNetTotal: document.getElementById("reportsPayslipNetTotal"),
+  reportsPayslipAdvanceTotal: document.getElementById("reportsPayslipAdvanceTotal"),
   generatedPayslipsCheckAll: document.getElementById("generatedPayslipsCheckAll"),
   generatedPayslipsSelectionCount: document.getElementById("generatedPayslipsSelectionCount"),
   generatedPayslipsNetTotal: document.getElementById("generatedPayslipsNetTotal"),
@@ -187,6 +227,8 @@ const SELECTORS = {
 let pendingInstallPrompt = null;
 let authToken = localStorage.getItem(STORAGE_KEYS.authToken) || "";
 let activePayslip = null;
+let pendingDeleteConfirmation = null;
+const pendingEmployeeDeletions = new Set();
 let currentRecords = [];
 let employeeMaster = [];
 let activePayrollEmployeeId = "";
@@ -207,6 +249,8 @@ let serverReconnectInFlight = false;
 let payrollReports = [];
 let activePayrollReportId = null;
 let activePayrollReportSnapshot = null;
+let payrollReportsRequestVersion = 0;
+let pendingPayrollReportRequest = null;
 let selectedGeneratedPayslipsByReport = new Map();
 let errorLogs = readStoredErrorLogs();
 let backupStatus = null;
@@ -575,6 +619,13 @@ function isValidEmail(value) {
 }
 
 function wireEmployeeManagement() {
+  SELECTORS.employeeAddBtn?.addEventListener("click", () => openEmployeeEditor());
+  SELECTORS.employeeEditorCloseBtn?.addEventListener("click", closeEmployeeEditor);
+  SELECTORS.employeeEditorDialog?.addEventListener("close", () => {
+    resetEmployeeForm();
+    setEmployeeMessage("");
+  });
+
   SELECTORS.employeeStatusInput?.addEventListener("change", () => {
     syncEmployeeStatusFields();
   });
@@ -582,6 +633,7 @@ function wireEmployeeManagement() {
   SELECTORS.employeeStatusFilter?.addEventListener("change", () => {
     renderEmployeeTable();
   });
+  SELECTORS.employeeSearchInput?.addEventListener("input", () => renderEmployeeTable());
 
   SELECTORS.employeeForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -675,8 +727,7 @@ function wireEmployeeManagement() {
         showAppMessage("Employee added.");
       }
 
-      resetEmployeeForm();
-      setEmployeeMessage("");
+      closeEmployeeEditor();
       await loadMonthRecords();
     } catch (error) {
       setEmployeeMessage(employeeApiErrorMessage(error));
@@ -689,10 +740,7 @@ function wireEmployeeManagement() {
     }
   });
 
-  SELECTORS.employeeCancelBtn?.addEventListener("click", () => {
-    resetEmployeeForm();
-    setEmployeeMessage("");
-  });
+  SELECTORS.employeeCancelBtn?.addEventListener("click", closeEmployeeEditor);
 
   SELECTORS.employeesBody?.addEventListener("click", async (event) => {
     const target = event.target;
@@ -707,27 +755,41 @@ function wireEmployeeManagement() {
     if (button.dataset.action === "edit") {
       const employee = employeeMaster.find((item) => Number(item.id) === id);
       if (!employee) return;
-      fillEmployeeForm(employee);
-      SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+      openEmployeeEditor(employee);
       return;
     }
 
     if (button.dataset.action === "delete") {
-      if (!window.confirm("Delete this employee from management list?")) return;
-      try {
-        await apiRequest(`/api/employees/${id}?companyId=${getSelectedCompanyId()}`, {
-          method: "DELETE",
-        });
-        await loadEmployees();
-        await loadMonthRecords();
-        showAppMessage("Employee deleted.");
-      } catch (error) {
-        setEmployeeMessage(employeeApiErrorMessage(error));
-      }
+      const employee = employeeMaster.find((item) => Number(item.id) === id);
+      if (employee) await deleteEmployeeWithConfirmation(employee);
     }
   });
 
   resetEmployeeForm();
+}
+
+function openEmployeeEditor(employee = null) {
+  resetEmployeeForm();
+  setEmployeeMessage("");
+  if (employee) fillEmployeeForm(employee);
+  if (SELECTORS.employeeEditorTitle) {
+    SELECTORS.employeeEditorTitle.textContent = employee ? "Edit employee" : "Add employee";
+  }
+  if (SELECTORS.employeeEditorDescription) {
+    SELECTORS.employeeEditorDescription.textContent = employee
+      ? "Update personal details, salary, and employment status."
+      : "Create an employee profile to include them in your payroll.";
+  }
+  if (SELECTORS.employeeEditorDialog && !SELECTORS.employeeEditorDialog.open) {
+    SELECTORS.employeeEditorDialog.showModal();
+  }
+  SELECTORS.employeeNameInput?.focus();
+}
+
+function closeEmployeeEditor() {
+  SELECTORS.employeeEditorDialog?.close();
+  resetEmployeeForm();
+  setEmployeeMessage("");
 }
 
 function syncEmployeeStatusFields() {
@@ -746,7 +808,7 @@ function resetEmployeeForm() {
   SELECTORS.employeeForm.dataset.editingId = "";
   SELECTORS.employeeFormId.value = "";
   SELECTORS.employeeSaveBtn.textContent = "Save Employee";
-  SELECTORS.employeeCancelBtn.classList.add("hidden");
+  SELECTORS.employeeCancelBtn.classList.remove("hidden");
   SELECTORS.employeeStatusFields?.classList.add("hidden");
   SELECTORS.employeeStatusInput.value = "working";
   if (SELECTORS.employeeDesignationInput) {
@@ -857,30 +919,12 @@ async function loadEmployees() {
 function renderEmployeeTable() {
   if (!SELECTORS.employeesBody) return;
   const statusFilter = SELECTORS.employeeStatusFilter?.value || "all";
-  const visibleEmployees = statusFilter === "all"
-    ? employeeMaster
-    : employeeMaster.filter((employee) => currentEmployeeStatus(employee) === statusFilter);
-
-  if (SELECTORS.employeeFilterCount) {
-    SELECTORS.employeeFilterCount.textContent = statusFilter === "all"
-      ? `${employeeMaster.length} employee${employeeMaster.length === 1 ? "" : "s"}`
-      : `${visibleEmployees.length} of ${employeeMaster.length} employees`;
-  }
-
-  if (employeeMaster.length === 0) {
-    SELECTORS.employeesBody.innerHTML = `
-      <tr><td colspan="10" class="empty">No employees yet. Add employee details above.</td></tr>
-    `;
-    return;
-  }
-
-  if (visibleEmployees.length === 0) {
-    const filterLabel = SELECTORS.employeeStatusFilter?.selectedOptions?.[0]?.textContent || "selected status";
-    SELECTORS.employeesBody.innerHTML = `
-      <tr><td colspan="10" class="empty">No employees match ${escapeHtml(filterLabel)}.</td></tr>
-    `;
-    return;
-  }
+  const searchTerms = String(SELECTORS.employeeSearchInput?.value || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visibleEmployees = employeeMaster.filter((employee) => {
+    if (statusFilter !== "all" && currentEmployeeStatus(employee) !== statusFilter) return false;
+    const searchable = [employee.employeeName, employee.employeeId, employee.designation].join(" ").toLowerCase();
+    return searchTerms.every((term) => searchable.includes(term));
+  });
 
   // Advance Remained is the carried balance left after the latest month's deduction is applied.
   const payrollByEmployee = {};
@@ -904,6 +948,48 @@ function renderEmployeeTable() {
     }
   }
 
+  const advanceBalance = (employee) => {
+    let balance = Number(employee.openingAdvance || 0);
+    const payroll = payrollByEmployee[employee.employeeId];
+    if (payroll) {
+      if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained))) {
+        balance = Number(payroll.advanceRemained);
+      }
+      balance = Math.max(0, balance);
+    }
+    return balance;
+  };
+
+  if (SELECTORS.employeeTotalCount) SELECTORS.employeeTotalCount.textContent = String(employeeMaster.length);
+  if (SELECTORS.employeeWorkingCount) {
+    SELECTORS.employeeWorkingCount.textContent = String(employeeMaster.filter((employee) => currentEmployeeStatus(employee) === "working").length);
+  }
+  if (SELECTORS.employeeLeaveCount) {
+    SELECTORS.employeeLeaveCount.textContent = String(employeeMaster.filter((employee) => currentEmployeeStatus(employee) === "leave").length);
+  }
+  if (SELECTORS.employeeAdvanceTotal) {
+    SELECTORS.employeeAdvanceTotal.textContent = formatCurrency(employeeMaster.reduce((total, employee) => total + advanceBalance(employee), 0));
+  }
+  if (SELECTORS.employeeFilterCount) {
+    SELECTORS.employeeFilterCount.textContent = statusFilter === "all" && searchTerms.length === 0
+      ? `${employeeMaster.length} employee${employeeMaster.length === 1 ? "" : "s"}`
+      : `${visibleEmployees.length} of ${employeeMaster.length} employees`;
+  }
+
+  if (employeeMaster.length === 0) {
+    SELECTORS.employeesBody.innerHTML = `
+      <tr><td colspan="7" class="empty">Your team starts here. Select Add employee to create the first profile.</td></tr>
+    `;
+    return;
+  }
+
+  if (visibleEmployees.length === 0) {
+    SELECTORS.employeesBody.innerHTML = `
+      <tr><td colspan="7" class="empty">No employees match your search or status filter. Try a different name, employee ID, or designation.</td></tr>
+    `;
+    return;
+  }
+
   SELECTORS.employeesBody.innerHTML = visibleEmployees
     .map((employee) => {
       const currentStatus = currentEmployeeStatus(employee);
@@ -917,7 +1003,7 @@ function renderEmployeeTable() {
         : currentStatus === "terminated"
           ? "status-pill terminated"
           : "status-pill working";
-      let advanceRemainedDisplay = Number(employee.openingAdvance || 0);
+      const advanceRemainedDisplay = advanceBalance(employee);
       // A payroll row is a salary checkpoint (present salary + that month's
       // increment). Taking the highest checkpoint carries raises forward without
       // adding the same raise repeatedly across monthly records.
@@ -927,53 +1013,64 @@ function renderEmployeeTable() {
         activeMonth,
         true
       );
-      const payroll = payrollByEmployee[employee.employeeId];
-      if (payroll) {
-        if (payroll.advanceRemained != null && !isNaN(Number(payroll.advanceRemained))) {
-          advanceRemainedDisplay = Number(payroll.advanceRemained);
-        }
-        if (advanceRemainedDisplay <= 0) {
-          advanceRemainedDisplay = 0;
-        } else {
-          advanceRemainedDisplay = Math.max(0, advanceRemainedDisplay);
-        }
-      }
       const increments = (payrollRowsByEmployee[String(employee.employeeId)] || [])
         .filter((row) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(row.month || ""))
           && Number.isFinite(Number(row.increment)) && Number(row.increment) > 0)
         .sort((a, b) => String(b.month).localeCompare(String(a.month)));
       const incrementHistory = increments.length
-        ? increments.map((row) => `
-            <div class="employee-increment-entry">
-              <strong>+${formatCurrency(Number(row.increment))}</strong>
-              <span>Effective ${escapeHtml(formatMonth(row.month))}</span>
-            </div>`).join("")
-        : '<span class="emp-list-sub">No increments</span>';
+        ? `<details class="employee-history">
+            <summary>
+              <strong>+${formatCurrency(Number(increments[0].increment))}</strong>
+              <span>${escapeHtml(formatMonth(increments[0].month))}</span>
+              <small>${increments.length} change${increments.length === 1 ? "" : "s"}</small>
+            </summary>
+            <div class="employee-history-list">
+              ${increments.length > 1 ? increments.slice(1).map((row) => `
+                <div class="employee-increment-entry">
+                  <strong>+${formatCurrency(Number(row.increment))}</strong>
+                  <span>Effective ${escapeHtml(formatMonth(row.month))}</span>
+                </div>`).join("") : '<span class="emp-list-sub">No earlier salary changes.</span>'}
+            </div>
+          </details>`
+        : '<span class="emp-list-sub">No salary changes</span>';
       const tenure = latestTenureLabel(employee);
+      const initials = String(employee.employeeName || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+      const formatEmployeeDate = (value) => {
+        const date = parseIsoDate(value);
+        return date ? date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : value || "—";
+      };
+      const employmentDates = [
+        employee.leaveFrom ? `<span><span>Leave</span> ${escapeHtml(formatEmployeeDate(employee.leaveFrom))}</span>` : "",
+        employee.leaveTo ? `<span><span>Returned</span> ${escapeHtml(formatEmployeeDate(employee.leaveTo))}</span>` : "",
+        employee.terminatedOn ? `<span><span>Ended</span> ${escapeHtml(formatEmployeeDate(employee.terminatedOn))}</span>` : "",
+      ].filter(Boolean).join("");
 
       return `
         <tr data-id="${employee.id}">
-          <td>${escapeHtml(employee.employeeId || "-")}</td>
           <td>
-            <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
-            <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
+            <div class="employee-identity">
+              <span class="employee-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+              <div class="employee-person">
+                <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
+                <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
+                <span class="employee-code">${escapeHtml(employee.employeeId || "-")}</span>
+              </div>
+            </div>
           </td>
           <td>${formatCurrency(salaryDisplay)}</td>
           <td class="employee-increment-history">${incrementHistory}</td>
           <td><span class="${advanceRemainedDisplay > 0 ? "advance-remained-alert" : ""}">${formatCurrency(advanceRemainedDisplay)}</span></td>
           <td><span class="${statusClass}">${statusLabel}</span></td>
-          <td>${escapeHtml(employee.leaveFrom || "-")}</td>
-          <td>${escapeHtml(employee.leaveTo || "-")}</td>
           <td>
-            <div class="tenure-cell ${tenure.className}">
-              <strong>${escapeHtml(tenure.label)}</strong>
-              <span>${escapeHtml(tenure.note || "-")}</span>
+            <div class="employee-dates">
+              ${employmentDates || '<span class="emp-list-sub">—</span>'}
+              ${tenure.label !== "-" ? `<span class="employee-tenure ${tenure.className}" title="${escapeHtml(tenure.note || "")}">${escapeHtml(tenure.label)} of service</span>` : ""}
             </div>
           </td>
           <td>
             <div class="row-actions">
-              <button type="button" class="mini ghost" data-action="edit">Edit</button>
-              <button type="button" class="mini danger" data-action="delete">Delete</button>
+              <button type="button" class="mini ghost" data-action="edit" aria-label="Edit ${escapeHtml(employee.employeeName || "employee")}">Edit</button>
+              <button type="button" class="mini danger" data-action="delete" aria-label="Delete ${escapeHtml(employee.employeeName || "employee")}">Delete</button>
             </div>
           </td>
         </tr>
@@ -984,87 +1081,110 @@ function renderEmployeeTable() {
 
 function renderLeaveResumeReport() {
   if (!SELECTORS.leaveResumeReportBody) return;
-
-  const rows = employeeMaster
-    .filter((employee) => employee.leaveFrom || employee.leaveTo || employee.terminatedOn || buildEmployeeTenures(employee).some((tenure) => tenure.leaveFrom))
-    .sort((a, b) => String(a.employeeId || "").localeCompare(String(b.employeeId || "")));
-
-  if (rows.length === 0) {
-    SELECTORS.leaveResumeReportBody.innerHTML = `
-      <tr><td colspan="9" class="empty">No leave, resume, or termination details recorded yet.</td></tr>
-    `;
-    if (SELECTORS.reportsMessage) {
-      SELECTORS.reportsMessage.textContent = "";
-    }
-    return;
+  const formatDate = (value) => {
+    const date = parseIsoDate(value);
+    return date ? date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : value || "—";
+  };
+  const employees = employeeMaster
+    .map((employee) => ({ employee, tenures: buildEmployeeTenures(employee) }))
+    .filter(({ employee, tenures }) => employee.leaveFrom || employee.leaveTo || employee.terminatedOn || tenures.some((tenure) => tenure.leaveFrom))
+    .sort((a, b) => String(a.employee.employeeId || "").localeCompare(String(b.employee.employeeId || "")));
+  const countStatus = (status) => employees.filter(({ employee }) => currentEmployeeStatus(employee) === status).length;
+  if (SELECTORS.leaveReportEmployeeCount) SELECTORS.leaveReportEmployeeCount.textContent = String(employees.length);
+  if (SELECTORS.leaveReportOnLeaveCount) SELECTORS.leaveReportOnLeaveCount.textContent = String(countStatus("leave"));
+  if (SELECTORS.leaveReportEndedCount) SELECTORS.leaveReportEndedCount.textContent = String(countStatus("terminated"));
+  if (SELECTORS.leaveReportReturnedCount) {
+    SELECTORS.leaveReportReturnedCount.textContent = String(employees.filter(({ employee, tenures }) => (
+      currentEmployeeStatus(employee) === "working" && (employee.leaveTo || tenures.some((tenure) => tenure.resumeOn))
+    )).length);
   }
 
-  SELECTORS.leaveResumeReportBody.innerHTML = rows
-    .map((employee) => {
-      const status = String(employee.status || "working").toLowerCase();
-      const statusLabel = status === "leave"
-        ? "On Leave"
-        : status === "terminated"
-          ? "Terminated"
-          : "Working";
-      const badgeClass = status === "leave"
-        ? "status-pill leave"
-        : status === "terminated"
-          ? "status-pill terminated"
-          : "status-pill working";
-      const tenures = buildEmployeeTenures(employee).filter((tenure) => tenure.leaveFrom || tenure.terminatedOn);
-      const historyRows = tenures.length ? tenures : [{
-        index: 1,
-        workStart: employee.joiningDate || "",
-        workEnd: "",
-        leaveFrom: employee.leaveFrom || "",
-        resumeOn: employee.leaveTo || "",
-        terminatedOn: employee.terminatedOn || "",
-        duration: monthsAndDaysBetweenInclusive(employee.joiningDate || "", employee.leaveFrom ? isoFromDate(addDays(parseIsoDate(employee.leaveFrom), -1)) : ""),
-        completed12Months: false,
-      }];
-
-      return historyRows.map((tenure) => {
-        const payrollSummary = summarizePayrollForTenure(employee, tenure);
-        return `
+  const searchTerms = String(SELECTORS.leaveReportSearchInput?.value || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const statusFilter = SELECTORS.leaveReportStatusFilter?.value || "all";
+  const visibleEmployees = employees.filter(({ employee }) => {
+    if (statusFilter !== "all" && currentEmployeeStatus(employee) !== statusFilter) return false;
+    const text = `${employee.employeeName || ""} ${employee.employeeId || ""} ${employee.designation || ""}`.toLowerCase();
+    return searchTerms.every((term) => text.includes(term));
+  });
+  let periodCount = 0;
+  const markup = visibleEmployees.map(({ employee, tenures }) => {
+    const status = currentEmployeeStatus(employee);
+    const statusLabel = status === "leave" ? "On leave" : status === "terminated" ? "Terminated" : "Working";
+    const historyTenures = tenures.filter((tenure) => tenure.leaveFrom || tenure.terminatedOn);
+    const leaveDate = parseIsoDate(employee.leaveFrom || "");
+    const historyRows = historyTenures.length ? historyTenures : [{
+      index: 1,
+      workStart: employee.joiningDate || "",
+      workEnd: "",
+      leaveFrom: employee.leaveFrom || "",
+      resumeOn: employee.leaveTo || "",
+      terminatedOn: employee.terminatedOn || "",
+      duration: monthsAndDaysBetweenInclusive(employee.joiningDate || "", leaveDate ? isoFromDate(addDays(leaveDate, -1)) : ""),
+      completed12Months: false,
+    }];
+    const initials = String(employee.employeeName || employee.employeeId || "?").trim().split(/\s+/).slice(0, 2).map((word) => word.charAt(0)).join("").toUpperCase();
+    periodCount += historyRows.length;
+    return historyRows.map((tenure, index) => {
+      const payrollSummary = summarizePayrollForTenure(employee, tenure);
+      const events = [
+        tenure.leaveFrom ? `<span><span>Leave from</span><strong>${escapeHtml(formatDate(tenure.leaveFrom))}</strong></span>` : "",
+        tenure.resumeOn ? `<span><span>Returned</span><strong>${escapeHtml(formatDate(tenure.resumeOn))}</strong></span>` : "",
+        tenure.terminatedOn ? `<span><span>Ended</span><strong>${escapeHtml(formatDate(tenure.terminatedOn))}</strong></span>` : "",
+      ].filter(Boolean).join("");
+      const hasAdvance = Number(payrollSummary.advanceRemained) > 0;
+      return `
         <tr>
-          <td>${escapeHtml(employee.employeeId || "-")}</td>
           <td>
-            <div class="emp-list-name">${escapeHtml(employee.employeeName || "-")}</div>
-            <div class="emp-list-sub">${escapeHtml(employee.designation || "-")}</div>
+            <div class="reports-employee-cell">
+              <span class="reports-employee-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+              <span>
+                <strong class="reports-employee-name">${escapeHtml(employee.employeeName || "—")}</strong>
+                <span class="reports-employee-role">${escapeHtml(employee.designation || "—")}</span>
+                <span class="reports-employee-id">${escapeHtml(employee.employeeId || "—")}</span>
+              </span>
+            </div>
           </td>
-          <td><span class="${badgeClass}">${escapeHtml(statusLabel)}</span></td>
-          <td>${escapeHtml(tenure.leaveFrom || "-")}</td>
-          <td>${escapeHtml(tenure.resumeOn || "-")}</td>
-          <td>${escapeHtml(tenure.terminatedOn || "-")}</td>
+          <td><span class="status-pill ${status === "leave" ? "leave" : status === "terminated" ? "terminated" : "working"}">${statusLabel}</span></td>
+          <td><div class="reports-leave-dates">${events || '<span class="reports-no-dates">No dates recorded</span>'}</div></td>
           <td>
-            <div class="tenure-cell ${tenure.completed12Months ? "tenure-highlight" : ""}">
+            <div class="reports-work-period">
+              ${historyRows.length > 1 ? `<span class="reports-period-badge">Period ${index + 1}</span>` : ""}
               <strong>${escapeHtml(formatTenureDuration(tenure.duration))}</strong>
-              <span>${escapeHtml(`${tenure.workStart || "-"} to ${tenure.workEnd || "-"}`)}</span>
+              <span>${escapeHtml(formatDate(tenure.workStart))} – ${escapeHtml(formatDate(tenure.workEnd))}</span>
+              ${tenure.completed12Months ? '<span class="reports-tenure-badge">12+ months of service</span>' : ""}
             </div>
           </td>
           <td>
-            <div class="tenure-money">
-              <span>Paid ${escapeHtml(formatCurrency(payrollSummary.salary + payrollSummary.bonus))}</span>
-              <span>Bonus/Increment ${escapeHtml(formatCurrency(payrollSummary.bonus))}</span>
-              <span>${payrollSummary.months} payroll month(s)</span>
+            <div class="reports-pay-summary">
+              <strong class="reports-paid-value">${escapeHtml(formatCurrency(payrollSummary.salary + payrollSummary.bonus))}</strong>
+              <small>Gross pay recorded</small>
+              <span class="reports-money-detail"><span>Includes increments</span><strong>${escapeHtml(formatCurrency(payrollSummary.bonus))}</strong></span>
+              <span class="reports-payroll-months">${payrollSummary.months} saved payroll month${payrollSummary.months === 1 ? "" : "s"}</span>
             </div>
           </td>
           <td>
-            <div class="tenure-money">
-              <span>Taken ${escapeHtml(formatCurrency(payrollSummary.advanceTaken))}</span>
-              <span>Cleared ${escapeHtml(formatCurrency(payrollSummary.advanceCleared))}</span>
-              <span>Remaining ${escapeHtml(formatCurrency(payrollSummary.advanceRemained))}</span>
+            <div class="reports-advance-summary">
+              <strong class="reports-advance-value ${hasAdvance ? "pending" : "cleared"}">${hasAdvance ? escapeHtml(formatCurrency(payrollSummary.advanceRemained)) : "Cleared"}</strong>
+              <small>Period-end balance</small>
+              <span class="reports-money-detail"><span>New advances</span><strong>${escapeHtml(formatCurrency(payrollSummary.advanceTaken))}</strong></span>
+              <span class="reports-money-detail"><span>Recovered</span><strong>${escapeHtml(formatCurrency(payrollSummary.advanceCleared))}</strong></span>
             </div>
           </td>
         </tr>
       `;
-      }).join("");
-    })
-    .join("");
+    }).join("");
+  }).join("");
 
+  SELECTORS.leaveResumeReportBody.innerHTML = markup || `<tr><td colspan="6" class="empty">${employees.length ? "No employees match this search or status. Try another name, ID, or designation." : "No leave, return, or employment end dates recorded yet."}</td></tr>`;
+  if (SELECTORS.leaveReportCount) {
+    const filtered = searchTerms.length > 0 || statusFilter !== "all";
+    const employeeCount = `${visibleEmployees.length}${filtered ? ` of ${employees.length}` : ""} employee${(filtered ? employees.length : visibleEmployees.length) === 1 ? "" : "s"}`;
+    SELECTORS.leaveReportCount.textContent = `${employeeCount} · ${periodCount} work period${periodCount === 1 ? "" : "s"}`;
+  }
   if (SELECTORS.reportsMessage) {
-    SELECTORS.reportsMessage.textContent = `${rows.length} employee record(s) with leave, resume, or termination details.`;
+    SELECTORS.reportsMessage.textContent = employees.length
+      ? "Each row is a recorded work period. Amounts cover saved payroll months within that period; current status comes from the employee profile."
+      : "";
   }
 }
 
@@ -1338,14 +1458,7 @@ function wireEmployeeVerification() {
     }
 
     if (button.dataset.action === "delete") {
-      if (!window.confirm("Delete this verification record?")) return;
-      try {
-        await apiRequest(`/api/employee-verifications/${id}?companyId=${getSelectedCompanyId()}`, { method: "DELETE" });
-        await loadEmployeeVerifications();
-        showAppMessage("Verification record removed.");
-      } catch (error) {
-        setVerificationMessage(error.message || "Failed to delete verification record.");
-      }
+      await deleteVerificationWithConfirmation(record);
     }
   });
   addIdProofRow();
@@ -1860,25 +1973,7 @@ function dashboardAttentionItems(month = getSelectedMonth()) {
     });
   });
 
-  const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave");
-  if (onLeave.length) {
-    items.push({
-      title: `${onLeave.length} employee(s) on leave`,
-      detail: onLeave.slice(0, 3).map((employee) => employee.employeeName || employee.employeeId).join(", "),
-    });
-  }
-
-  const advanceLeader = entries
-    .filter((item) => item.calc.advanceRemained > 0)
-    .sort((a, b) => b.calc.advanceRemained - a.calc.advanceRemained)[0];
-  if (advanceLeader) {
-    items.push({
-      title: "Highest pending advance",
-      detail: `${advanceLeader.record.employeeName || advanceLeader.record.employeeId}: ${formatCurrency(advanceLeader.calc.advanceRemained)}`,
-    });
-  }
-
-  return items.slice(0, 6);
+  return items;
 }
 
 function dashboardPayrollDistribution(month = getSelectedMonth()) {
@@ -1886,7 +1981,7 @@ function dashboardPayrollDistribution(month = getSelectedMonth()) {
   for (const record of currentRecords) {
     if (!isPayrollVisibleForMonth(record, month)) continue;
     const calc = computePayroll(record, month);
-    const label = sanitizeDashboardLabel(record.designation || "Unassigned");
+    const label = String(record.designation || "").trim() || "Unassigned";
     const existing = groups.get(label) || { label, net: 0, deductions: 0, advance: 0, employees: 0 };
     existing.net += Math.max(0, calc.netSalary || 0);
     existing.deductions += Math.max(0, (calc.deductionApplied || 0) + (calc.proratedAbsenceDeduction || 0));
@@ -1900,68 +1995,47 @@ function dashboardPayrollDistribution(month = getSelectedMonth()) {
     .slice(0, 7);
 }
 
-function sanitizeDashboardLabel(value) {
-  const text = String(value || "").trim();
-  if (!text) return "Other";
-  return text.length > 11 ? `${text.slice(0, 10)}...` : text;
-}
-
 function renderDashboardPayrollDistribution(month = getSelectedMonth()) {
   const groups = dashboardPayrollDistribution(month);
   if (!groups.length) {
     return `
-      <div class="dashboard-payroll-chart empty-chart">
-        <div class="dashboard-chart-head">
-          <strong>Payroll Distribution</strong>
-          <span>No payroll entries for ${escapeHtml(formatMonth(month))}</span>
-        </div>
+      <div class="dashboard-empty-state">
+        <strong>No payroll entries this month</strong>
+        <span>Add employees or choose another payroll month to see the breakdown.</span>
       </div>
     `;
   }
 
-  const maxValue = Math.max(...groups.map((group) => group.net + group.deductions + group.advance), 1);
+  const maxNet = Math.max(...groups.map((group) => group.net), 1);
   return `
-    <div class="dashboard-payroll-chart">
-      <div class="dashboard-chart-head">
-        <strong>Payroll Distribution</strong>
-        <span>${escapeHtml(formatMonth(month))} • live payroll records</span>
+    <div class="dashboard-distribution" role="table" aria-label="Payroll by role for ${escapeHtml(formatMonth(month))}. Bars compare net payout; deductions and advance balances are shown separately.">
+      <div class="dashboard-distribution-head" role="row">
+        <span role="columnheader">Role</span>
+        <span role="columnheader">Net payout</span>
+        <span role="columnheader">Deductions</span>
+        <span role="columnheader">Advance pending</span>
       </div>
-      <div class="dashboard-chart-legend">
-        <span><i class="net"></i>Net Pay</span>
-        <span><i class="deduction"></i>Deductions</span>
-        <span><i class="advance"></i>Advance</span>
-      </div>
-      <div class="dashboard-chart-bars">
-        ${groups.map((group) => {
-          const netHeight = Math.max(8, Math.round((group.net / maxValue) * 118));
-          const deductionHeight = Math.max(group.deductions > 0 ? 8 : 0, Math.round((group.deductions / maxValue) * 118));
-          const advanceHeight = Math.max(group.advance > 0 ? 8 : 0, Math.round((group.advance / maxValue) * 118));
-          return `
-            <div class="dashboard-chart-group" title="${escapeHtml(`${group.label}: ${formatCurrency(group.net)} net, ${formatCurrency(group.deductions)} deductions, ${formatCurrency(group.advance)} advance`)}">
-              <div class="dashboard-chart-stack" aria-label="${escapeHtml(group.label)} payroll distribution">
-                <span class="bar net" style="height:${netHeight}px"></span>
-                <span class="bar deduction" style="height:${deductionHeight}px"></span>
-                <span class="bar advance" style="height:${advanceHeight}px"></span>
-              </div>
-              <b>${escapeHtml(group.label)}</b>
-              <small>${group.employees} emp.</small>
+      ${groups.map((group) => `
+        <div class="dashboard-role-row" role="row">
+          <div class="dashboard-role-label" role="rowheader">
+            <strong>${escapeHtml(group.label)}</strong>
+            <span>${group.employees} ${group.employees === 1 ? "employee" : "employees"}</span>
+          </div>
+          <div class="dashboard-role-net" role="cell">
+            <span class="dashboard-mobile-label">Net payout</span>
+            <strong>${formatCurrency(group.net)}</strong>
+            <div class="dashboard-role-track" aria-hidden="true">
+              <span style="width:${((group.net / maxNet) * 100).toFixed(2)}%"></span>
             </div>
-          `;
-        }).join("")}
-      </div>
-    </div>
-  `;
-}
-
-function renderDashboardPanelFooter(items = []) {
-  const safeItems = items.filter((item) => item && item.label);
-  if (!safeItems.length) return "";
-  return `
-    <div class="dashboard-panel-footer">
-      ${safeItems.map((item) => `
-        <div>
-          <b>${escapeHtml(item.value ?? "-")}</b>
-          <span>${escapeHtml(item.label)}</span>
+          </div>
+          <div class="dashboard-role-deduction" role="cell">
+            <span class="dashboard-mobile-label">Deductions</span>
+            <strong>${formatCurrency(group.deductions)}</strong>
+          </div>
+          <div class="dashboard-role-advance" role="cell">
+            <span class="dashboard-mobile-label">Advance pending</span>
+            <strong>${formatCurrency(group.advance)}</strong>
+          </div>
         </div>
       `).join("")}
     </div>
@@ -1971,6 +2045,10 @@ function renderDashboardPanelFooter(items = []) {
 function renderDashboardInsights() {
   const currentMonth = getSelectedMonth();
   const status = payrollStatusInfo(currentMonth);
+  const currentReport = payrollReports.find((report) => String(report.month) === String(currentMonth)) || null;
+  if (SELECTORS.dashboardPeriodLabel) {
+    SELECTORS.dashboardPeriodLabel.textContent = formatMonth(currentMonth);
+  }
   if (SELECTORS.dashboardMonthStatusTitle) {
     SELECTORS.dashboardMonthStatusTitle.textContent = status.title;
   }
@@ -1979,152 +2057,90 @@ function renderDashboardInsights() {
     SELECTORS.dashboardMonthStatusBadge.className = status.className;
   }
   if (SELECTORS.dashboardMonthStatusDetail) {
-    SELECTORS.dashboardMonthStatusDetail.textContent = status.detail;
+    SELECTORS.dashboardMonthStatusDetail.textContent = currentReport?.generatedAt
+      ? `${currentReport.employeeCount || 0} payslip${Number(currentReport.employeeCount) === 1 ? "" : "s"} saved · Last generated ${formatDateTime(currentReport.generatedAt)}`
+      : status.label === "Draft"
+        ? "Review your payroll changes before generating this month’s payslips."
+        : "Review employee pay and adjustments, then generate this month’s payslips.";
+  }
+
+  const attentionItems = dashboardAttentionItems(currentMonth);
+  if (SELECTORS.dashboardAttentionCount) {
+    SELECTORS.dashboardAttentionCount.textContent = String(attentionItems.length);
   }
   if (SELECTORS.dashboardAttentionBody) {
-    const items = dashboardAttentionItems(currentMonth);
-    SELECTORS.dashboardAttentionBody.innerHTML = items.length
-      ? items.map((item) => `
-        <div class="dashboard-list-item">
-          <strong>${escapeHtml(item.title)}</strong>
-          <span>${escapeHtml(item.detail)}</span>
-        </div>
-      `).join("")
+    SELECTORS.dashboardAttentionBody.innerHTML = attentionItems.length
+      ? attentionItems.map((item) => {
+        const repeatedName = `${item.title}: `;
+        const detail = item.detail.startsWith(repeatedName) ? item.detail.slice(repeatedName.length) : item.detail;
+        return `
+          <div class="dashboard-check-item">
+            <span class="dashboard-check-icon" aria-hidden="true">!</span>
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(detail)}</span>
+            </div>
+          </div>
+        `;
+      }).join("")
       : `
-        <div class="dashboard-list-item empty-dashboard-item">
+        <div class="dashboard-empty-state">
           <strong>Everything looks ready</strong>
-          <span>No salary, advance, absence, or employee profile warning found for this month.</span>
+          <span>No salary, advance, absence, or employee profile warnings for this month.</span>
         </div>
       `;
   }
 
   if (SELECTORS.dashboardSummaryCards) {
-    const currentMonthLabel = formatMonth(currentMonth);
-    const activeHeadcount = employeeMaster.filter((employee) => isPayrollActiveStatus(employee.status)).length;
-    const onLeave = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "leave").length;
-    const terminated = employeeMaster.filter((employee) => String(employee.status || "").toLowerCase() === "terminated").length;
-    const generatedCurrentMonth = payrollReports.find((report) => String(report.month) === String(currentMonth)) || null;
-    const latestReport = payrollReports[0] || null;
-
-    const summaryCards = [
-      {
-        label: "Current Payroll Month",
-        value: currentMonthLabel || "-",
-        note: generatedCurrentMonth?.generatedAt
-          ? `Generated ${formatDateTime(generatedCurrentMonth.generatedAt)}`
-          : "No saved payroll report yet",
-        tone: "blue",
-      },
-      {
-        label: "Saved Payroll Months",
-        value: String(payrollReports.length),
-        note: latestReport ? `Latest: ${formatMonth(latestReport.month)}` : "No reports generated",
-        tone: "violet",
-      },
-      {
-        label: "Employees On Leave",
-        value: String(onLeave),
-        note: `${terminated} terminated record(s) on file`,
-        tone: "amber",
-      },
-      {
-            label: "Active In Company",
-            value: String(activeHeadcount),
-        note: `${employeeMaster.length} total employee profile(s)`,
-        tone: "green",
-      },
+    const counts = { working: 0, leave: 0, terminated: 0 };
+    employeeMaster.forEach((employee) => { counts[currentEmployeeStatus(employee)] += 1; });
+    const states = [
+      { key: "working", label: "Working" },
+      { key: "leave", label: "On leave" },
+      { key: "terminated", label: "Terminated" },
     ];
-
     SELECTORS.dashboardSummaryCards.innerHTML = `
-      ${summaryCards.map((card) => `
-      <article class="dashboard-stat-card tone-${card.tone}">
-        <p>${escapeHtml(card.label)}</p>
-        <strong>${escapeHtml(card.value)}</strong>
-        <span>${escapeHtml(card.note)}</span>
-      </article>
-      `).join("")}
-      ${renderDashboardPayrollDistribution(currentMonth)}
-    `;
-  }
-
-  if (SELECTORS.dashboardHighlightsBody) {
-    const currentMonth = getSelectedMonth();
-    const report = payrollReports.find((item) => String(item.month) === String(currentMonth)) || null;
-    const computed = currentRecords.map((record) => computePayroll(record, currentMonth));
-    const net = computed.reduce((sum, item) => sum + item.netSalary, 0);
-    const gross = computed.reduce((sum, item) => sum + item.grossSalary, 0);
-    const advance = computed.reduce((sum, item) => sum + item.advanceRemained, 0);
-    const blockedCount = currentRecords.filter((record) => isPayrollBlocked(record, currentMonth)).length;
-
-    const highlights = [
-      {
-        title: "Payroll Status",
-        detail: report?.generatedAt
-          ? `${report.employeeCount || 0} payslip(s) saved for ${formatMonth(currentMonth)}`
-          : `No generated payroll saved yet for ${formatMonth(currentMonth)}`,
-      },
-      {
-        title: "Gross vs Net",
-        detail: `${formatCurrency(gross)} gross payroll and ${formatCurrency(net)} net payout`,
-      },
-      {
-        title: "Advance Exposure",
-        detail: `${formatCurrency(advance)} remains pending as employee advances`,
-      },
-      {
-        title: "Locked or Inactive Records",
-        detail: `${blockedCount} record(s) are currently blocked from payroll payout`,
-      },
-    ];
-
-    SELECTORS.dashboardHighlightsBody.innerHTML = `
-      <div class="dashboard-list-scroll">
-        ${highlights.map((item) => `
-          <div class="dashboard-list-item">
-            <strong>${escapeHtml(item.title)}</strong>
-            <span>${escapeHtml(item.detail)}</span>
-          </div>
+      <div class="dashboard-team-composition" role="img" aria-label="${counts.working} working, ${counts.leave} on leave, ${counts.terminated} terminated employees">
+        ${states.filter((item) => counts[item.key] > 0).map((item) => `
+          <span class="${item.key}" style="width:${((counts[item.key] / employeeMaster.length) * 100).toFixed(2)}%"></span>
         `).join("")}
       </div>
-      ${renderDashboardPanelFooter([
-        { value: formatCompactCurrency(net), label: "Net Pay" },
-        { value: formatCompactCurrency(gross), label: "Gross" },
-        { value: String(blockedCount), label: "Blocked" },
-      ])}
+      ${states.map((item) => `
+        <div class="dashboard-team-row">
+          <span><i class="dashboard-team-dot ${item.key}" aria-hidden="true"></i>${item.label}</span>
+          <strong>${counts[item.key]}</strong>
+        </div>
+      `).join("")}
+      <div class="dashboard-team-total"><span>Total employees</span><strong>${employeeMaster.length}</strong></div>
     `;
   }
 
+  if (SELECTORS.dashboardDistributionBody) {
+    SELECTORS.dashboardDistributionBody.innerHTML = renderDashboardPayrollDistribution(currentMonth);
+  }
+
+  if (SELECTORS.dashboardReportsCount) {
+    SELECTORS.dashboardReportsCount.textContent = String(payrollReports.length);
+  }
   if (SELECTORS.dashboardActivityBody) {
     const items = payrollReports.slice(0, 4);
-    const totalPayslips = payrollReports.reduce((sum, report) => sum + Number(report.employeeCount || 0), 0);
     SELECTORS.dashboardActivityBody.innerHTML = items.length
-      ? `
-        <div class="dashboard-list-scroll">
-          ${items.map((report, index) => `
-            <div class="dashboard-list-item">
-              <strong>${escapeHtml(`${index === 0 ? "Latest report" : "Saved report"} • ${formatMonth(report.month)}`)}</strong>
-              <span>${escapeHtml(`${report.employeeCount || 0} employee payslip(s) • checked ${formatDateTime(report.checkedAt) || "-"} • generated ${formatDateTime(report.generatedAt) || "-"}`)}</span>
-            </div>
-          `).join("")}
-        </div>
-        ${renderDashboardPanelFooter([
-          { value: String(payrollReports.length), label: "Months" },
-          { value: String(totalPayslips), label: "Payslips" },
-          { value: payrollReports[0] ? formatMonth(payrollReports[0].month) : "-", label: "Latest" },
-        ])}
-      `
+      ? items.map((report) => `
+        <button type="button" class="dashboard-report-row" data-dashboard-action="open-report" data-dashboard-report-id="${escapeHtml(String(report.id))}" aria-label="Open ${escapeHtml(formatMonth(report.month))} payroll report">
+          <span class="dashboard-report-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Z"/><path d="M14 3v5h5M8 12h8M8 16h6"/></svg></span>
+          <span class="dashboard-report-copy">
+            <strong>${escapeHtml(formatMonth(report.month))}</strong>
+            <span>${escapeHtml(`${report.employeeCount || 0} payslip${Number(report.employeeCount) === 1 ? "" : "s"} · ${report.generatedAt ? `Generated ${formatDateTime(report.generatedAt)}` : "Not generated yet"}`)}</span>
+          </span>
+          <span class="status-pill ${report.generatedAt ? "working" : "leave"}">${report.generatedAt ? "Generated" : "Draft"}</span>
+          <span class="dashboard-report-arrow" aria-hidden="true">›</span>
+        </button>
+      `).join("")
       : `
-        <div class="dashboard-list-scroll">
-          <div class="dashboard-list-item empty-dashboard-item">
-            <strong>No payroll reports generated yet</strong>
-            <span>Generate employee payslips from Payroll to build a month-wise report timeline here.</span>
-          </div>
+        <div class="dashboard-empty-state">
+          <strong>No reports yet</strong>
+          <span>Generate payslips in Payroll to save your first monthly report.</span>
         </div>
-        ${renderDashboardPanelFooter([
-          { value: "0", label: "Months" },
-          { value: "0", label: "Payslips" },
-          { value: "-", label: "Latest" },
-        ])}
       `;
   }
 }
@@ -2136,36 +2152,32 @@ function renderReportsSummary() {
   const latestReport = payrollReports[0] || null;
   const summaryCards = [
     {
-      label: "Generated Months",
+      label: "Saved payroll months",
       value: String(payrollReports.length),
-      note: latestReport ? `Latest month: ${formatMonth(latestReport.month)}` : "No month generated yet",
-      tone: "blue",
+      note: latestReport ? `Latest: ${formatMonth(latestReport.month)}` : "Generate payroll to save your first month",
     },
     {
-      label: "Saved Payslips",
+      label: "Saved payslips",
       value: String(totalPayslips),
-      note: "Employee payslips captured across generated reports",
-      tone: "green",
+      note: "Across all saved months",
     },
     {
-      label: "Current Open Report",
-      value: openReport ? formatMonth(openReport.month) : "None",
-      note: openReport ? `${openReport.employeeCount || 0} employee(s) in active view` : "Open a generated payroll month below",
-      tone: "violet",
+      label: "Opened payroll month",
+      value: openReport ? formatMonth(openReport.month) : "None opened",
+      note: openReport ? `${openReport.employeeCount || 0} payslips in this report` : "Choose a saved month below",
     },
     {
-      label: "Last Generated",
-      value: latestReport?.generatedAt ? formatDateTime(latestReport.generatedAt) : "-",
-      note: latestReport ? "Most recent payroll snapshot" : "Waiting for first generated report",
-      tone: "amber",
+      label: "Last generated",
+      value: latestReport?.generatedAt ? formatDateTime(latestReport.generatedAt) : "—",
+      note: latestReport ? formatMonth(latestReport.month) : "No generated reports yet",
     },
   ];
 
   SELECTORS.reportsSummaryCards.innerHTML = summaryCards.map((card) => `
-    <article class="dashboard-stat-card compact tone-${card.tone}">
-      <p>${escapeHtml(card.label)}</p>
+    <article class="reports-summary-stat">
+      <span>${escapeHtml(card.label)}</span>
       <strong>${escapeHtml(card.value)}</strong>
-      <span>${escapeHtml(card.note)}</span>
+      <small>${escapeHtml(card.note)}</small>
     </article>
   `).join("");
 }
@@ -2201,6 +2213,9 @@ function applyGeneratedPayrollResponse(response) {
   renderGeneratedPayrollReports();
   renderReportsSummary();
   renderDashboardInsights();
+  const month = getSelectedMonth();
+  const entries = getPayrollEntries(month);
+  renderPayrollTotalsAndReview(entries.filter((item) => payrollEntryMatchesControls(item, month)), entries, month);
 }
 
 const pendingPayslipGenerations = new Set();
@@ -2263,83 +2278,106 @@ async function generatePayslipsForEntries(entries) {
 function renderGeneratedPayrollReports() {
   if (!SELECTORS.generatedPayrollBody || !SELECTORS.generatedPayrollEmployeesBody || !SELECTORS.generatedPayrollDetailTitle) return;
 
-  if (!payrollReports.length) {
-    SELECTORS.generatedPayrollBody.innerHTML = `
-      <tr><td colspan="5" class="empty">No payroll has been generated yet for this company.</td></tr>
-    `;
-    SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
-      <tr><td colspan="6" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
-    `;
-    SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
-    syncGeneratedPayslipSelectionControls();
-    renderPayrollWorkflow();
-    return;
+  const reportsPending = isPayrollReportRequestPending();
+  if (SELECTORS.reportsMonthPicker) {
+    SELECTORS.reportsMonthPicker.innerHTML = payrollReports.length
+      ? payrollReports.map((report) => `<option value="${escapeHtml(String(report.id))}">${escapeHtml(formatMonth(report.month))}</option>`).join("")
+      : '<option value="">No saved months</option>';
+    const displayedReportId = reportsPending && pendingPayrollReportRequest.reportId ? pendingPayrollReportRequest.reportId : activePayrollReportId;
+    SELECTORS.reportsMonthPicker.value = displayedReportId ? String(displayedReportId) : "";
+    SELECTORS.reportsMonthPicker.disabled = reportsPending || !payrollReports.length;
   }
 
-  SELECTORS.generatedPayrollBody.innerHTML = payrollReports
-    .map((report) => {
-      const activeClass = Number(report.id) === Number(activePayrollReportId) ? "active-report-row" : "";
+  const snapshot = activePayrollReportSnapshot;
+  const records = payrollReports.length && snapshot && Array.isArray(snapshot.records) ? snapshot.records : [];
+  const hasSnapshot = records.length > 0;
+  const query = String(SELECTORS.reportsPayslipSearchInput?.value || "").trim().toLowerCase();
+  const searchTerms = query.split(/\s+/).filter(Boolean);
+  const entries = records.map((record, index) => ({ record, index, calc: computePayroll(record, snapshot.month) }));
+  const visibleEntries = entries.filter(({ record }) => {
+    const text = `${record.employeeName || ""} ${record.employeeId || ""} ${record.designation || ""}`.toLowerCase();
+    return searchTerms.every((term) => text.includes(term));
+  });
+  const totalNetPaise = entries.reduce((sum, { calc }) => sum + Math.round(Number(calc.netSalary || 0) * 100), 0);
+  const totalAdvancePaise = entries.reduce((sum, { calc }) => sum + Math.round(Math.max(0, Number(calc.advanceRemained || 0)) * 100), 0);
+  if (SELECTORS.reportsPayslipTotalCount) SELECTORS.reportsPayslipTotalCount.textContent = String(records.length);
+  if (SELECTORS.reportsPayslipNetTotal) SELECTORS.reportsPayslipNetTotal.textContent = formatCurrency(totalNetPaise / 100);
+  if (SELECTORS.reportsPayslipAdvanceTotal) SELECTORS.reportsPayslipAdvanceTotal.textContent = formatCurrency(totalAdvancePaise / 100);
+  if (SELECTORS.reportsPayslipCount) {
+    SELECTORS.reportsPayslipCount.textContent = query
+      ? `${visibleEntries.length} of ${records.length} payslips`
+      : `${records.length} payslip${records.length === 1 ? "" : "s"}`;
+  }
+  if (SELECTORS.reportsPayslipSearchInput) SELECTORS.reportsPayslipSearchInput.disabled = !hasSnapshot;
+
+  SELECTORS.generatedPayrollBody.innerHTML = payrollReports.length
+    ? payrollReports.map((report) => {
       const isActive = Number(report.id) === Number(activePayrollReportId);
       return `
-        <tr class="${activeClass}">
+        <tr class="${isActive ? "active-report-row" : ""}">
           <td>
-            <div class="report-month-title">Payroll Generated for the month of ${escapeHtml(formatMonth(report.month))}</div>
-            <div class="report-month-sub">Saved monthly payroll snapshot</div>
+            <div class="report-month-title">${escapeHtml(formatMonth(report.month))}</div>
+            <div class="report-month-sub">${isActive ? "Currently opened report" : "Saved payroll report"}</div>
           </td>
-          <td>${escapeHtml(formatDateTime(report.checkedAt) || "-")}</td>
-          <td>${escapeHtml(formatDateTime(report.generatedAt) || "-")}</td>
+          <td>${escapeHtml(formatDateTime(report.checkedAt) || "—")}</td>
+          <td>${escapeHtml(formatDateTime(report.generatedAt) || "—")}</td>
           <td><span class="report-count-pill">${escapeHtml(String(report.employeeCount || 0))}</span></td>
           <td>
             <div class="row-actions">
-              <button type="button" class="mini ghost" data-report-id="${report.id}" data-report-action="open" aria-pressed="${isActive ? "true" : "false"}">${isActive ? "Opened" : "Open"}</button>
-              <button type="button" class="mini ghost" data-report-id="${report.id}" data-report-action="excel">Excel</button>
+              <button type="button" class="mini ghost" data-report-id="${escapeHtml(String(report.id))}" data-report-action="open" ${reportsPending ? "disabled" : ""} aria-label="Open ${escapeHtml(formatMonth(report.month))} payslips" aria-pressed="${isActive ? "true" : "false"}">${isActive ? "View payslips" : "Open"}</button>
+              <button type="button" class="mini ghost" data-report-id="${escapeHtml(String(report.id))}" data-report-action="excel" aria-label="Export ${escapeHtml(formatMonth(report.month))} to Excel">Excel</button>
             </div>
           </td>
         </tr>
       `;
-    })
-    .join("");
+    }).join("")
+    : '<tr><td colspan="5" class="empty">No saved payroll reports yet. Generate payslips in Payroll to save a monthly report.</td></tr>';
 
-  const snapshot = activePayrollReportSnapshot;
-  if (!snapshot || !Array.isArray(snapshot.records) || snapshot.records.length === 0) {
-    SELECTORS.generatedPayrollEmployeesBody.innerHTML = `
-      <tr><td colspan="6" class="empty">Open a generated payroll month to see employee payslips.</td></tr>
-    `;
-    SELECTORS.generatedPayrollDetailTitle.textContent = "Generated Payslips";
+  SELECTORS.generatedPayrollDetailTitle.textContent = hasSnapshot
+    ? `Payslips · ${formatMonth(snapshot.month)}`
+    : "Generated payslips";
+  if (!hasSnapshot) {
+    SELECTORS.generatedPayrollEmployeesBody.innerHTML = '<tr><td colspan="6" class="empty">No payslips to display. Choose a saved payroll month or generate payslips in Payroll.</td></tr>';
     syncGeneratedPayslipSelectionControls();
     renderPayrollWorkflow();
     return;
   }
 
   normalizeGeneratedPayslipSelection(snapshot);
-  SELECTORS.generatedPayrollDetailTitle.textContent = `Generated Payslips for ${formatMonth(snapshot.month)}`;
-  SELECTORS.generatedPayrollEmployeesBody.innerHTML = snapshot.records
-    .map((record, index) => {
-      const calc = computePayroll(record, snapshot.month);
+  SELECTORS.generatedPayrollEmployeesBody.innerHTML = visibleEntries.length
+    ? visibleEntries.map(({ record, index, calc }) => {
+      const employeeLabel = record.employeeName || record.employeeId || `Employee ${index + 1}`;
       const recordKey = getGeneratedPayslipRecordKey(record, index);
       const checked = isGeneratedPayslipSelected(record, index);
+      const initials = String(record.employeeName || record.employeeId || "?").trim().split(/\s+/).slice(0, 2).map((word) => word.charAt(0)).join("").toUpperCase();
+      const hasAdvance = Number(calc.advanceRemained) > 0;
       return `
         <tr>
           <td>
-            <label class="report-select-cell" aria-label="Select ${escapeHtml(record.employeeName || record.employeeId || `Employee ${index + 1}`)}">
-              <input type="checkbox" data-report-select="${recordKey}" ${checked ? "checked" : ""} />
+            <label class="report-select-cell" aria-label="Select ${escapeHtml(employeeLabel)} payslip">
+              <input type="checkbox" data-report-select="${escapeHtml(recordKey)}" ${checked ? "checked" : ""} />
             </label>
           </td>
-          <td>${escapeHtml(record.employeeId || "-")}</td>
-          <td><div class="emp-list-name">${escapeHtml(record.employeeName || "-")}</div></td>
-          <td>${escapeHtml(record.designation || "-")}</td>
-          <td><span class="report-net-salary">${escapeHtml(formatCurrency(calc.netSalary))}</span></td>
           <td>
-            <div class="row-actions">
-              <button type="button" class="mini ghost icon-mini" title="View Payslip" aria-label="View Payslip" data-report-index="${index}" data-action="preview">&#128065;</button>
-              <button type="button" class="mini ghost icon-mini" title="Save Payslip PDF" aria-label="Save Payslip PDF" data-report-index="${index}" data-action="download">&#8681;</button>
-              <button type="button" class="mini icon-mini" title="Print or Save PDF" aria-label="Print or Save PDF" data-report-index="${index}" data-action="print">&#128424;</button>
+            <div class="reports-employee-cell">
+              <span class="reports-employee-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+              <span><strong class="reports-employee-name">${escapeHtml(record.employeeName || "—")}</strong><span class="reports-employee-id">${escapeHtml(record.employeeId || "—")}</span></span>
+            </div>
+          </td>
+          <td>${escapeHtml(record.designation || "—")}</td>
+          <td><span class="report-net-salary ${Number(calc.netSalary) > 0 ? "positive" : ""}">${escapeHtml(formatCurrency(calc.netSalary))}</span></td>
+          <td><span class="reports-advance-value ${hasAdvance ? "pending" : "cleared"}">${hasAdvance ? escapeHtml(formatCurrency(calc.advanceRemained)) : "Cleared"}</span></td>
+          <td>
+            <div class="row-actions reports-payslip-actions">
+              <button type="button" class="mini ghost" aria-label="Preview ${escapeHtml(employeeLabel)} payslip" data-report-index="${index}" data-action="preview">Preview</button>
+              <button type="button" class="mini ghost" aria-label="Download ${escapeHtml(employeeLabel)} payslip PDF" data-report-index="${index}" data-action="download">PDF</button>
+              <button type="button" class="mini ghost" aria-label="Print ${escapeHtml(employeeLabel)} payslip" data-report-index="${index}" data-action="print">Print</button>
             </div>
           </td>
         </tr>
       `;
-    })
-    .join("");
+    }).join("")
+    : '<tr><td colspan="6" class="empty">No matching payslips. Try another employee name, ID, or designation.</td></tr>';
 
   syncGeneratedPayslipSelectionControls(snapshot);
   renderPayrollWorkflow();
@@ -2464,9 +2502,15 @@ function printSelectedGeneratedPayslips() {
 }
 
 function setEmployeeMessage(message) {
-  if (!SELECTORS.employeeMessage) return;
-  applyStatusTone(SELECTORS.employeeMessage, message);
-  SELECTORS.employeeMessage.textContent = message || "";
+  const activeMessage = SELECTORS.employeeEditorDialog?.open
+    ? SELECTORS.employeeEditorMessage
+    : SELECTORS.employeeMessage;
+  for (const element of [SELECTORS.employeeMessage, SELECTORS.employeeEditorMessage]) {
+    if (!element) continue;
+    const text = element === activeMessage ? message || "" : "";
+    applyStatusTone(element, text);
+    element.textContent = text;
+  }
 }
 
 function renderDesignationSuggestions() {
@@ -2514,7 +2558,140 @@ function settingsApiErrorMessage(error) {
   return raw || "Settings request failed.";
 }
 
+function wireDeleteConfirmation() {
+  const dialog = SELECTORS.deleteConfirmationDialog;
+  const input = SELECTORS.deleteConfirmationInput;
+  const submit = SELECTORS.deleteConfirmationSubmitBtn;
+  if (!dialog || !input || !submit || !SELECTORS.deleteConfirmationForm) return;
+  input.addEventListener("input", () => {
+    submit.disabled = input.value !== "confirm";
+  });
+  SELECTORS.deleteConfirmationForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!pendingDeleteConfirmation || !dialog.open || submit.disabled || input.value !== "confirm") return;
+    submit.disabled = true;
+    dialog.close("confirmed");
+  });
+  for (const button of [SELECTORS.deleteConfirmationCancelBtn, SELECTORS.deleteConfirmationCloseBtn]) {
+    button?.addEventListener("click", () => dialog.close("cancelled"));
+  }
+  dialog.addEventListener("close", () => {
+    const resolve = pendingDeleteConfirmation;
+    const confirmed = dialog.returnValue === "confirmed" && input.value === "confirm";
+    pendingDeleteConfirmation = null;
+    input.value = "";
+    submit.disabled = true;
+    if (resolve) resolve(confirmed);
+  });
+}
+
+function confirmEmployeeDeletion({ title, description, employeeName, employeeId }) {
+  const dialog = SELECTORS.deleteConfirmationDialog;
+  const input = SELECTORS.deleteConfirmationInput;
+  const submit = SELECTORS.deleteConfirmationSubmitBtn;
+  if (!dialog || !input || !submit || pendingDeleteConfirmation || dialog.open) return Promise.resolve(false);
+  SELECTORS.deleteConfirmationTitle.textContent = title;
+  SELECTORS.deleteConfirmationDescription.textContent = description;
+  SELECTORS.deleteConfirmationEmployeeName.textContent = employeeName || "Unnamed employee";
+  SELECTORS.deleteConfirmationEmployeeId.textContent = employeeId || "Employee record";
+  input.value = "";
+  submit.disabled = true;
+  dialog.returnValue = "";
+  return new Promise((resolve) => {
+    pendingDeleteConfirmation = resolve;
+    try {
+      dialog.showModal();
+      input.focus();
+    } catch {
+      pendingDeleteConfirmation = null;
+      resolve(false);
+    }
+  });
+}
+
+async function deleteEmployeeWithConfirmation(employee) {
+  const companyId = getSelectedCompanyId();
+  const id = Number(employee.id);
+  const key = `employee:${companyId}:${id}`;
+  if (!id || pendingEmployeeDeletions.has(key)) return;
+  pendingEmployeeDeletions.add(key);
+  try {
+    const confirmed = await confirmEmployeeDeletion({
+      title: "Delete employee?",
+      description: "This will delete the employee profile from your directory. This action cannot be undone.",
+      employeeName: employee.employeeName,
+      employeeId: employee.employeeId,
+    });
+    if (!confirmed || companyId !== getSelectedCompanyId() || !employeeMaster.includes(employee)) return;
+    await apiRequest(`/api/employees/${id}?companyId=${companyId}`, { method: "DELETE" });
+    if (companyId !== getSelectedCompanyId()) return;
+    await loadEmployees();
+    if (companyId !== getSelectedCompanyId()) return;
+    await loadMonthRecords();
+    showAppMessage("Employee deleted.");
+  } catch (error) {
+    setEmployeeMessage(employeeApiErrorMessage(error));
+  } finally {
+    pendingEmployeeDeletions.delete(key);
+  }
+}
+
+async function removePayrollRecordWithConfirmation(record) {
+  if (!record) return;
+  const companyId = getSelectedCompanyId();
+  const month = getSelectedMonth();
+  const key = `payroll:${companyId}:${month}:${record.employeeId}`;
+  if (pendingEmployeeDeletions.has(key)) return;
+  pendingEmployeeDeletions.add(key);
+  try {
+    const confirmed = await confirmEmployeeDeletion({
+      title: "Delete payroll record?",
+      description: `Remove this employee's payroll entry for ${formatMonth(month)}. This action cannot be undone.`,
+      employeeName: record.employeeName,
+      employeeId: record.employeeId,
+    });
+    if (!confirmed || companyId !== getSelectedCompanyId() || month !== getSelectedMonth()) return;
+    const index = currentRecords.indexOf(record);
+    if (index < 0) return;
+    currentRecords.splice(index, 1);
+    if (String(activePayrollEmployeeId) === String(record.employeeId)) activePayrollEmployeeId = "";
+    renderPayrollTable();
+    scheduleSave(true);
+    showAppMessage("Payroll record deleted.");
+  } finally {
+    pendingEmployeeDeletions.delete(key);
+  }
+}
+
+async function deleteVerificationWithConfirmation(record) {
+  const companyId = getSelectedCompanyId();
+  const id = Number(record.id);
+  const key = `verification:${companyId}:${id}`;
+  if (!id || pendingEmployeeDeletions.has(key)) return;
+  pendingEmployeeDeletions.add(key);
+  try {
+    const confirmed = await confirmEmployeeDeletion({
+      title: "Delete verification record?",
+      description: "This will delete the employee's saved verification record. This action cannot be undone.",
+      employeeName: record.primaryBioData?.fullName,
+      employeeId: `Verification #${id}`,
+    });
+    if (!confirmed || companyId !== getSelectedCompanyId() || !employeeVerifications.includes(record)) return;
+    await apiRequest(`/api/employee-verifications/${id}?companyId=${companyId}`, { method: "DELETE" });
+    if (companyId !== getSelectedCompanyId()) return;
+    await loadEmployeeVerifications();
+    showAppMessage("Verification record deleted.");
+  } catch (error) {
+    setVerificationMessage(error.message || "Failed to delete verification record.");
+  } finally {
+    pendingEmployeeDeletions.delete(key);
+  }
+}
+
 function wireAppActions() {
+  wireDeleteConfirmation();
+  const payslipDesignStyles = document.getElementById("payslipDesignStyles");
+  if (payslipDesignStyles) payslipDesignStyles.textContent = getPayslipStyles();
   wireRailActions();
   wireCompanyActions();
 
@@ -2530,12 +2707,29 @@ function wireAppActions() {
     showAppMessage("Error logs cleared.");
   });
 
-  SELECTORS.dashboardCommandCenter?.addEventListener("click", (event) => {
+  SELECTORS.dashboardHome?.addEventListener("click", async (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const button = target.closest("[data-dashboard-action]");
+    if (!(target instanceof Element)) return;
+    const button = target.closest("button[data-dashboard-action]");
     if (!button) return;
     const action = button.dataset.dashboardAction;
+    if (action === "open-report") {
+      const reportId = Number(button.dataset.dashboardReportId);
+      if (!Number.isInteger(reportId) || reportId <= 0) return;
+      button.disabled = true;
+      try {
+        if (!(await openPayrollReport(reportId))) return;
+        setWorkspace("reports");
+        SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "reports"));
+        setReportPanel("payslips");
+        SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        showAppMessage(error.message);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
     if (action === "review") {
       setWorkspace("payroll");
       SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "payroll"));
@@ -2547,6 +2741,7 @@ function wireAppActions() {
       SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === action));
       const section = action === "employees" ? SELECTORS.employeesSection : action === "payroll" ? SELECTORS.payrollSection : SELECTORS.reportsSection;
       section?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (action === "employees") openEmployeeEditor();
     }
   });
 
@@ -2570,13 +2765,13 @@ function wireAppActions() {
     renderEmployeeTable();
   });
 
-  SELECTORS.addEmployeeBtn.addEventListener("click", async () => {
+  SELECTORS.addEmployeeBtn.addEventListener("click", () => {
     setWorkspace("employees");
     syncCurrentRecordsToAllPayroll();
     renderEmployeeTable();
     SELECTORS.railButtons.forEach((item) => item.classList.toggle("active", item.dataset.railAction === "employees"));
     SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setTimeout(() => SELECTORS.employeeNameInput?.focus(), 240);
+    openEmployeeEditor();
   });
 
   SELECTORS.exportCsvBtn.addEventListener("click", () => {
@@ -2697,7 +2892,7 @@ function wireAppActions() {
     scheduleSave(true);
   });
 
-  SELECTORS.payrollBody.addEventListener("click", (event) => {
+  SELECTORS.payrollBody.addEventListener("click", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const button = target.closest("button");
@@ -2708,15 +2903,19 @@ function wireAppActions() {
     if (Number.isNaN(index) || !currentRecords[index]) return;
 
     const action = button.dataset.action;
-    if (action === "delete") {
-      const removedId = currentRecords[index]?.employeeId || "";
-      currentRecords.splice(index, 1);
-      if (String(activePayrollEmployeeId) === String(removedId)) {
-        activePayrollEmployeeId = "";
+    if (action === "previous-record" || action === "next-record") {
+      const entries = getFilteredPayrollEntries();
+      const currentPosition = entries.findIndex((item) => item.index === index);
+      const nextPosition = currentPosition + (action === "next-record" ? 1 : -1);
+      if (currentPosition >= 0 && entries[nextPosition]) {
+        activePayrollEmployeeId = entries[nextPosition].record.employeeId || "";
+        renderPayrollTable();
+        SELECTORS.payrollBody.querySelector(`[data-action="${action}"]`)?.focus();
       }
-      renderPayrollTable();
-      scheduleSave(true);
-      showAppMessage("Employee removed.");
+      return;
+    }
+    if (action === "delete") {
+      await removePayrollRecordWithConfirmation(currentRecords[index]);
       return;
     }
 
@@ -2775,11 +2974,31 @@ function wireAppActions() {
         await downloadPayrollReportExcel(reportId);
         return;
       }
-      await openPayrollReport(reportId);
+      if (!(await openPayrollReport(reportId))) return;
       setReportPanel("payslips");
       SELECTORS.reportsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       showAppMessage(error.message);
+    }
+  });
+
+  SELECTORS.reportsPayslipSearchInput?.addEventListener("input", renderGeneratedPayrollReports);
+  SELECTORS.leaveReportSearchInput?.addEventListener("input", renderLeaveResumeReport);
+  SELECTORS.leaveReportStatusFilter?.addEventListener("change", renderLeaveResumeReport);
+
+  SELECTORS.reportsMonthPicker?.addEventListener("change", async () => {
+    const picker = SELECTORS.reportsMonthPicker;
+    const reportId = Number(picker.value);
+    if (!Number.isInteger(reportId) || !payrollReports.some((report) => Number(report.id) === reportId)) return;
+    if (reportId === Number(activePayrollReportId)) return;
+    picker.disabled = true;
+    try {
+      await openPayrollReport(reportId);
+    } catch (error) {
+      picker.value = activePayrollReportId ? String(activePayrollReportId) : "";
+      showAppMessage(error.message);
+    } finally {
+      picker.disabled = isPayrollReportRequestPending() || !payrollReports.length;
     }
   });
 
@@ -3335,7 +3554,7 @@ function wireRailActions() {
         renderEmployeeTable();
         SELECTORS.employeesSection?.scrollIntoView({ behavior: "smooth", block: "start" });
         setTimeout(() => {
-          SELECTORS.employeeNameInput?.focus();
+          SELECTORS.employeeSearchInput?.focus();
         }, 260);
         return;
       }
@@ -3386,6 +3605,7 @@ function setWorkspace(view) {
   const verificationView = view === "verification";
   const settingsView = view === "settings";
 
+  SELECTORS.dashboardHome?.classList.toggle("hidden", !dashboardView);
   SELECTORS.metricsSection?.classList.toggle("hidden", !dashboardView);
   SELECTORS.dashboardCommandCenter?.classList.toggle("hidden", !dashboardView);
   SELECTORS.dashboardInsightsSection?.classList.toggle("hidden", !dashboardView);
@@ -3754,24 +3974,36 @@ function payrollReportsUrl() {
   return `/api/payroll-reports?companyId=${getSelectedCompanyId()}`;
 }
 
+function isPayrollReportRequestPending() {
+  return Boolean(pendingPayrollReportRequest
+    && pendingPayrollReportRequest.version === payrollReportsRequestVersion
+    && pendingPayrollReportRequest.companyId === getSelectedCompanyId());
+}
+
 async function loadPayrollReports(preferredReportId = activePayrollReportId, options = {}) {
   const { openPreferredReport = true } = options;
+  const request = { version: ++payrollReportsRequestVersion, companyId: getSelectedCompanyId() };
+  pendingPayrollReportRequest = request;
+  renderGeneratedPayrollReports();
   try {
-    const response = await apiRequest(payrollReportsUrl());
+    const response = await apiRequest(`/api/payroll-reports?companyId=${request.companyId}`);
+    if (request.version !== payrollReportsRequestVersion || request.companyId !== getSelectedCompanyId()) return false;
     payrollReports = Array.isArray(response.reports) ? response.reports : [];
     const selectedReport = payrollReports.find((report) => Number(report.id) === Number(preferredReportId))
       || payrollReports.find((report) => String(report.month) === String(getSelectedMonth()))
       || payrollReports[0]
       || null;
-    activePayrollReportId = selectedReport ? Number(selectedReport.id) : null;
-    if (activePayrollReportId && openPreferredReport) {
-      await openPayrollReport(activePayrollReportId, true);
-    } else {
-      renderGeneratedPayrollReports();
-      renderReportsSummary();
-      renderDashboardInsights();
+    if (selectedReport && openPreferredReport) {
+      return await openPayrollReport(Number(selectedReport.id), true, request);
     }
+    activePayrollReportId = selectedReport ? Number(selectedReport.id) : null;
+    activePayrollReportSnapshot = null;
+    renderGeneratedPayrollReports();
+    renderReportsSummary();
+    renderDashboardInsights();
+    return true;
   } catch (error) {
+    if (request.version !== payrollReportsRequestVersion || request.companyId !== getSelectedCompanyId()) return false;
     payrollReports = [];
     activePayrollReportId = null;
     activePayrollReportSnapshot = null;
@@ -3779,16 +4011,42 @@ async function loadPayrollReports(preferredReportId = activePayrollReportId, opt
     renderReportsSummary();
     renderDashboardInsights();
     showAppMessage(error.message);
+    return false;
+  } finally {
+    if (pendingPayrollReportRequest === request) {
+      pendingPayrollReportRequest = null;
+      renderGeneratedPayrollReports();
+    }
   }
 }
 
-async function openPayrollReport(reportId, skipListRender = false) {
-  const response = await apiRequest(`/api/payroll-reports/${reportId}?companyId=${getSelectedCompanyId()}`);
-  activePayrollReportId = Number(response.report?.id || reportId);
-  activePayrollReportSnapshot = response.snapshot || null;
+async function openPayrollReport(reportId, skipListRender = false, requestContext = null) {
+  const request = {
+    version: requestContext ? requestContext.version : ++payrollReportsRequestVersion,
+    companyId: requestContext ? requestContext.companyId : getSelectedCompanyId(),
+    reportId: Number(reportId),
+  };
+  if (request.version !== payrollReportsRequestVersion || request.companyId !== getSelectedCompanyId()) return false;
+  pendingPayrollReportRequest = request;
   renderGeneratedPayrollReports();
-  renderReportsSummary();
-  renderDashboardInsights();
+  try {
+    const response = await apiRequest(`/api/payroll-reports/${request.reportId}?companyId=${request.companyId}`);
+    if (request.version !== payrollReportsRequestVersion || request.companyId !== getSelectedCompanyId()) return false;
+    activePayrollReportId = Number(response.report?.id || reportId);
+    activePayrollReportSnapshot = response.snapshot || null;
+    renderGeneratedPayrollReports();
+    renderReportsSummary();
+    renderDashboardInsights();
+    return true;
+  } catch (error) {
+    if (request.version !== payrollReportsRequestVersion || request.companyId !== getSelectedCompanyId()) return false;
+    throw error;
+  } finally {
+    if (pendingPayrollReportRequest === request) {
+      pendingPayrollReportRequest = null;
+      renderGeneratedPayrollReports();
+    }
+  }
 }
 
 function createEmptyEmployee(records) {
@@ -4248,39 +4506,45 @@ function payrollZeroSalaryReason(record, calc, month) {
 function renderPayrollTotalsAndReview(entries, allEntries, month) {
   const filteredSummary = summarizePayrollEntries(entries);
   const allSummary = summarizePayrollEntries(allEntries);
+  const visibleCount = Number(filteredSummary.employees || 0);
+  const totalCount = Number(allSummary.employees || 0);
+  const visibilityLabel = visibleCount === totalCount
+    ? `${visibleCount} employees`
+    : `${visibleCount} of ${totalCount} employees`;
+  if (SELECTORS.payrollVisibleCount) SELECTORS.payrollVisibleCount.textContent = visibilityLabel;
+  if (SELECTORS.payrollBulkScope) SELECTORS.payrollBulkScope.textContent = `${visibleCount} visible employee${visibleCount === 1 ? "" : "s"}`;
   if (SELECTORS.payrollTotalsBar) {
     SELECTORS.payrollTotalsBar.innerHTML = `
-      <div><span>Visible Employees</span><strong>${filteredSummary.employees}</strong></div>
-      <div><span>Gross</span><strong>${formatCurrency(filteredSummary.gross)}</strong></div>
-      <div><span>Deductions</span><strong>${formatCurrency(filteredSummary.deductions)}</strong></div>
-      <div><span>Net Payout</span><strong>${formatCurrency(filteredSummary.net)}</strong></div>
-      <div><span>Advance Pending</span><strong>${formatCurrency(filteredSummary.advance)}</strong></div>
+      <div class="payroll-overview-item"><span>Employees</span><strong>${visibleCount}</strong><small>${visibleCount === totalCount ? "Included in this payroll" : `of ${totalCount} match your filters`}</small></div>
+      <div class="payroll-overview-item"><span>Gross salary</span><strong>${formatCurrency(filteredSummary.gross)}</strong><small>Before deductions</small></div>
+      <div class="payroll-overview-item"><span>Total deductions</span><strong>${formatCurrency(filteredSummary.deductions)}</strong><small>Absences + advance recovery</small></div>
+      <div class="payroll-overview-item payroll-overview-net"><span>Net payout</span><strong>${formatCurrency(filteredSummary.net)}</strong><small>Salary to be paid</small></div>
+      <div class="payroll-overview-item"><span>Advance pending</span><strong>${formatCurrency(filteredSummary.advance)}</strong><small>Balance after this payroll</small></div>
     `;
   }
 
   if (!SELECTORS.payrollReviewPanel) return;
   const warnings = entries.flatMap((item) => payrollValidationWarnings(item.record, item.calc, month));
   const generated = getCurrentMonthPayrollReport();
-  const visibleCount = Number(filteredSummary.employees || 0);
-  const totalCount = Number(allSummary.employees || 0);
-  const visibilityLabel = visibleCount === totalCount
-    ? `${visibleCount} employees`
-    : `${visibleCount} of ${totalCount} employees`;
   SELECTORS.payrollReviewPanel.innerHTML = `
-    <div class="payroll-review-head">
-      <div>
-        <p class="dashboard-kicker">Payroll Review</p>
+    <div class="payroll-review-toolbar">
+      <div class="payroll-review-period">
+        <span class="payroll-review-label">Payroll review</span>
         <h3>${escapeHtml(formatMonth(month))}</h3>
         <span class="payroll-review-meta">${escapeHtml(visibilityLabel)} visible</span>
       </div>
-      <button id="generateVisiblePayslipsBtn" type="button" ${entries.length ? "" : "disabled"}>Generate Visible Payslips</button>
-    </div>
-    <div class="payroll-review-body">
-      <div class="payroll-review-grid">
-        <div><span>Total</span><strong>${allSummary.employees}</strong></div>
-        <div><span>Visible Net</span><strong>${formatCurrency(filteredSummary.net)}</strong></div>
-        <div><span>Warnings</span><strong>${warnings.length}</strong></div>
-        <div><span>Status</span><strong>${generated?.generatedAt ? "Generated" : "Draft"}</strong></div>
+      <div class="payroll-review-actions">
+        <span class="payroll-report-status ${generated?.generatedAt ? "generated" : "draft"}">${generated?.generatedAt ? "Generated" : "Draft"}</span>
+        <details class="payroll-checks ${warnings.length ? "has-warnings" : "checks-clear"}">
+          <summary>${warnings.length ? `${warnings.length} item${warnings.length === 1 ? "" : "s"} to review` : "All checks passed"}</summary>
+          <div class="payroll-checks-content">
+            <strong>Review before generating</strong>
+            ${warnings.length
+              ? `<ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`
+              : "<p>No payroll warnings for the visible employees.</p>"}
+          </div>
+        </details>
+        <button id="generateVisiblePayslipsBtn" type="button" ${entries.length ? "" : "disabled"}>Generate ${visibleCount} payslip${visibleCount === 1 ? "" : "s"}</button>
       </div>
     </div>
   `;
@@ -4369,11 +4633,6 @@ function renderPayrollTable() {
     : status === "terminated"
       ? "status-pill terminated"
       : "status-pill working";
-  const statusBoxClass = status === "leave"
-    ? "status-box leave"
-    : status === "terminated"
-      ? "status-box terminated"
-      : "status-box active";
   const statusDetail = status === "leave"
     ? `Leave: ${record.leaveFrom || "-"} to ${record.leaveTo || "-"}`
     : status === "terminated"
@@ -4388,148 +4647,115 @@ function renderPayrollTable() {
     })
     .join("");
 
-  const selectClass = status === "leave" ? "emp-picker leave" : "emp-picker working";
+  const selectedPosition = visibleRecords.indexOf(activeEntry);
+  const initials = String(record.employeeName || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   const dirtyClass = dirtyPayrollEmployeeIds.has(String(record.employeeId || "")) ? " payroll-entry-dirty" : "";
   SELECTORS.payrollBody.innerHTML = `
-    <article class="payroll-entry-card payroll-modern${dirtyClass}" data-index="${index}">
-      <div class="payroll-modern-grid">
-        <div class="payroll-modern-main">
-          <section class="payroll-stack-section payroll-section-profile">
-            <h3>Employee Profile</h3>
-            <div class="payroll-fields">
-              <label>Employee ID
-                <select data-action="pick-record" class="${selectClass}">
-                  ${employeeOptions}
-                </select>
-              </label>
-              <label>Employee Name
-                <input data-field="employeeName" value="${escapeHtml(record.employeeName || "")}" readonly />
-              </label>
-              <label>Designation
-                <input data-field="designation" value="${escapeHtml(record.designation || "")}" readonly />
-              </label>
-              <label>Status
-                <div class="${statusBoxClass}">${escapeHtml(statusLabel.toUpperCase())}</div>
-              </label>
+    <article class="payroll-entry-card payroll-workspace-entry${dirtyClass}" data-index="${index}">
+      <header class="payroll-employee-header">
+        <div class="payroll-employee-identity">
+          <span class="payroll-employee-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+          <div class="payroll-employee-info">
+            <div class="payroll-employee-heading">
+              <h3>${escapeHtml(record.employeeName || "Unnamed employee")}</h3>
+              <span class="${badgeClass}">${escapeHtml(statusLabel)}</span>
             </div>
-            ${statusDetail ? `<p class="status-note">${escapeHtml(statusDetail)}</p>` : ""}
-          </section>
+            <p>${escapeHtml(record.designation || "No designation")} <span aria-hidden="true">·</span> ${escapeHtml(record.employeeId || "—")}</p>
+            ${statusDetail ? `<p class="payroll-status-detail">${escapeHtml(statusDetail)}</p>` : ""}
+          </div>
+        </div>
+        <div class="payroll-employee-switcher">
+          <label class="payroll-switcher-label" for="payrollRecordPicker">Select employee</label>
+          <select id="payrollRecordPicker" data-action="pick-record" class="payroll-record-select" aria-label="Select payroll employee">${employeeOptions}</select>
+          <div class="payroll-record-navigation">
+            <button data-action="previous-record" class="payroll-nav-button" type="button" aria-label="Previous employee" ${selectedPosition === 0 ? "disabled" : ""}><span aria-hidden="true">‹</span></button>
+            <span>${selectedPosition + 1} of ${visibleCount}</span>
+            <button data-action="next-record" class="payroll-nav-button" type="button" aria-label="Next employee" ${selectedPosition === visibleCount - 1 ? "disabled" : ""}><span aria-hidden="true">›</span></button>
+          </div>
+        </div>
+      </header>
 
-          <section class="payroll-stack-section payroll-section-salary">
-            <h3>Core Salary & Increment</h3>
-            <div class="payroll-fields">
-              <label>Present Salary (₹)
-                <input class="field-salary locked-field" data-field="presentSalary" type="number" min="0" step="0.01" value="${toRaw(record.presentSalary)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
-              </label>
+      <div class="payroll-editor-grid">
+        <div class="payroll-editor-main">
+          <section class="payroll-editor-section payroll-section-salary" aria-labelledby="payrollSalaryHeading">
+            <div class="payroll-section-heading"><h4 id="payrollSalaryHeading">Salary</h4><span>Monthly earnings</span></div>
+            <div class="payroll-field-grid payroll-field-grid-three">
+              <div class="payroll-readout"><span>Current monthly salary</span><strong>${formatCurrency(toMoney(record.presentSalary))}</strong><small>From employee salary history</small></div>
               <label>Increment (₹)
-                <span class="field-tag">NEW</span>
                 <input class="field-increment" data-field="increment" type="number" min="0" step="0.01" value="${toRaw(record.increment)}" ${calc.blocked || !allowOverride ? "disabled" : ""} />
-                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+                ${!allowOverride ? '<span class="field-note">Locked for this payroll month</span>' : ''}
               </label>
-              <label>Gross Salary (₹)
-                <input type="text" value="${formatCurrency(calc.grossSalary)}" readonly />
-              </label>
+              <div class="payroll-readout payroll-readout-emphasis"><span>Gross salary</span><strong>${formatCurrency(calc.grossSalary)}</strong><small>Current salary + increment</small></div>
             </div>
           </section>
 
-          <section class="payroll-stack-section payroll-section-advance">
-            <h3>Advance Tracking</h3>
-            <div class="payroll-fields">
-              <label>Old Advance Taken (₹)
-                <input class="field-advance locked-field" data-field="oldAdvanceTaken" type="number" min="0" step="0.01" value="${toRaw(record.oldAdvanceTaken)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
-              </label>
-              <label>Extra Advance Added (₹)
+          <section class="payroll-editor-section payroll-section-advance" aria-labelledby="payrollAdvanceHeading">
+            <div class="payroll-section-heading"><h4 id="payrollAdvanceHeading">Advances & deductions</h4><span>Manage advance recovery</span></div>
+            <div class="payroll-field-grid payroll-field-grid-three">
+              <div class="payroll-readout"><span>Old Advance taken</span><strong>${formatCurrency(calc.oldAdvanceTaken)}</strong><small>Carried forward automatically</small></div>
+              <label>Extra advance (₹)
                 <input class="field-advance" data-field="extraAdvanceAdded" type="number" min="0" step="0.01" value="${toRaw(record.extraAdvanceAdded)}" ${allowOverride ? "" : "readonly"} />
-                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
+                ${!allowOverride ? '<span class="field-note">Locked for this payroll month</span>' : ''}
               </label>
-              <label>Total Advance (₹)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.totalAdvance)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
-              </label>
-            </div>
-          </section>
-
-          <section class="payroll-stack-section payroll-section-deduction">
-            <h3>Deductions & Absence</h3>
-            <div class="payroll-fields">
-              <label>Deduction Entered (₹)
+              <label>Advance deduction (₹)
                 <input class="field-deduction" data-field="deductionEntered" type="number" min="0" step="0.01" value="${toRaw(record.deductionEntered)}" ${allowOverride ? "" : "readonly"} />
-                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
-              </label>
-              <label>Worked Days (out of ${calc.monthDays})
-                <input type="text" class="locked-field" value="${formatNumberValue(calc.workedDays)}" readonly />
-                <span class="field-note">System calculated from joining date, leave/resume/termination date, and manual absences.</span>
-              </label>
-              <label>Manual Days Absent (out of ${calc.systemWorkedDays})
-                <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="${calc.systemWorkedDays}" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
-                ${!allowOverride ? '<span class="field-note">Locked (past month)</span>' : ''}
-              </label>
-              <label>Salary For Worked Days (₹)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.payableSalary)}" readonly />
-                <span class="field-note">Based on ${formatNumberValue(calc.workedDays)} of ${calc.monthDays} calendar day(s).</span>
-              </label>
-              <label>Prorated Absence Deduction (₹)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.proratedAbsenceDeduction)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
-              </label>
-              <label>Deduction Applied (Advance only)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.deductionApplied)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
+                <span class="field-note">${allowOverride ? "Amount to recover from this salary" : "Locked for this payroll month"}</span>
               </label>
             </div>
-            ${(calc.autoDaysAbsent > 0 || status === "resumed" || status === "leave" || status === "terminated")
-              ? `<p class="status-note">${escapeHtml(payrollWorkedDaysNote(record, calc))}</p>`
-              : ""}
+            <p class="payroll-section-note">Total advance before recovery <strong>${formatCurrency(calc.totalAdvance)}</strong></p>
           </section>
 
-          <section class="payroll-stack-section payroll-section-summary">
-            <h3>Summary</h3>
-            <div class="payroll-fields">
-              <label>Advance Remained (₹)
-                <input type="text" class="locked-field ${calc.advanceRemained > 0 ? "advance-remained-input" : ""}" value="${formatCurrency(calc.advanceRemained)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
+          <section class="payroll-editor-section payroll-section-attendance" aria-labelledby="payrollAttendanceHeading">
+            <div class="payroll-section-heading"><h4 id="payrollAttendanceHeading">Attendance</h4><span>${calc.monthDays} calendar days this month</span></div>
+            <div class="payroll-field-grid">
+              <label>Manual absent days
+                <input class="field-absent" data-field="daysAbsent" type="number" min="0" max="${calc.systemWorkedDays}" step="1" value="${toRaw(record.daysAbsent)}" ${allowOverride ? "" : "readonly"} />
+                <span class="field-note">${allowOverride ? `Up to ${formatNumberValue(calc.systemWorkedDays)} payable work days` : "Locked for this payroll month"}</span>
               </label>
-              <label>Salary In Hand (Net Salary ₹)
-                <input type="text" class="locked-field" value="${formatCurrency(calc.netSalary)}" readonly />
-                <span class="field-note">Locked (system calculated)</span>
-              </label>
+              <div class="payroll-readout"><span>Worked days</span><strong>${formatNumberValue(calc.workedDays)} <small>of ${calc.monthDays} days</small></strong><small>After status dates and manual absences</small></div>
             </div>
-            ${zeroSalaryReason ? `<p class="status-note">${escapeHtml(zeroSalaryReason)}</p>` : ""}
+            <details class="payroll-calculation-details">
+              <summary>View attendance calculation</summary>
+              <div class="payroll-calculation-content">
+                <p>${escapeHtml(payrollWorkedDaysNote(record, calc))}</p>
+                <div class="payroll-summary-line"><span>Salary for ${formatNumberValue(calc.workedDays)} worked days</span><strong>${formatCurrency(calc.payableSalary)}</strong></div>
+                <div class="payroll-summary-line"><span>Prorated absence deduction</span><strong>${formatCurrency(calc.proratedAbsenceDeduction)}</strong></div>
+              </div>
+            </details>
+            ${zeroSalaryReason ? `<p class="payroll-zero-pay-note" role="note">${escapeHtml(zeroSalaryReason)}</p>` : ""}
+          </section>
+
+          <section class="payroll-editor-section payroll-section-notes" aria-labelledby="payrollNotesHeading">
+            <div class="payroll-section-heading"><h4 id="payrollNotesHeading">Payroll notes</h4><span>Optional</span></div>
+            <textarea data-field="comment" rows="2" aria-labelledby="payrollNotesHeading" placeholder="Add a note for this employee’s payroll…">${escapeHtml(record.comment || "")}</textarea>
           </section>
         </div>
 
-        <aside class="payroll-modern-side">
-          <div class="kpi-card net">
-            <p>Net Salary In Hand</p>
+        <aside class="payroll-pay-summary" aria-label="Employee pay summary">
+          <div class="payroll-net-card">
+            <p>Net salary in hand</p>
             <strong>${formatCurrency(calc.netSalary)}</strong>
-            <div class="net-sub">Calculated: Worked Days Pay - Advance Deduction</div>
+            <span>For ${escapeHtml(formatMonth(month))}</span>
           </div>
-
-          <div class="kpi-card soft">
-            <h4>Deductions</h4>
-            <div class="kpi-line"><span>Deduction Entered</span><b>${formatCurrency(calc.deductionEntered)}</b></div>
-            <div class="kpi-line"><span>Absence Deduction</span><b>${formatCurrency(calc.proratedAbsenceDeduction)}</b></div>
-            <div class="kpi-line total"><span>Advance Deduction Applied</span><b>${formatCurrency(calc.deductionApplied)}</b></div>
+          <div class="payroll-summary-card">
+            <h4>Salary breakdown</h4>
+            <div class="payroll-summary-line"><span>Gross salary</span><strong>${formatCurrency(calc.grossSalary)}</strong></div>
+            <div class="payroll-summary-line"><span>Absence deduction</span><strong>− ${formatCurrency(calc.proratedAbsenceDeduction)}</strong></div>
+            <div class="payroll-summary-line"><span>Advance recovered</span><strong>− ${formatCurrency(calc.deductionApplied)}</strong></div>
+            <p class="payroll-summary-equation">After absence deductions and advance recovery.</p>
           </div>
-
-          <div class="kpi-card amber">
-            <p>Advance Remained</p>
-            <strong class="${calc.advanceRemained > 0 ? "advance-remained-alert" : ""}">${formatCurrency(calc.advanceRemained)}</strong>
+          <div class="payroll-summary-card payroll-advance-card">
+            <h4>Advance balance</h4>
+            <div class="payroll-summary-line"><span>Old Advance taken</span><strong>${formatCurrency(calc.oldAdvanceTaken)}</strong></div>
+            <div class="payroll-summary-line"><span>Extra advance</span><strong>${formatCurrency(calc.extraAdvanceAdded)}</strong></div>
+            <div class="payroll-summary-line payroll-summary-total"><span>Advance remaining</span><strong class="${calc.advanceRemained > 0 ? "payroll-advance-pending" : ""}">${formatCurrency(calc.advanceRemained)}</strong></div>
+          </div>
+          <div class="payroll-summary-actions">
+            <button data-action="payslip" class="payroll-generate-button" type="button">Generate payslip</button>
+            <button data-action="delete" class="payroll-delete-button" type="button">Delete record</button>
           </div>
         </aside>
       </div>
-
-      <section class="payroll-footer">
-        <label>Notes / Comments
-          <textarea data-field="comment" rows="3" placeholder="Add professional notes here...">${escapeHtml(record.comment || "")}</textarea>
-        </label>
-        <div class="row-actions">
-          <button data-action="payslip" class="mini" type="button">Generate Payslip</button>
-          <button data-action="delete" class="mini danger" type="button">Delete Record</button>
-        </div>
-      </section>
     </article>
   `;
 
@@ -4674,82 +4900,94 @@ function openPayslip(record, month, companyOverride = null) {
   SELECTORS.payslipDialog.showModal();
 }
 
+function getPayslipLineItems(calc) {
+  const additions = [
+    { label: "Present Salary", amount: calc.presentSalary },
+    { label: "Increment", amount: calc.increment },
+    { label: "Gross Salary", amount: calc.grossSalary, total: true },
+  ];
+  const deductions = [{ label: "Old Advance Taken", amount: calc.oldAdvanceTaken }];
+  if (calc.extraAdvanceAdded > 0) {
+    deductions.push(
+      { label: "Extra Advance Added", amount: calc.extraAdvanceAdded },
+      { label: "Total Advance", amount: calc.totalAdvance, total: true }
+    );
+  }
+  if (calc.proratedAbsenceDeduction > 0) deductions.push({ label: "Absence Deduction", amount: calc.proratedAbsenceDeduction });
+  deductions.push({ label: "Deduction Applied", amount: calc.deductionApplied, total: true });
+  return { additions, deductions };
+}
+
 function renderPayslipCard(record, calc, month, company, displayComment = null) {
-  const monthSheet = formatPayslipMonth(month);
-  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage(record);
-  const status = formatStatusLabel(record.employeeStatus || "working");
-  const absenceSummary = calc.daysAbsent > 0
-    ? `${formatNumberValue(calc.workedDays)} day(s) worked out of ${calc.monthDays} • Absence deduction ${formatCurrency(calc.proratedAbsenceDeduction)}`
-    : "No absence deduction applied";
+  const comment = String(record.comment || "").trim() || String(displayComment || "").trim() || getRandomMotivatingMessage(record);
+  const companyName = company?.name || "Company";
+  const totalDeductions = calc.proratedAbsenceDeduction + calc.deductionApplied;
+  const hasPendingAdvance = calc.advanceRemained > 0;
+  const { additions, deductions } = getPayslipLineItems(calc);
+  const renderLines = (items) => items.map((item) => `
+    <div class="slip-line${item.total ? " slip-line-total" : ""}"><span>${escapeHtml(item.label)}</span><strong>${formatCurrency(item.amount)}</strong></div>
+  `).join("");
 
   return `
-    <article class="payslip-sheet">
-      <header class="payslip-sheet-header">
-        <div class="payslip-sheet-brand">
-          <div>
-            <h2>${escapeHtml(company.name || "Company")}</h2>
-            <p>Official Payroll Statement</p>
-          </div>
-          ${company.logoDataUrl ? `<img src="${company.logoDataUrl}" alt="${escapeHtml(company.name)} logo" class="payslip-sheet-logo" />` : ""}
+    <article class="payslip-sheet payslip-professional">
+      <header class="slip-header">
+        ${company?.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="${escapeHtml(companyName)} logo" class="slip-logo" />` : ""}
+        <div class="slip-company">
+          <h2>${escapeHtml(companyName)}</h2>
+          <span>Payroll statement</span>
         </div>
-        <div class="payslip-sheet-period">
-          <span class="payslip-label">Month Sheet</span>
-          <strong>${escapeHtml(monthSheet)}</strong>
+        <div class="slip-period">
+          <small>PAYSLIP</small>
+          <strong>${escapeHtml(formatMonth(month))}</strong>
         </div>
       </header>
-      <section class="payslip-identity">
+      <section class="slip-identity" aria-label="Employee details">
         <div>
-          <span class="payslip-label">Employee Name</span>
+          <span>Employee Name</span>
           <strong>${escapeHtml(record.employeeName || "Employee Name")}</strong>
         </div>
         <div>
-          <span class="payslip-label">Designation</span>
+          <span>Designation</span>
           <strong>${escapeHtml(record.designation || "Designation")}</strong>
         </div>
         <div>
-          <span class="payslip-label">Employee ID</span>
+          <span>Employee ID</span>
           <strong>${escapeHtml(record.employeeId || "-")}</strong>
         </div>
       </section>
-      <section class="payslip-financials">
-        <div class="payslip-panel payslip-panel-addition">
-          <h3>ADDITION</h3>
-          <div class="payslip-lines">
-            <div class="payslip-line"><span>Present Salary (₹)</span><strong>${formatPayslipAmount(calc.presentSalary)}</strong></div>
-            <div class="payslip-line"><span>Increment (₹)</span><strong class="amount-green">${formatPayslipAmount(calc.increment)}</strong></div>
-            <div class="payslip-line payslip-line-total"><span>Gross Salary (₹)</span><strong class="amount-underline">${formatPayslipAmount(calc.grossSalary)}</strong></div>
-          </div>
+      <section class="slip-attendance" aria-label="Attendance">
+        <div><span>Worked days</span><strong>${formatNumberValue(calc.workedDays)} / ${formatNumberValue(calc.monthDays)}</strong></div>
+        ${calc.daysAbsent > 0 ? `<div><span>Days absent</span><strong>${formatNumberValue(calc.daysAbsent)}</strong></div>` : ""}
+      </section>
+      <section class="slip-financials">
+        <div class="slip-panel slip-addition-panel">
+          <h3>Addition</h3>
+          ${renderLines(additions)}
         </div>
-        <div class="payslip-panel payslip-panel-deduction">
-          <h3>DEDUCTIONS</h3>
-          <div class="payslip-lines">
-            <div class="payslip-line"><span>Old Advance Taken (₹)</span><strong>${formatPayslipAmount(calc.oldAdvanceTaken)}</strong></div>
-            <div class="payslip-line"><span>Extra Advance Added (₹)</span><strong>${formatPayslipAmount(calc.extraAdvanceAdded)}</strong></div>
-            <div class="payslip-line"><span>Total Advance (₹)</span><strong>${formatPayslipAmount(calc.totalAdvance)}</strong></div>
-            <div class="payslip-line payslip-line-highlight"><span>Deduction Applied (₹)</span><strong class="amount-red">${formatPayslipAmount(calc.deductionApplied)}</strong></div>
-            <div class="payslip-line payslip-line-total"><span>Advance Remained (₹)</span><strong class="amount-red-large">${formatPayslipAmount(calc.advanceRemained)}</strong></div>
+        <div class="slip-panel slip-deduction-panel">
+          <h3>Deduction</h3>
+          ${renderLines(deductions)}
+          <div class="slip-advance-balance ${hasPendingAdvance ? "is-pending" : "is-clear"}">
+            <span>Advance Remaining</span>
+            <strong>${formatCurrency(calc.advanceRemained)}</strong>
+            <small>${hasPendingAdvance ? "Balance carried forward" : "Advance balance is clear"}</small>
           </div>
         </div>
       </section>
-      <section class="payslip-note-strip">
+      <section class="slip-net-pay" aria-label="Net salary">
         <div>
-          <span class="payslip-label">Payroll Notes</span>
-          <p>${escapeHtml(`Status: ${status} • Deduction Entered: ${formatCurrency(calc.deductionEntered)} • ${absenceSummary}`)}</p>
+          <span>Salary in Hand</span>
+          <strong>${formatCurrency(calc.netSalary)}</strong>
+          <p class="slip-net-note">${totalDeductions > 0 ? "After advance recovery and any absence deductions" : "No deductions this month"}</p>
         </div>
       </section>
-      <footer class="payslip-footer">
-        <div class="payslip-comment">
-          <span class="payslip-label">Comment</span>
-          <p>${escapeHtml(comment)}</p>
-        </div>
-        <div class="payslip-net">
-          <span class="payslip-label">Salary In Hand (Net Salary ₹)</span>
-          <div class="payslip-net-box">${formatPayslipAmount(calc.netSalary)}</div>
-        </div>
-      </footer>
-      <div class="payslip-signoff">
-        <span>Prepared By: System</span>
-        <div class="payslip-signature">Employer Signature</div>
+      <div class="slip-comment">
+        <span>Comment</span>
+        <p>${escapeHtml(comment)}</p>
+      </div>
+      <div class="slip-signoff">
+        <span>Prepared by: System</span>
+        <div class="slip-signature">Employer signature</div>
       </div>
     </article>
   `;
@@ -4765,29 +5003,27 @@ function ensureActivePayslip() {
 
 function getPayslipText(data) {
   const { record, calc, month, company, displayComment } = data;
-  const comment = displayComment || String(record.comment || "").trim() || getRandomMotivatingMessage(record);
+  const comment = String(record.comment || "").trim() || String(displayComment || "").trim() || getRandomMotivatingMessage(record);
+  const { additions, deductions } = getPayslipLineItems(calc);
+  const textLines = (items) => items.map((item) => `${item.label}: ${formatCurrency(item.amount)}`);
   return [
     "Routes Payroll Payslip",
     `Company: ${company?.name || "-"}`,
     `Year-Month: ${formatMonth(month)}`,
-    `Employee ID: ${record.employeeId || "-"}`,
     `Employee Name: ${record.employeeName || "-"}`,
     `Designation: ${record.designation || "-"}`,
-    `Status: ${record.employeeStatus || "working"}`,
-    `Present Salary: ${formatCurrency(calc.presentSalary)}`,
-    `Increment: ${formatCurrency(calc.increment)}`,
-    `Gross Salary: ${formatCurrency(calc.grossSalary)}`,
-    `Old Advance Taken: ${formatCurrency(calc.oldAdvanceTaken)}`,
-    `Extra Advance Added: ${formatCurrency(calc.extraAdvanceAdded)}`,
-    `Total Advance: ${formatCurrency(calc.totalAdvance)}`,
-    `Deduction Entered: ${formatCurrency(calc.deductionEntered)}`,
+    `Employee ID: ${record.employeeId || "-"}`,
     `Worked Days: ${calc.workedDays} / ${calc.monthDays}`,
-    `Total Days Absent: ${calc.daysAbsent} / ${calc.monthDays}`,
-    `Salary For Worked Days: ${formatCurrency(calc.payableSalary)}`,
-    `Prorated Absence Deduction: ${formatCurrency(calc.proratedAbsenceDeduction)}`,
-    `Deduction Applied: ${formatCurrency(calc.deductionApplied)}`,
-    `Advance Remained: ${formatCurrency(calc.advanceRemained)}`,
-    `Salary In Hand: ${formatCurrency(calc.netSalary)}`,
+    ...(calc.daysAbsent > 0 ? [`Days Absent: ${calc.daysAbsent}`] : []),
+    "",
+    "Addition",
+    ...textLines(additions),
+    "",
+    "Deduction",
+    ...textLines(deductions),
+    `Advance Remaining: ${formatCurrency(calc.advanceRemained)}`,
+    "",
+    `Salary In Hand (After Deductions): ${formatCurrency(calc.netSalary)}`,
     `Comment: ${comment}`,
   ].join("\n");
 }
@@ -4926,312 +5162,140 @@ function formatStatusLabel(status) {
   return raw.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function getPayslipPrintStyles() {
+function getPayslipStyles() {
   return `
-    @page {
-      size: A5 portrait;
-      margin: 8mm;
-    }
+    body:has(#payslipDialog[open]) { overflow-y: hidden; }
+    #payslipDialog { width: min(800px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 40px); margin: auto; padding: 0; border: 0; border-radius: 14px; background: #f5f7fa; overflow: hidden; }
+    #payslipDialog::backdrop { background: #182b4366; backdrop-filter: blur(3px); }
+    #payslipDialog .dialog-content { display: flex; flex-direction: column; width: 100% !important; max-width: none !important; max-height: calc(100dvh - 40px) !important; padding: 0 !important; border: 0; border-radius: 14px; background: #f5f7fa; overflow: hidden !important; }
+    #payslipDialog .dialog-head { flex: 0 0 auto; gap: 16px; padding: 16px 20px; border-bottom: 1px solid #e2e7ee; background: #fff; }
+    #payslipDialog .dialog-head h2 { margin: 0; color: #172b40 !important; font-size: 18px !important; font-weight: 650 !important; letter-spacing: -0.4px !important; }
+    #payslipDialog .slip-dialog-description { margin: 5px 0 0; color: #52647a; font-size: 11px; }
+    #payslipDialog #closePayslipBtn { min-height: 34px !important; padding: 0 12px; border: 1px solid #dce4ed !important; border-radius: 7px !important; background: #fff !important; color: #344b64 !important; font-size: 11px; font-weight: 600 !important; box-shadow: none !important; }
+    #payslipDialog #payslipPreview { display: block; flex: 1 1 auto; min-height: 0; width: 100%; margin: 0; padding: 20px; overflow: auto; overscroll-behavior: contain; }
+    #payslipDialog .dialog-actions { display: flex !important; flex: 0 0 auto; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; padding: 13px 20px; border-top: 1px solid #e2e7ee; background: #fff; }
+    #payslipDialog .dialog-actions button,
+    #payslipDialog .slip-share-menu > summary { display: inline-flex; align-items: center; justify-content: center; min-height: 38px !important; width: auto !important; padding: 0 13px; margin: 0; border: 1px solid #dce4ed !important; border-radius: 7px !important; background: #fff !important; color: #365572 !important; font-size: 12px; font-weight: 600 !important; box-shadow: none !important; cursor: pointer; }
+    #payslipDialog .dialog-actions #printPayslipBtn { background: #183b50 !important; border-color: #183b50 !important; color: #fff !important; }
+    #payslipDialog .slip-share-menu { position: relative; }
+    #payslipDialog .slip-share-menu > summary { list-style: none; }
+    #payslipDialog .slip-share-menu > summary::-webkit-details-marker { display: none; }
+    #payslipDialog .slip-share-menu > summary::after { content: "⌄"; margin-left: 8px; }
+    #payslipDialog .slip-share-options { position: absolute; z-index: 5; bottom: calc(100% + 8px); right: 0; display: grid; gap: 3px; width: 200px; padding: 6px; border: 1px solid #dce4ed; border-radius: 9px; background: #fff; box-shadow: 0 7px 26px #172b4026; }
+    #payslipDialog .slip-share-options button { width: 100% !important; justify-content: flex-start; min-height: 36px !important; border: 0 !important; font-size: 11px; }
+    #payslipDialog .slip-share-options button:hover { background: #f1f5f9 !important; }
+    #payslipDialog button:focus-visible,
+    #payslipDialog summary:focus-visible { outline: 2px solid #3984a5; outline-offset: 3px; }
 
-    * {
-      box-sizing: border-box;
-    }
+    .payslip-sheet.payslip-professional { box-sizing: border-box; width: min(640px, 100%); max-width: 100%; min-height: 0; margin: 0 auto; padding: 24px !important; border: 1px solid #dfe5ed !important; border-top: 3px solid #183b50 !important; border-radius: 4px !important; background: #fff !important; color: #20334a; font-family: Arial, "Helvetica Neue", sans-serif; font-size: 12px; line-height: 1.45; letter-spacing: 0; box-shadow: 0 3px 14px #172b4009 !important; }
+    .payslip-sheet.payslip-professional::before { display: none !important; }
+    .payslip-professional *, .payslip-professional *::before, .payslip-professional *::after { box-sizing: border-box; }
+    .payslip-professional .slip-header { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid #dce4ed; }
+    .payslip-professional .slip-logo { width: 42px !important; height: 42px !important; max-width: 42px !important; flex: 0 0 42px; object-fit: contain; border: 0 !important; border-radius: 0 !important; }
+    .payslip-professional .slip-company { min-width: 0; flex: 1; }
+    .payslip-professional .slip-company h2 { margin: 0; color: #172b40 !important; font-size: 18px !important; line-height: 1.2; font-weight: 700 !important; letter-spacing: -0.4px !important; overflow-wrap: anywhere; }
+    .payslip-professional .slip-company > span { display: block; margin-top: 5px; color: #52647a; font-size: 11px; }
+    .payslip-professional .slip-period { flex: 0 0 auto; text-align: right; }
+    .payslip-professional .slip-period small { display: block; margin-bottom: 5px; color: #52647a; font-size: 9px; font-weight: 600; letter-spacing: 1.1px; }
+    .payslip-professional .slip-period strong { color: #20334a; font-size: 14px; font-weight: 700; white-space: nowrap; }
+    .payslip-professional .slip-identity { display: grid; grid-template-columns: 1.3fr 1.1fr 0.7fr; gap: 16px; margin-bottom: 14px; }
+    .payslip-professional .slip-identity > div { min-width: 0; }
+    .payslip-professional .slip-identity span { display: block; margin-bottom: 5px; color: #52647a; font-size: 9px; font-weight: 500; }
+    .payslip-professional .slip-identity strong { display: block; color: #20334a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .payslip-professional .slip-attendance { display: flex; flex-wrap: wrap; gap: 9px 24px; padding: 8px 10px; margin-bottom: 17px; border: 1px solid #e6ebf1; border-radius: 4px; background: #f7f9fb; }
+    .payslip-professional .slip-attendance > div { display: flex; align-items: baseline; gap: 8px; }
+    .payslip-professional .slip-attendance span { color: #52647a; font-size: 10px; }
+    .payslip-professional .slip-attendance strong { color: #344b64; font-size: 11px; font-weight: 600; }
+    .payslip-professional .slip-financials { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-bottom: 16px; }
+    .payslip-professional .slip-panel { min-width: 0; }
+    .payslip-professional .slip-panel h3 { margin: 0 0 8px; padding-bottom: 8px; border-bottom: 2px solid; font-size: 12px !important; font-weight: 700 !important; letter-spacing: 0 !important; text-transform: none; }
+    .payslip-professional .slip-addition-panel h3 { color: #087443 !important; border-color: #159252; }
+    .payslip-professional .slip-deduction-panel h3 { color: #b42332 !important; border-color: #db334b; }
+    .payslip-professional .slip-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; border-bottom: 1px solid #edf0f4; }
+    .payslip-professional .slip-line > span { min-width: 0; color: #40546d; font-size: 11px; line-height: 1.45; }
+    .payslip-professional .slip-line > strong { flex: 0 0 auto; color: #20334a; font-size: 11px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .payslip-professional .slip-line-total { padding-top: 10px; border-bottom: 0; }
+    .payslip-professional .slip-line-total > span,
+    .payslip-professional .slip-line-total > strong { color: #172b40; font-weight: 700; }
+    .payslip-professional .slip-advance-balance { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 5px; margin-top: 12px; padding: 10px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+    .payslip-professional .slip-advance-balance > span { grid-column: 1; grid-row: 1; color: #20334a !important; font-size: 11px; font-weight: 700; }
+    .payslip-professional .slip-advance-balance > strong { grid-column: 1; grid-row: 2; color: #722f37 !important; font-size: 22px; line-height: 1.2; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+    .payslip-professional .slip-advance-balance > small { grid-column: 1; grid-row: 3; color: #52647a; font-size: 9px; line-height: 1.5; }
+    .payslip-professional .slip-net-pay { padding: 14px 16px; margin-bottom: 15px; border: 1px solid #159252; border-radius: 5px; background: #dcfce7; }
+    .payslip-professional .slip-net-pay > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 16px; }
+    .payslip-professional .slip-net-pay > div > span { grid-column: 1; grid-row: 1; color: #176846; font-size: 12px; font-weight: 700; }
+    .payslip-professional .slip-net-pay strong { grid-column: 2; grid-row: 1 / span 2; color: #176846 !important; font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -0.7px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .payslip-professional .slip-net-note { grid-column: 1; grid-row: 2; margin: 0; color: #326b4e; font-size: 10px; line-height: 1.5; }
+    .payslip-professional .slip-comment > span { display: block; margin-bottom: 5px; color: #52647a; font-size: 9px; font-weight: 600; }
+    .payslip-professional .slip-comment p { margin: 0; color: #40546d; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+    .payslip-professional .slip-signoff { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-top: 26px; color: #52647a; font-size: 9px; line-height: 1.4; }
+    .payslip-professional .slip-signature { width: 155px; padding-top: 7px; border-top: 1px solid #bcc9d8; text-align: center; }
 
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #ffffff;
-      color: #111827;
-      font-family: Inter, "Segoe UI", Arial, sans-serif;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+    @media screen and (max-width: 620px) {
+      #payslipDialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+      #payslipDialog .dialog-content { max-height: calc(100dvh - 16px) !important; }
+      #payslipDialog .dialog-head { padding: 13px 14px; }
+      #payslipDialog .dialog-head h2 { font-size: 17px !important; }
+      #payslipDialog #payslipPreview { padding: 12px; }
+      #payslipDialog .dialog-actions { flex-wrap: nowrap; padding: 12px 14px; gap: 7px; }
+      #payslipDialog .dialog-actions button,
+      #payslipDialog .slip-share-menu > summary { min-height: 40px !important; padding: 0 11px; font-size: 11px; }
+      #payslipDialog .slip-share-options { width: 190px; }
+      .payslip-sheet.payslip-professional { padding: 18px !important; }
+      .payslip-professional .slip-header { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+      .payslip-professional .slip-company { grid-column: 1 / -1; }
+      .payslip-professional .slip-header:has(.slip-logo) .slip-company { grid-column: 2; }
+      .payslip-professional .slip-company h2 { font-size: 16px !important; }
+      .payslip-professional .slip-period { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-top: 7px; text-align: left; }
+      .payslip-professional .slip-period small { margin: 0; }
+      .payslip-professional .slip-period strong { font-size: 13px; }
+      .payslip-professional .slip-identity { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .payslip-professional .slip-financials { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+      .payslip-professional .slip-advance-balance { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 12px 0; }
+      .payslip-professional .slip-advance-balance > strong { grid-column: 1; grid-row: 2; font-size: 23px; }
+      .payslip-professional .slip-advance-balance > small { grid-row: 3; }
+      .payslip-professional .slip-net-pay { padding: 13px; }
+      .payslip-professional .slip-net-pay > div { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+      .payslip-professional .slip-net-pay strong { grid-column: 1; grid-row: 2; font-size: 26px; }
+      .payslip-professional .slip-net-note { grid-row: 3; }
+      .payslip-professional .slip-signoff { align-items: flex-start; font-size: 8px; gap: 12px; }
+      .payslip-professional .slip-signature { width: 115px; }
     }
+  `;
+}
 
-    body {
-      padding: 0;
-    }
-
-    body.batch-payslip-print {
-      display: flex;
-      flex-direction: column;
-      gap: 8mm;
-    }
-
-    .payslip-sheet {
-      width: 100%;
-      min-height: calc(210mm - 16mm);
-      padding: 9mm;
-      border: 1px solid #d8e0ea;
-      border-radius: 3mm;
-      background: #ffffff;
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      break-after: page;
-      page-break-after: always;
-    }
-
-    .payslip-sheet:last-child {
-      break-after: auto;
-      page-break-after: auto;
-    }
-
-    .payslip-sheet-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 8mm;
-      padding-bottom: 6mm;
-      border-bottom: 1px solid #e7edf3;
-      margin-bottom: 7mm;
-    }
-
-    .payslip-sheet-brand {
-      display: flex;
-      align-items: center;
-      gap: 4mm;
-      min-width: 0;
-      flex: 1;
-    }
-
-    .payslip-sheet-logo {
-      width: 13mm;
-      height: 13mm;
-      object-fit: cover;
-      border-radius: 2mm;
-      border: 1px solid #d8e0ea;
-      flex-shrink: 0;
-    }
-
-    .payslip-sheet-brand h2 {
-      margin: 0;
-      font-size: 8.8mm;
-      line-height: 1.02;
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      color: #17223b;
-      text-transform: uppercase;
-    }
-
-    .payslip-sheet-brand p {
-      margin: 1mm 0 0;
-      font-size: 3.4mm;
-      font-weight: 600;
-      color: #64748b;
-    }
-
-    .payslip-sheet-period {
-      text-align: right;
-      flex-shrink: 0;
-    }
-
-    .payslip-sheet-period strong {
-      display: block;
-      margin-top: 1mm;
-      font-size: 5.8mm;
-      font-weight: 800;
-      color: #111827;
-    }
-
-    .payslip-label {
-      display: block;
-      margin-bottom: 1.2mm;
-      font-size: 2.8mm;
-      line-height: 1.2;
-      font-weight: 700;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .payslip-identity {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6mm;
-      margin-bottom: 8mm;
-    }
-
-    .payslip-identity strong {
-      display: block;
-      font-size: 4.2mm;
-      line-height: 1.25;
-      font-weight: 700;
-      color: #111827;
-    }
-
-    .payslip-financials {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8mm;
-      margin-bottom: 7mm;
-    }
-
-    .payslip-panel h3 {
-      margin: 0 0 3mm;
-      padding-bottom: 1.2mm;
-      font-size: 4mm;
-      line-height: 1.2;
-      font-weight: 800;
-      border-bottom: 0.45mm solid #111827;
-    }
-
-    .payslip-panel-addition h3 {
-      color: #047857;
-      border-color: #0f9f78;
-    }
-
-    .payslip-panel-deduction h3 {
-      color: #b91c1c;
-      border-color: #ef4444;
-    }
-
-    .payslip-lines {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8mm;
-    }
-
-    .payslip-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 4mm;
-      padding: 2.4mm 0;
-      border-bottom: 1px solid #eef2f7;
-    }
-
-    .payslip-line span {
-      font-size: 3.6mm;
-      line-height: 1.3;
-      color: #64748b;
-    }
-
-    .payslip-line strong {
-      font-size: 4mm;
-      line-height: 1.2;
-      font-weight: 700;
-      color: #111827;
-      text-align: right;
-    }
-
-    .payslip-line-total {
-      border-bottom: none;
-      padding-top: 3.5mm;
-    }
-
-    .payslip-line-total span {
-      font-weight: 700;
-      color: #1f2937;
-    }
-
-    .payslip-line-total strong {
-      font-size: 5.4mm;
-      font-weight: 800;
-    }
-
-    .payslip-line-highlight {
-      background: #f8fafc;
-      padding-left: 2mm;
-      padding-right: 2mm;
-    }
-
-    .payslip-line-highlight span,
-    .amount-red {
-      color: #ef2b24;
-      font-weight: 700;
-    }
-
-    .amount-green {
-      color: #06a168;
-    }
-
-    .amount-underline {
-      padding-bottom: 0.6mm;
-      border-bottom: 0.5mm solid #111827;
-    }
-
-    .amount-red-large {
-      color: #c81e1e;
-      font-size: 5.8mm;
-      font-weight: 800;
-    }
-
-    .payslip-note-strip {
-      margin-top: auto;
-      padding-top: 4mm;
-      border-top: 1.2mm double #dce5ef;
-    }
-
-    .payslip-note-strip p {
-      margin: 0;
-      font-size: 3.1mm;
-      line-height: 1.45;
-      color: #5b708c;
-    }
-
-    .payslip-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 8mm;
-      margin-top: 7mm;
-    }
-
-    .payslip-comment {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .payslip-comment p {
-      margin: 0;
-      padding-left: 3mm;
-      border-left: 0.5mm solid #d8e0ea;
-      font-size: 3.4mm;
-      line-height: 1.45;
-      color: #64748b;
-      font-style: italic;
-    }
-
-    .payslip-net {
-      width: 43mm;
-      text-align: right;
-      flex-shrink: 0;
-    }
-
-    .payslip-net-box {
-      display: inline-block;
-      margin-top: 1.5mm;
-      min-width: 36mm;
-      padding: 2.8mm 4.5mm;
-      border: 0.6mm solid #17223b;
-      border-radius: 1.6mm;
-      font-size: 8.5mm;
-      line-height: 1;
-      font-weight: 800;
-      letter-spacing: -0.05em;
-      color: #202226;
-      text-align: center;
-      background: #ffffff;
-    }
-
-    .payslip-signoff {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      margin-top: 11mm;
-      font-size: 2.9mm;
-      line-height: 1.2;
-      font-weight: 700;
-      color: #8ca0bf;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .payslip-signature {
-      width: 38mm;
-      padding-top: 1.6mm;
-      border-top: 1px solid #cbd5e1;
-      text-align: center;
+function getPayslipPrintStyles() {
+  return `${getPayslipStyles()}
+    @page { size: A5 portrait; margin: 8mm; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #20334a; font-family: Arial, "Helvetica Neue", sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .payslip-sheet.payslip-professional { width: 100%; max-width: 100%; min-height: 0; margin: 0; break-inside: avoid; break-after: page; page-break-after: always; box-shadow: none !important; }
+    .payslip-sheet.payslip-professional:last-child { break-after: auto; page-break-after: auto; }
+    @media print {
+      .payslip-sheet.payslip-professional { padding: 4mm !important; border-radius: 0 !important; }
+      .payslip-professional .slip-header { gap: 10px; margin-bottom: 10px; padding-bottom: 10px; }
+      .payslip-professional .slip-logo { width: 36px !important; height: 36px !important; max-width: 36px !important; flex-basis: 36px; }
+      .payslip-professional .slip-company h2 { font-size: 16px !important; }
+      .payslip-professional .slip-company > span { margin-top: 4px; font-size: 10px; }
+      .payslip-professional .slip-period strong { font-size: 13px; }
+      .payslip-professional .slip-identity { gap: 10px; margin-bottom: 9px; }
+      .payslip-professional .slip-identity span { font-size: 9px; margin-bottom: 4px; }
+      .payslip-professional .slip-identity strong { font-size: 11px; }
+      .payslip-professional .slip-attendance { margin-bottom: 10px; padding: 5px 8px; }
+      .payslip-professional .slip-financials { gap: 18px; margin-bottom: 12px; }
+      .payslip-professional .slip-panel h3 { font-size: 11px !important; margin-bottom: 6px; padding-bottom: 6px; }
+      .payslip-professional .slip-line { padding: 5px 0; gap: 10px; }
+      .payslip-professional .slip-line > span, .payslip-professional .slip-line > strong { font-size: 10.5px; }
+      .payslip-professional .slip-advance-balance { margin-top: 8px; padding: 9px 0; gap: 4px 10px; }
+      .payslip-professional .slip-advance-balance > span { font-size: 10px; }
+      .payslip-professional .slip-advance-balance > strong { font-size: 20px; }
+      .payslip-professional .slip-advance-balance > small { font-size: 8.5px; }
+      .payslip-professional .slip-net-pay { margin-bottom: 10px; padding: 10px 12px; }
+      .payslip-professional .slip-net-pay > div > span { font-size: 11px; }
+      .payslip-professional .slip-net-pay strong { font-size: 24px; }
+      .payslip-professional .slip-net-note { font-size: 9px; }
+      .payslip-professional .slip-comment p { font-size: 9px; line-height: 1.5; }
+      .payslip-professional .slip-signoff { margin-top: 18px; font-size: 8.5px; break-before: avoid; break-inside: avoid; }
+      .payslip-professional .slip-signature { width: 135px; }
     }
   `;
 }

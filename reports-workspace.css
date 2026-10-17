@@ -1,0 +1,209 @@
+/* Reports use the same hierarchy and density as the employee workspace. */
+#appView #reportsSection {
+  min-width: 0;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#appView:has(#reportsSection:not(.hidden)) #addEmployeeBtn { display: none !important; }
+#appView .rail-report-submenu { display: none !important; }
+#reportsSection .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+#reportsSection .reports-page-head { margin: 0 0 24px; }
+#reportsSection .page-eyebrow { margin: 0 0 6px; color: #4b6078; font-size: 10px; font-weight: 650; letter-spacing: 1.4px; text-indent: 0 !important; overflow: visible !important; }
+#appView #reportsSection .reports-page-head h2 { margin: 0 0 8px; color: #172b40 !important; font-size: 30px !important; line-height: 1.2; font-weight: 700 !important; letter-spacing: -1px !important; }
+#reportsSection .reports-page-head > div > p:last-child { margin: 0; color: #4b6078; font-size: 14px; line-height: 1.6; }
+#reportsSection .reports-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 22px; padding: 0 0 12px; border-bottom: 1px solid #dfe6ee; }
+#appView #reportsSection button { width: auto; min-height: 35px; margin: 0; padding: 7px 12px; border: 1px solid #dce4ed !important; border-radius: 7px !important; background: #fff !important; color: #344e68 !important; box-shadow: none !important; font-size: 11px; line-height: 1.4; font-weight: 600 !important; transform: none !important; white-space: nowrap; }
+#appView #reportsSection button:hover { border-color: #9fb7c9 !important; background: #f1f6fa !important; }
+#appView #reportsSection .reports-tabs button { border-color: transparent !important; background: transparent !important; color: #40546d !important; padding: 9px 14px; min-height: 39px; font-size: 12px; }
+#appView #reportsSection .reports-tabs button.active { border-color: #cce0ec !important; background: #e5f0f8 !important; color: #164b68 !important; }
+#appView #reportsSection button:disabled { cursor: default; opacity: .48; }
+#appView #reportsSection button:focus-visible,
+#reportsSection input:focus-visible,
+#reportsSection select:focus-visible { outline: 2px solid #3984a5; outline-offset: 3px; }
+#appView #reportsSection .reports-card { width: 100%; min-width: 0; margin: 0; padding: 0; border: 1px solid #e0e6ee; border-radius: 12px; background: #fff; overflow: hidden; box-shadow: none; }
+#reportsSection .reports-card-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 23px 24px; }
+#reportsSection h3 { margin: 0; color: #20334a !important; font-size: 16px; font-weight: 650 !important; line-height: 1.4; letter-spacing: -.3px !important; }
+#reportsSection .reports-card-head p,
+#reportsSection .reports-subhead p { margin: 6px 0 0; color: #52647a; font-size: 12px; line-height: 1.6; }
+#reportsSection .reports-month-field { display: grid; gap: 6px; width: 205px; flex: 0 0 205px; margin: 0; color: #40546d; font-size: 10px; font-weight: 600; }
+#appView #reportsSection .reports-month-field select { width: 100%; min-height: 38px; padding: 8px 10px; margin: 0; border: 1px solid #dce4ed; border-radius: 7px; background: #fff; color: #20334a; font-size: 12px; font-weight: 600; }
+#reportsSection .reports-payslip-overview { display: grid; grid-template-columns: .7fr 1fr 1fr; gap: 0; padding: 19px 0; margin: 0 24px 22px; border: 1px solid #e2e7ee; border-radius: 9px; background: #fff; }
+#reportsSection .reports-overview-stat { display: grid; align-content: start; gap: 9px; min-width: 0; padding: 0 20px; }
+#reportsSection .reports-overview-stat + .reports-overview-stat { border-left: 1px solid #e5eaf0; }
+#reportsSection .reports-overview-stat > span { color: #40546d; font-size: 11px; font-weight: 600; }
+#reportsSection .reports-overview-stat > strong { color: #20334a; font-size: 24px; font-weight: 650; line-height: 1.2; letter-spacing: -.6px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#reportsSection .reports-overview-stat.net > strong { color: #087443; }
+#reportsSection .reports-overview-stat.advance > strong { color: #b42332; }
+#reportsSection .reports-directory-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 0 24px 18px; }
+#reportsSection .reports-search { position: relative; display: flex; align-items: center; width: min(420px, 100%); margin: 0; }
+#reportsSection .reports-search svg { position: absolute; left: 12px; width: 16px; height: 16px; color: #52647a; pointer-events: none; }
+#appView #reportsSection .reports-search input { width: 100%; min-width: 0; min-height: 39px; margin: 0; padding: 10px 12px 10px 38px !important; border: 1px solid #dce4ed; border-radius: 7px; background: #fff; color: #20334a; font-size: 12px; }
+#reportsSection .reports-search input::placeholder { color: #52647a; opacity: 1; }
+#reportsSection .reports-payslip-count { color: #52647a; font-size: 11px; }
+#reportsSection .reports-selection-bar { display: flex !important; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0; padding: 13px 24px; border-top: 1px solid #e8edf3; border-bottom: 1px solid #e8edf3; background: #f8fafc; }
+#reportsSection .reports-check-all { display: inline-flex; align-items: center; gap: 9px; margin: 0; color: #344b64; font-size: 11px; font-weight: 600; }
+#appView #reportsSection input[type="checkbox"] { appearance: auto !important; display: inline-block; width: 16px !important; height: 16px !important; min-height: 0 !important; margin: 0; padding: 0; accent-color: #176281; cursor: pointer; flex: 0 0 16px; }
+#reportsSection .reports-selection-hint { color: #52647a; font-size: 10px; }
+#reportsSection .reports-selection-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-left: auto; }
+#reportsSection .reports-selection-count { color: #40546d; font-size: 11px; }
+#reportsSection .reports-selected-net { display: flex; gap: 7px; align-items: center; color: #16623e; font-size: 11px; white-space: nowrap; }
+#reportsSection .reports-selected-net strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+#appView #reportsSection #printSelectedPayslipsBtn { border-color: #183b50 !important; background: #183b50 !important; color: #fff !important; }
+#appView #reportsSection .reports-table-wrap { width: 100% !important; max-width: 100%; min-width: 0; margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: #fff !important; overflow-x: auto !important; box-shadow: none !important; }
+#appView #reportsSection .reports-table-wrap table { width: 100% !important; min-width: 750px; margin: 0; border: 0; border-collapse: collapse; table-layout: auto; background: #fff; }
+#appView #reportsSection .reports-table-wrap th { position: static !important; height: auto; padding: 13px 18px !important; border: 0 !important; border-bottom: 1px solid #e7ecf2 !important; background: #f8fafc !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; color: #4b6078 !important; text-align: left; font-size: 9px !important; font-weight: 650; line-height: 1.5; letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }
+#appView #reportsSection .reports-table-wrap td { height: auto !important; padding: 17px 18px !important; border: 0 !important; border-bottom: 1px solid #edf0f4 !important; background: #fff; color: #344b64 !important; font-size: 12px !important; font-weight: 500; line-height: 1.5; vertical-align: middle; }
+#appView #reportsSection .reports-table-wrap tr:last-child td { border-bottom: 0 !important; }
+#appView #reportsSection .reports-table-wrap tbody tr:hover td { background: #f8fbfd; }
+#appView #reportsSection .reports-table-wrap .empty { padding: 35px 24px !important; color: #52647a !important; text-align: center; font-size: 12px; }
+#reportsSection .reports-payslips-table th:first-child,
+#reportsSection .reports-payslips-table td:first-child { width: 40px; padding-left: 24px !important; padding-right: 0 !important; }
+#reportsSection .report-select-cell { display: inline-flex; align-items: center; min-height: 28px; margin: 0; }
+#reportsSection .reports-employee-cell { display: flex; align-items: center; gap: 11px; min-width: 130px; }
+#reportsSection .reports-employee-avatar { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border: 1px solid #e3ecf4; border-radius: 50%; background: #edf4f9; color: #365c7b; font-size: 10px; font-weight: 600; }
+#reportsSection .reports-employee-name { display: block; color: #203d57; font-size: 12px; font-weight: 650; }
+#reportsSection .reports-employee-id { display: block; margin-top: 4px; color: #52647a; font-size: 10px; }
+#reportsSection .report-net-salary,
+#reportsSection .reports-advance-value { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#reportsSection .report-net-salary { color: #40546d; font-size: 13px; }
+#reportsSection .report-net-salary.positive { color: #087443; }
+#reportsSection .reports-advance-value.pending { color: #b42332; }
+#reportsSection .reports-advance-value.cleared { color: #52647a; font-size: 11px; font-weight: 500; }
+#reportsSection .reports-payslip-actions { display: flex; flex-wrap: nowrap; gap: 6px; }
+#reportsSection .reports-table-wrap .row-actions { flex-direction: row !important; align-items: center; }
+#appView #reportsSection .reports-table-wrap .row-actions button { width: auto !important; }
+#appView #reportsSection .reports-payslip-actions button { min-height: 30px; padding: 5px 9px; font-size: 10px; }
+#reportsSection .report-month-title { color: #203d57; font-weight: 650; }
+#reportsSection .report-month-sub { margin-top: 5px; color: #52647a; font-size: 10px; font-weight: 500; letter-spacing: .2px; text-transform: none; }
+#reportsSection .reports-summary-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding: 18px 0; margin: 0 24px 24px; border: 1px solid #e2e7ee; border-radius: 9px; }
+#reportsSection .reports-summary-stat { display: grid; gap: 8px; align-content: start; min-width: 0; padding: 0 18px; }
+#reportsSection .reports-summary-stat + .reports-summary-stat { border-left: 1px solid #e5eaf0; }
+#reportsSection .reports-summary-stat > span { color: #40546d; font-size: 11px; font-weight: 600; }
+#reportsSection .reports-summary-stat > strong { color: #20334a; font-size: 22px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+#reportsSection .reports-summary-stat:last-child > strong { font-size: 14px; line-height: 1.6; }
+#reportsSection .reports-summary-stat > small { color: #52647a; font-size: 10px; line-height: 1.6; }
+#reportsSection .reports-subhead { padding: 0 24px 20px; }
+#reportsSection .reports-subhead h3 { font-size: 14px; }
+#reportsSection .error-log-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+#reportsSection .error-log-count { color: #52647a; font-size: 11px; }
+#reportsSection .status-msg:empty { display: none; }
+#reportsSection .reports-leave-count { margin: 0; padding: 14px 24px; border-top: 1px solid #edf0f4; color: #52647a; font-size: 11px; font-weight: 500; }
+
+@media (max-width: 1180px) {
+  #reportsSection .reports-selection-hint { display: none; }
+  #reportsSection .reports-selection-actions { gap: 10px; }
+}
+@media (max-width: 720px) {
+  #reportsSection .reports-page-head { margin-bottom: 19px; }
+  #reportsSection .reports-page-head > div > p:last-child { font-size: 12px; }
+  #reportsSection .reports-tabs { gap: 3px; }
+  #appView #reportsSection .reports-tabs button { padding: 8px 10px; font-size: 11px; }
+  #reportsSection .reports-card-head { padding: 19px 16px; flex-wrap: wrap; gap: 16px; }
+  #reportsSection .reports-month-field { width: 100%; flex-basis: 100%; }
+  #reportsSection .reports-payslip-overview { margin: 0 16px 19px; padding: 16px 0; grid-template-columns: .5fr 1fr 1fr; }
+  #reportsSection .reports-overview-stat { gap: 8px; padding: 0 10px; }
+  #reportsSection .reports-overview-stat > span { font-size: 9px; line-height: 1.5; }
+  #reportsSection .reports-overview-stat > strong { font-size: 17px; letter-spacing: -.4px; }
+  #reportsSection .reports-directory-toolbar { padding: 0 16px 16px; }
+  #reportsSection .reports-search { width: 100%; }
+  #reportsSection .reports-selection-bar { padding: 13px 16px; }
+  #reportsSection .reports-selection-hint { display: inline; font-size: 9px; }
+  #reportsSection .reports-selection-actions { width: 100%; margin-left: 0; justify-content: space-between; gap: 8px; }
+  #reportsSection .reports-selection-count { font-size: 10px; }
+  #reportsSection .reports-selected-net { font-size: 10px; gap: 5px; }
+  #reportsSection .reports-selected-net strong { font-size: 11px; }
+  #appView #reportsSection #printSelectedPayslipsBtn { font-size: 10px; padding: 7px 9px; }
+  #reportsSection .reports-summary-cards { grid-template-columns: 1fr 1fr; margin: 0 16px 20px; gap: 20px 0; }
+  #reportsSection .reports-summary-stat:nth-child(3) { border-left: 0; }
+  #reportsSection .reports-summary-stat { padding: 0 12px; }
+  #reportsSection .reports-summary-stat > strong { font-size: 19px; }
+  #reportsSection .reports-subhead { padding: 0 16px 18px; }
+  #appView #reportsSection .reports-search input,
+  #appView #reportsSection .reports-month-field select { font-size: 16px; }
+}
+@media (max-width: 500px) {
+  #reportsSection .reports-payslip-overview { grid-template-columns: 1fr; padding: 0 14px; }
+  #reportsSection .reports-overview-stat { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; }
+  #reportsSection .reports-overview-stat + .reports-overview-stat { border-left: 0; border-top: 1px solid #e5eaf0; }
+  #reportsSection .reports-overview-stat > span { font-size: 10px; }
+  #reportsSection .reports-overview-stat > strong { font-size: 19px; white-space: nowrap; }
+}
+
+/* Employment history keeps each work period together in one readable row. */
+#reportsSection .reports-leave-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 24px 22px; padding: 19px 0; border: 1px solid #e2e7ee; border-radius: 9px; background: #fff; }
+#reportsSection .reports-leave-stat { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 0 20px; }
+#reportsSection .reports-leave-stat + .reports-leave-stat { border-left: 1px solid #e5eaf0; }
+#reportsSection .reports-leave-stat > span { color: #40546d; font-size: 11px; font-weight: 600; }
+#reportsSection .reports-leave-stat > strong { color: #20334a; font-size: 26px; font-weight: 650; line-height: 1.2; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+#reportsSection .reports-leave-stat > small { color: #52647a; font-size: 10px; line-height: 1.5; }
+#reportsSection .reports-leave-stat.working > strong { color: #087443; }
+#reportsSection .reports-leave-stat.leave > strong { color: #8a5a00; }
+#reportsSection .reports-leave-stat.terminated > strong { color: #b42332; }
+#reportsSection .reports-leave-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 24px 20px; }
+#reportsSection .reports-leave-tools .reports-search { width: min(340px, 100%); }
+#reportsSection .reports-leave-filter { display: block; width: 158px; margin: 0; }
+#appView #reportsSection .reports-leave-filter select { width: 100%; height: 39px !important; min-height: 39px !important; margin: 0; padding: 8px 10px !important; border: 1px solid #dce4ed; border-radius: 7px; background: #fff; color: #344b64; font-size: 12px; font-weight: 500; appearance: auto; }
+#reportsSection #leaveReportCount { margin-left: auto; font-size: 11px; }
+#reportsSection .reports-leave-scroll-hint { display: none; }
+#appView #reportsSection .reports-table-wrap .reports-leave-table { min-width: 1080px !important; table-layout: fixed; }
+#appView #reportsSection .reports-leave-table th,
+#appView #reportsSection .reports-leave-table td { padding: 16px 18px !important; }
+#appView #reportsSection .reports-leave-table th { padding-top: 12px !important; padding-bottom: 12px !important; }
+#reportsSection .reports-leave-table th:nth-child(1) { width: 20%; }
+#reportsSection .reports-leave-table th:nth-child(2) { width: 12%; }
+#reportsSection .reports-leave-table th:nth-child(3) { width: 17%; }
+#reportsSection .reports-leave-table th:nth-child(4) { width: 18%; }
+#reportsSection .reports-leave-table th:nth-child(5) { width: 16%; }
+#reportsSection .reports-leave-table th:nth-child(6) { width: 17%; }
+#reportsSection .reports-leave-table .reports-employee-cell { min-width: 0; align-items: flex-start; gap: 10px; }
+#reportsSection .reports-leave-table .reports-employee-cell > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+#reportsSection .reports-leave-table .reports-employee-name { line-height: 1.5; }
+#reportsSection .reports-employee-role { display: block; margin-top: 3px; color: #52647a; font-size: 10px; line-height: 1.5; }
+#reportsSection .reports-leave-table .reports-employee-id { margin-top: 4px; font-size: 10px; }
+#reportsSection .reports-leave-table .status-pill { display: inline-flex; align-items: center; min-height: 0 !important; padding: 4px 8px !important; border: 1px solid; border-radius: 5px !important; font-size: 10px !important; line-height: 1.4; white-space: nowrap; }
+#reportsSection .reports-leave-dates { display: grid; gap: 5px; }
+#reportsSection .reports-leave-dates > span { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 7px; }
+#reportsSection .reports-leave-dates > span > span { min-width: 52px; color: #52647a; font-size: 10px; font-weight: 500; }
+#reportsSection .reports-no-dates { color: #52647a; font-size: 10px; }
+#reportsSection .reports-leave-dates strong { color: #344b64; font-size: 11px; font-weight: 600; white-space: nowrap; }
+#reportsSection .reports-work-period { display: grid; justify-items: start; gap: 5px; }
+#reportsSection .reports-work-period > strong { color: #20334a; font-size: 12px; font-weight: 650; line-height: 1.5; }
+#reportsSection .reports-work-period > span { color: #52647a; font-size: 10px; font-weight: 400; line-height: 1.6; }
+#reportsSection .reports-work-period > .reports-period-badge,
+#reportsSection .reports-work-period > .reports-tenure-badge { display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 9px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+#reportsSection .reports-work-period > .reports-period-badge { background: #eef3f7; color: #40546d; }
+#reportsSection .reports-work-period > .reports-tenure-badge { border: 1px solid #e1af19; background: #ffd347; color: #5a3900; }
+#reportsSection .reports-pay-summary,
+#reportsSection .reports-advance-summary { display: grid; gap: 5px; min-width: 0; }
+#reportsSection .reports-paid-value { display: block; color: #087443; font-size: 13px; font-weight: 650; line-height: 1.5; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#reportsSection .reports-pay-summary > small,
+#reportsSection .reports-advance-summary > small { display: block; color: #52647a; font-size: 10px; line-height: 1.5; }
+#reportsSection .reports-payroll-months { color: #52647a; font-size: 10px; line-height: 1.5; }
+#reportsSection .reports-money-detail { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 5px; color: #52647a; font-size: 10px; line-height: 1.5; }
+#reportsSection .reports-money-detail strong { color: #40546d; font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#reportsSection .reports-advance-summary > .reports-advance-value { font-size: 13px; line-height: 1.5; }
+#reportsSection .reports-advance-summary > .reports-advance-value.cleared { color: #087443; font-size: 11px; font-weight: 600; }
+#reportsSection .reports-leave-table .reports-money-detail + .reports-money-detail { margin-top: 0; }
+#reportsSection .reports-leave-count { line-height: 1.7; }
+#reportsSection .reports-leave-count:empty { display: none; }
+
+@media (max-width: 720px) {
+  #reportsSection .reports-leave-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 16px 19px; padding: 17px 0; gap: 20px 0; }
+  #reportsSection .reports-leave-stat { padding: 0 15px; gap: 6px; }
+  #reportsSection .reports-leave-stat:nth-child(3) { border-left: 0; }
+  #reportsSection .reports-leave-stat > span { font-size: 10px; }
+  #reportsSection .reports-leave-stat > strong { font-size: 24px; }
+  #reportsSection .reports-leave-stat > small { font-size: 9px; }
+  #reportsSection .reports-leave-tools { padding: 0 16px 18px; gap: 10px; }
+  #reportsSection .reports-leave-tools .reports-search { width: 100%; }
+  #reportsSection .reports-leave-filter { width: 146px; }
+  #appView #reportsSection .reports-leave-filter select { font-size: 16px; }
+  #reportsSection #leaveReportCount { margin-left: 0; font-size: 10px; }
+  #reportsSection .reports-leave-scroll-hint { display: block; margin: 0; padding: 0 16px 12px; color: #52647a; font-size: 10px; line-height: 1.5; }
+  #reportsSection .reports-leave-count { padding: 13px 16px; font-size: 10px; }
+}

@@ -1,0 +1,90 @@
+/* Strong, consistent semantic colors across every workspace. */
+#appView {
+  --state-green: #087443;
+  --state-yellow: #ffd347;
+  --state-yellow-ink: #5a3900;
+  --state-red: #b42332;
+}
+#appView .side-rail { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+body #appView .status-pill,
+body #appView .payroll-report-status.generated {
+  border-color: #087443 !important;
+  background: #087443 !important;
+  color: #fff !important;
+  font-weight: 650 !important;
+}
+body #appView .status-pill.leave,
+body #appView .status-pill.draft,
+body #appView .status-pill.warning,
+body #appView .payroll-report-status.draft {
+  border-color: #e1af19 !important;
+  background: #ffd347 !important;
+  color: #5a3900 !important;
+}
+body #appView .status-pill.terminated {
+  border-color: #b42332 !important;
+  background: #b42332 !important;
+  color: #fff !important;
+}
+body #appView .advance-remained-alert,
+#appView #employeeAdvanceTotal,
+#appView #payrollSection .payroll-summary-total .payroll-advance-pending,
+#appView #dashboardHome #metricAdvance {
+  color: #b42332 !important;
+  font-weight: 650 !important;
+}
+#appView #employeesSection .employee-list-wrap .mini.danger { color: #b42332 !important; }
+#appView #employeesSection .employee-list-wrap .mini.danger:hover { color: #a11627 !important; background: #ffe4e8 !important; }
+#appView #payrollSection .payroll-net-card { border-color: #087443; background: #087443; }
+#appView #payrollSection .payroll-net-card p,
+#appView #payrollSection .payroll-net-card small,
+#appView #payrollSection .payroll-net-card > span { color: #fff; }
+#appView #payrollSection #payrollTotalsBar .payroll-overview-net strong,
+#appView #dashboardHome .dashboard-metric-net strong,
+#appView #dashboardHome .dashboard-role-net strong { color: #087443; }
+#appView #payrollSection #payrollTotalsBar .payroll-overview-item:last-child strong { color: #b42332; }
+#appView #payrollSection .payroll-checks.has-warnings > summary { background: #ffd347; border-color: #e1af19; color: #5a3900; }
+#appView #payrollSection .payroll-checks.checks-clear > summary { background: #087443; border-color: #087443; color: #fff; }
+#appView #dashboardHome .dashboard-role-track > span { background: #159252; }
+#appView #dashboardHome .dashboard-team-composition .working,
+#appView #dashboardHome .dashboard-team-dot,
+#appView .employee-stat-dot.working { background: #087443; }
+#appView #dashboardHome .dashboard-team-composition .leave,
+#appView #dashboardHome .dashboard-team-dot.leave,
+#appView .employee-stat-dot.leave { background: #e6ac00; }
+#appView #dashboardHome .dashboard-team-composition .terminated,
+#appView #dashboardHome .dashboard-team-dot.terminated { background: #c5263b; }
+#appView #dashboardHome .dashboard-check-icon { border-color: #e1af19; background: #ffd347; color: #5a3900; }
+#appView #payrollSection .payroll-summary-actions .payroll-delete-button { color: #b42332 !important; background: #ffe4e8 !important; }
+#appView .status-msg.status-success { color: #087443 !important; }
+#appView .status-msg.status-error { color: #b42332 !important; }
+
+body:has(#deleteConfirmationDialog[open]) { overflow: hidden; }
+#deleteConfirmationDialog { width: min(450px, calc(100% - 32px)); max-width: 450px; max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid #dce3eb; border-radius: 16px; background: #fff; color: #20334a; box-shadow: 0 24px 90px #142b4538; overflow: auto; }
+#deleteConfirmationDialog::backdrop { background: #1220338c; backdrop-filter: blur(3px); }
+#deleteConfirmationDialog form { display: block; margin: 0; padding: 26px; border: 0; background: #fff; box-shadow: none; }
+#deleteConfirmationDialog .delete-confirmation-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 19px; }
+#deleteConfirmationDialog .delete-confirmation-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #f3b5c0; border-radius: 12px; background: #ffe4e8; color: #b42332; }
+#deleteConfirmationDialog .delete-confirmation-icon svg { width: 22px; height: 22px; }
+#deleteConfirmationDialog h2 { margin: 0 0 10px; color: #172b40 !important; font-size: 23px !important; font-weight: 700 !important; line-height: 1.3; letter-spacing: -.6px !important; }
+#deleteConfirmationDialog #deleteConfirmationDescription { margin: 0 0 19px; color: #40546d; font-size: 13px; line-height: 1.7; }
+#deleteConfirmationDialog .delete-confirmation-employee { display: grid; gap: 5px; margin-bottom: 23px; padding: 13px 15px; border: 1px solid #e1e7ee; border-radius: 8px; background: #f6f8fb; overflow-wrap: anywhere; }
+#deleteConfirmationDialog .delete-confirmation-employee strong { color: #20334a; font-size: 14px; font-weight: 650; }
+#deleteConfirmationDialog .delete-confirmation-employee span { color: #52647a; font-size: 11px; }
+#deleteConfirmationDialog label { display: block; margin: 0 0 9px; color: #344b64; font-size: 12px; line-height: 1.6; font-weight: 500; }
+#deleteConfirmationDialog label strong { color: #b42332; font-weight: 700; }
+#deleteConfirmationDialog input { display: block; width: 100%; min-width: 0; height: 43px; margin: 0; padding: 9px 12px; border: 1px solid #bdcbd9; border-radius: 7px; background: #fff; color: #172b40; font-size: 16px; box-shadow: none; }
+#deleteConfirmationDialog input:focus { border-color: #b42332; outline: 2px solid #f8d1d9; outline-offset: 2px; }
+#deleteConfirmationDialog #deleteConfirmationHint { margin: 9px 0 23px; color: #52647a; font-size: 11px; line-height: 1.5; }
+#deleteConfirmationDialog .delete-confirmation-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 19px; border-top: 1px solid #e7ecf2; }
+#deleteConfirmationDialog button { width: auto; min-width: 0; min-height: 40px; margin: 0; padding: 9px 15px; border: 1px solid #d5dfe9 !important; border-radius: 7px !important; background: #fff !important; color: #344b64 !important; box-shadow: none !important; font-size: 12px; font-weight: 650 !important; line-height: 1.4; transform: none !important; cursor: pointer; }
+#deleteConfirmationDialog #deleteConfirmationCloseBtn { min-height: 30px; width: 30px; padding: 0; border: 0 !important; background: transparent !important; color: #52647a !important; font-size: 24px; font-weight: 400 !important; }
+#deleteConfirmationDialog #deleteConfirmationSubmitBtn { border-color: #b42332 !important; background: #b42332 !important; color: #fff !important; }
+#deleteConfirmationDialog #deleteConfirmationSubmitBtn:disabled { border-color: #e7bac0 !important; background: #f6e0e4 !important; color: #8b4a55 !important; opacity: 1; cursor: not-allowed; }
+#deleteConfirmationDialog #deleteConfirmationSubmitBtn:not(:disabled):hover { background: #941b2a !important; }
+#deleteConfirmationDialog #deleteConfirmationCancelBtn:hover { background: #f1f5f9 !important; }
+#deleteConfirmationDialog button:focus-visible { outline: 2px solid #3984a5; outline-offset: 3px; }
+@media (max-width: 480px) {
+  #deleteConfirmationDialog form { padding: 21px; }
+  #deleteConfirmationDialog .delete-confirmation-actions button { flex: 1; }
+}

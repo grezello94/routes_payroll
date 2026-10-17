@@ -7,7 +7,7 @@
     <title>Routes Payroll</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=20261010k" />
+    <link rel="stylesheet" href="styles.css?v=20261017a" />
     <style id="responsive-overrides">
       /* 1. Prevent universal horizontal scrolling & overflow */
       *, *::before, *::after {
@@ -2323,6 +2323,12 @@
         display: none !important;
       }
     </style>
+    <link rel="stylesheet" href="employee-workspace.css?v=20261017c" />
+    <link rel="stylesheet" href="payroll-workspace.css?v=20261017l" />
+    <link rel="stylesheet" href="dashboard-workspace.css?v=20261017d" />
+    <link rel="stylesheet" href="reports-workspace.css?v=20261017j" />
+    <link rel="stylesheet" href="workspace-states.css?v=20261017f" />
+    <style id="payslipDesignStyles"></style>
   </head>
   <body>
     <main class="shell">
@@ -2439,10 +2445,9 @@
 
         <div class="app-main">
           <header id="dashboardSection" class="topbar">
-            <div>
-              <p class="eyebrow">Professional Payroll System</p>
-              <h1>ROUTES PAYROLL</h1>
-              <p class="subtitle">Enterprise payroll workspace with secure records and instant month-wise operations.</p>
+            <div class="workspace-brand">
+              <p class="eyebrow">Your workspace</p>
+              <h1>Routes Payroll</h1>
             </div>
             <div class="toolbar">
               <label class="inline-field">
@@ -2451,7 +2456,7 @@
               </label>
               <button id="addCompanyBtn" class="ghost">New Company</button>
               <label class="inline-field">
-                <span>Year-Month</span>
+                <span>Payroll month</span>
                 <input id="monthPicker" type="month" />
               </label>
               <button id="installBtn" class="ghost hidden">Install App</button>
@@ -2472,221 +2477,255 @@
             </div>
           </header>
 
-          <section id="metricsSection" class="metrics kpi-metrics-row">
-            <article class="kpi-metric-card primary">
-              <div class="kpi-icon" aria-hidden="true">PE</div>
-              <div class="kpi-data">
-                <p>Payable Employees</p>
+          <section id="dashboardHome" class="dashboard-home" aria-labelledby="dashboardPageTitle">
+            <div class="dashboard-page-head">
+              <div>
+                <p class="dashboard-eyebrow">WORKSPACE OVERVIEW</p>
+                <h2 id="dashboardPageTitle">Dashboard</h2>
+                <p class="dashboard-page-description">Your payroll at a glance. Keep the month and your team on track.</p>
+              </div>
+              <div class="dashboard-page-actions">
+                <button type="button" class="ghost" data-dashboard-action="employees"><span aria-hidden="true">+</span> Add employee</button>
+                <button type="button" class="dashboard-primary" data-dashboard-action="payroll">Open payroll <span aria-hidden="true">→</span></button>
+              </div>
+            </div>
+
+            <section id="metricsSection" class="dashboard-overview" aria-label="Selected month payroll overview">
+              <article class="dashboard-metric">
+                <p>Payable employees</p>
                 <strong id="metricEmployees">0</strong>
-                <span>For selected month</span>
-              </div>
-            </article>
-            <article class="kpi-metric-card success">
-              <div class="kpi-icon" aria-hidden="true">NP</div>
-              <div class="kpi-data">
-                <p>Estimated Net Payout</p>
+                <span>Included in this payroll</span>
+              </article>
+              <article class="dashboard-metric dashboard-metric-net">
+                <p>Net payout</p>
                 <strong id="metricNet">₹0.00</strong>
-                <span>After deductions</span>
-              </div>
-            </article>
-            <article class="kpi-metric-card warning">
-              <div class="kpi-icon" aria-hidden="true">GP</div>
-              <div class="kpi-data">
-                <p>Gross Payroll Liability</p>
+                <span>After salary deductions</span>
+              </article>
+              <article class="dashboard-metric">
+                <p>Gross payroll</p>
                 <strong id="metricGross">₹0.00</strong>
-                <span>Before deductions</span>
-              </div>
-            </article>
-            <article class="kpi-metric-card alert">
-              <div class="kpi-icon" aria-hidden="true">AE</div>
-              <div class="kpi-data">
-                <p>Advance Exposure</p>
+                <span>Before salary deductions</span>
+              </article>
+              <article class="dashboard-metric">
+                <p>Advance pending</p>
                 <strong id="metricAdvance">₹0.00</strong>
-                <span>Pending recovery</span>
-              </div>
-            </article>
-          </section>
+                <span>Balance to be recovered</span>
+              </article>
+            </section>
 
-          <section id="dashboardCommandCenter" class="dashboard-command-center">
-            <article class="dashboard-panel dashboard-status-panel">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">Month Status</p>
-                  <h3 id="dashboardMonthStatusTitle">Payroll Status</h3>
-                </div>
-                <span id="dashboardMonthStatusBadge" class="status-pill working">Draft</span>
+            <section id="dashboardCommandCenter" class="dashboard-status-banner" aria-label="Payroll status">
+              <div class="dashboard-status-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3h7l4 4v14H6V3h1Z" /><path d="M14 3v5h4M9 12h6m-6 4h6" /></svg>
               </div>
-              <p id="dashboardMonthStatusDetail" class="dashboard-panel-note">Loading payroll status...</p>
-            </article>
+              <div class="dashboard-status-copy">
+                <div class="dashboard-status-title"><h3 id="dashboardMonthStatusTitle">Payroll status</h3><span id="dashboardMonthStatusBadge" class="status-pill working">Open</span></div>
+                <p id="dashboardMonthStatusDetail">Loading payroll status…</p>
+              </div>
+              <button type="button" class="ghost" data-dashboard-action="reports">View reports <span aria-hidden="true">↗</span></button>
+            </section>
 
-            <article class="dashboard-panel dashboard-actions-panel">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">Quick Actions</p>
-                  <h3>Start Work</h3>
-                </div>
-              </div>
-              <div class="dashboard-action-grid">
-                <button type="button" data-dashboard-action="employees">Add Employee</button>
-                <button type="button" data-dashboard-action="payroll">Open Payroll</button>
-                <button type="button" data-dashboard-action="review">Review Payroll</button>
-                <button type="button" data-dashboard-action="reports" class="ghost">View Reports</button>
-              </div>
-            </article>
+            <section id="dashboardInsightsSection" class="dashboard-layout" aria-label="Payroll insights and team details">
+              <div class="dashboard-main-column">
+                <article class="dashboard-card dashboard-distribution-card">
+                  <div class="dashboard-card-head">
+                    <div><h3>Payroll by role</h3><p>Top roles by net payout, with deductions and advance balances.</p></div>
+                    <span id="dashboardPeriodLabel" class="dashboard-period-label"></span>
+                  </div>
+                  <div id="dashboardDistributionBody"></div>
+                </article>
 
-            <article class="dashboard-panel dashboard-attention-panel">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">Needs Attention</p>
-                  <h3>Payroll Checks</h3>
-                </div>
+                <article class="dashboard-card dashboard-reports-card">
+                  <div class="dashboard-card-head">
+                    <div class="dashboard-card-title"><h3>Recent reports</h3><span id="dashboardReportsCount" class="dashboard-count"></span></div>
+                    <span class="dashboard-card-caption">Saved payroll months</span>
+                  </div>
+                  <div id="dashboardActivityBody" class="dashboard-reports-list"></div>
+                  <div class="dashboard-card-footer"><button type="button" class="dashboard-text-button ghost" data-dashboard-action="reports">View all reports <span aria-hidden="true">→</span></button></div>
+                </article>
               </div>
-              <div id="dashboardAttentionBody" class="dashboard-list"></div>
-            </article>
-          </section>
 
-          <section id="dashboardInsightsSection" class="dashboard-insights">
-            <article class="dashboard-panel dashboard-panel-hero">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">Dashboard Overview</p>
-                  <h3>Company Snapshot</h3>
-                </div>
-                <p class="dashboard-panel-note">Quick visibility into this month, saved reports, and workforce status.</p>
-              </div>
-              <div id="dashboardSummaryCards" class="dashboard-summary-cards"></div>
-            </article>
+              <div class="dashboard-side-column">
+                <article class="dashboard-card dashboard-team-card">
+                  <div class="dashboard-card-head"><div><h3>Your team</h3><p>Current employment status</p></div></div>
+                  <div id="dashboardSummaryCards" class="dashboard-team-summary"></div>
+                </article>
 
-            <article class="dashboard-panel">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">This Month</p>
-                  <h3>Payroll Highlights</h3>
-                </div>
+                <article class="dashboard-card dashboard-checks-card">
+                  <div class="dashboard-card-head"><div><div class="dashboard-card-title"><h3>Payroll checks</h3><span id="dashboardAttentionCount" class="dashboard-count"></span></div><p>Items to review for the selected month</p></div></div>
+                  <div id="dashboardAttentionBody" class="dashboard-checks-list"></div>
+                  <div class="dashboard-card-footer"><button type="button" class="dashboard-text-button ghost" data-dashboard-action="review">Review payroll <span aria-hidden="true">→</span></button></div>
+                </article>
               </div>
-              <div id="dashboardHighlightsBody" class="dashboard-list"></div>
-            </article>
-
-            <article class="dashboard-panel">
-              <div class="dashboard-panel-head">
-                <div>
-                  <p class="dashboard-kicker">Recent Activity</p>
-                  <h3>Report Timeline</h3>
-                </div>
-              </div>
-              <div id="dashboardActivityBody" class="dashboard-list"></div>
-            </article>
+            </section>
           </section>
 
           <section id="employeesSection" class="employee-mgmt hidden">
-            <div class="table-head">
-              <h2>Employee Management</h2>
-              <p>Register and maintain employee profile, salary base, and employment status.</p>
-            </div>
-
-            <form id="employeeForm" class="employee-form" autocomplete="off">
-              <input id="employeeFormId" type="hidden" />
-              <label>
-                Employee Name
-                <input id="employeeNameInput" type="text" required minlength="2" maxlength="120" />
-              </label>
-              <label>
-                Date of Joining
-                <input id="employeeJoiningDateInput" type="date" required />
-              </label>
-              <label>
-                Date of Birth (Optional)
-                <input id="employeeBirthDateInput" type="date" />
-              </label>
-              <label>
-                Nationality
-                <input id="employeeNationalityInput" type="text" maxlength="80" required placeholder="e.g. Indian" />
-              </label>
-              <label>
-                State (Optional)
-                <input id="employeeStateInput" type="text" maxlength="80" placeholder="e.g. West Bengal" />
-              </label>
-              <label>
-                Salary
-                <input id="employeeSalaryInput" type="number" min="0" step="0.01" required />
-              </label>
-              <label>
-                Old Advance Taken (Optional)
-                <input id="employeeOpeningAdvanceInput" type="number" min="0" step="0.01" />
-              </label>
-              <label>
-                Designation
-                <select id="employeeDesignationInput" required>
-                  <option value="">Select designation</option>
-                </select>
-              </label>
-              <label class="employee-optional">
-                Mobile (Optional)
-                <input id="employeeMobileInput" type="text" maxlength="30" />
-              </label>
-              <div id="employeeStatusFields" class="employee-status-fields hidden">
-                <p class="subtitle">Employment update (for existing employee)</p>
-                <label>
-                  Status
-                  <select id="employeeStatusInput">
-                    <option value="working">Working</option>
-                    <option value="leave">On Leave</option>
-                    <option value="resumed">Resumed Work</option>
-                    <option value="terminated">Terminated</option>
-                  </select>
-                </label>
-                <label>
-                  Leave From (if On Leave)
-                  <input id="employeeLeaveFromInput" type="date" />
-                </label>
-                <label>
-                  Resumed On
-                  <input id="employeeResumeOnInput" type="date" />
-                </label>
-                <label>
-                  Terminated On (if Terminated)
-                  <input id="employeeTerminatedOnInput" type="date" />
-                </label>
+            <div class="employee-page-head">
+              <div>
+                <p class="employee-eyebrow">TEAM MANAGEMENT</p>
+                <h2>Employees</h2>
+                <p class="employee-page-description">Your team, employment details, and salary information in one place.</p>
               </div>
-              <div class="employee-form-actions">
-                <button id="employeeSaveBtn" type="submit">Save Employee</button>
-                <button id="employeeCancelBtn" type="button" class="ghost">Cancel Edit</button>
+              <button id="employeeAddBtn" class="employee-primary" type="button"><span aria-hidden="true">+</span> Add employee</button>
+            </div>
+
+            <div class="employee-overview" aria-label="Employee overview">
+              <article class="employee-stat">
+                <span>Total employees</span>
+                <strong id="employeeTotalCount">0</strong>
+                <small>Across all employment statuses</small>
+              </article>
+              <article class="employee-stat">
+                <span><i class="employee-stat-dot working" aria-hidden="true"></i> Working</span>
+                <strong id="employeeWorkingCount">0</strong>
+                <small>Currently active team members</small>
+              </article>
+              <article class="employee-stat">
+                <span><i class="employee-stat-dot leave" aria-hidden="true"></i> On leave</span>
+                <strong id="employeeLeaveCount">0</strong>
+                <small>Currently away from work</small>
+              </article>
+              <article class="employee-stat">
+                <span>Outstanding advances</span>
+                <strong id="employeeAdvanceTotal">₹0.00</strong>
+                <small>Balance as of the selected month</small>
+              </article>
+            </div>
+
+            <p id="employeeMessage" class="status-msg" role="status"></p>
+
+            <div class="employee-directory">
+              <div class="employee-directory-head">
+                <div class="employee-directory-title">
+                  <h3>Employee directory</h3>
+                  <span id="employeeFilterCount" class="employee-filter-count" aria-live="polite"></span>
+                </div>
+                <div class="employee-list-tools">
+                  <label class="employee-search" for="employeeSearchInput">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.75" cy="10.75" r="6.75" /><path d="m16 16 4 4" /></svg>
+                    <span class="employee-sr-only">Search employees by name, ID, or designation</span>
+                    <input id="employeeSearchInput" type="search" placeholder="Search name, ID, or role…" autocomplete="off" />
+                  </label>
+                  <label class="employee-status-filter" for="employeeStatusFilter">
+                    <span class="employee-sr-only">Filter by employment status</span>
+                    <select id="employeeStatusFilter">
+                      <option value="all">All statuses</option>
+                      <option value="working">Working</option>
+                      <option value="leave">On leave</option>
+                      <option value="terminated">Terminated</option>
+                    </select>
+                  </label>
+                </div>
               </div>
-            </form>
-            <p id="employeeMessage" class="status-msg"></p>
 
-            <div class="employee-list-tools">
-              <label for="employeeStatusFilter">
-                Filter by Status
-                <select id="employeeStatusFilter">
-                  <option value="all">All Employees</option>
-                  <option value="working">Working</option>
-                  <option value="leave">On Leave</option>
-                  <option value="terminated">Terminated</option>
-                </select>
-              </label>
-              <span id="employeeFilterCount" class="employee-filter-count" aria-live="polite"></span>
+              <div class="employee-list-wrap" role="region" aria-label="Employee directory" tabindex="0">
+                <table>
+                  <caption class="employee-sr-only">Employee salary, advance balance, and employment details for the selected payroll month.</caption>
+                  <thead>
+                    <tr class="detail-row">
+                      <th scope="col">Employee</th>
+                      <th scope="col">Monthly salary</th>
+                      <th scope="col" title="Recorded increments up to the selected payroll month">Salary changes</th>
+                      <th scope="col">Advance balance</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Employment</th>
+                      <th scope="col"><span class="employee-sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="employeesBody"></tbody>
+                </table>
+              </div>
+              <div class="employee-directory-footer">
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7" /><path d="M10 9v5m0-8v1" /></svg>
+                Salary and advance balances reflect the selected payroll month.
+              </div>
             </div>
 
-            <div class="employee-list-wrap">
-              <table>
-                <thead>
-                  <tr class="detail-row">
-                    <th>Employee ID</th>
-                    <th>Name</th>
-                    <th>Salary (₹)</th>
-                    <th class="employee-increment-heading" title="Recorded increments up to the selected payroll month">Increment History</th>
-                    <th>Advance Remained (₹)</th>
-                    <th>Status</th>
-                    <th>Leave From</th>
-                    <th>Resumed On</th>
-                    <th>Work Tenure</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="employeesBody"></tbody>
-              </table>
-            </div>
+            <dialog id="employeeEditorDialog" class="employee-editor" aria-labelledby="employeeEditorTitle" aria-describedby="employeeEditorDescription">
+              <div class="employee-editor-head">
+                <div>
+                  <h2 id="employeeEditorTitle">Add employee</h2>
+                  <p id="employeeEditorDescription">Create a profile to include a team member in payroll.</p>
+                </div>
+                <button id="employeeEditorCloseBtn" class="ghost" type="button" aria-label="Close employee form">×</button>
+              </div>
+              <form id="employeeForm" class="employee-form" autocomplete="off">
+                <input id="employeeFormId" type="hidden" />
+                <fieldset class="employee-fieldset">
+                  <legend>Personal details</legend>
+                  <label>
+                    Full name
+                    <input id="employeeNameInput" type="text" required minlength="2" maxlength="120" />
+                  </label>
+                  <label>
+                    Joining date
+                    <input id="employeeJoiningDateInput" type="date" required />
+                  </label>
+                  <label>
+                    Date of birth <span class="employee-field-optional">(optional)</span>
+                    <input id="employeeBirthDateInput" type="date" />
+                  </label>
+                  <label>
+                    Nationality
+                    <input id="employeeNationalityInput" type="text" maxlength="80" required placeholder="e.g. Indian" />
+                  </label>
+                  <label>
+                    State <span class="employee-field-optional">(optional)</span>
+                    <input id="employeeStateInput" type="text" maxlength="80" placeholder="e.g. West Bengal" />
+                  </label>
+                  <label>
+                    Mobile <span class="employee-field-optional">(optional)</span>
+                    <input id="employeeMobileInput" type="tel" maxlength="30" />
+                  </label>
+                </fieldset>
+                <fieldset class="employee-fieldset">
+                  <legend>Role &amp; pay</legend>
+                  <label>
+                    Designation
+                    <select id="employeeDesignationInput" required>
+                      <option value="">Select designation</option>
+                    </select>
+                  </label>
+                  <label>
+                    Base monthly salary (₹)
+                    <input id="employeeSalaryInput" type="number" min="0" step="0.01" required />
+                  </label>
+                  <label>
+                    Old Advance taken (₹) <span class="employee-field-optional">(optional)</span>
+                    <input id="employeeOpeningAdvanceInput" type="number" min="0" step="0.01" />
+                  </label>
+                </fieldset>
+                <div id="employeeStatusFields" class="employee-status-fields hidden">
+                  <h3>Employment status</h3>
+                  <label>
+                    Status
+                    <select id="employeeStatusInput">
+                      <option value="working">Working</option>
+                      <option value="leave">On Leave</option>
+                      <option value="resumed">Resumed Work</option>
+                      <option value="terminated">Terminated</option>
+                    </select>
+                  </label>
+                  <label>
+                    Leave From (if On Leave)
+                    <input id="employeeLeaveFromInput" type="date" />
+                  </label>
+                  <label>
+                    Resumed On
+                    <input id="employeeResumeOnInput" type="date" />
+                  </label>
+                  <label>
+                    Terminated On (if Terminated)
+                    <input id="employeeTerminatedOnInput" type="date" />
+                  </label>
+                </div>
+                <p id="employeeEditorMessage" class="status-msg" role="status"></p>
+                <div class="employee-form-actions">
+                  <button id="employeeCancelBtn" type="button" class="ghost">Cancel</button>
+                  <button id="employeeSaveBtn" type="submit">Save Employee</button>
+                </div>
+              </form>
+            </dialog>
           </section>
 
           <section id="settingsSection" class="settings-panel hidden">
@@ -2801,31 +2840,42 @@
             <p id="settingsMessage" class="status-msg"></p>
           </section>
 
-          <section id="reportsSection" class="employee-mgmt hidden">
-            <div class="table-head">
-              <h2>Reports</h2>
-              <p>Leave records plus generated monthly payroll reports for the selected company.</p>
+          <section id="reportsSection" class="employee-mgmt reports-section hidden">
+            <div class="reports-page-head">
+              <div>
+                <p class="page-eyebrow">PAYROLL RECORDS</p>
+                <h2>Reports</h2>
+                <p>Find saved payslips, review monthly payroll, and keep track of employee leave.</p>
+              </div>
             </div>
 
-            <article class="settings-card reports-summary-card" data-report-panel="summary">
-              <div class="dashboard-panel-head reports-summary-head">
+            <nav class="reports-tabs" aria-label="Report sections">
+              <button type="button" data-report-tab="summary">Payroll summary</button>
+              <button type="button" data-report-tab="payslips">Generated payslips</button>
+              <button type="button" data-report-tab="leave">Leave &amp; return</button>
+              <button type="button" data-report-tab="errors">Error log</button>
+            </nav>
+
+            <article class="reports-card reports-summary-card" data-report-panel="summary">
+              <div class="reports-card-head">
                 <div>
-                  <p class="dashboard-kicker">Reports Snapshot</p>
-                  <h3>Generated Payroll Summary</h3>
+                  <h3>Payroll summary</h3>
+                  <p>Saved monthly reports for the selected company.</p>
                 </div>
-                <p class="dashboard-panel-note">Saved payroll months, payslip coverage, and currently opened report.</p>
               </div>
-              <div id="reportsSummaryCards" class="dashboard-summary-cards reports-summary-cards"></div>
-              <h3>Generated Payroll Reports</h3>
-              <p>Once payroll is checked and generated, it will appear here month-wise so you can reopen employee payslips later.</p>
-              <div class="employee-list-wrap">
+              <div id="reportsSummaryCards" class="reports-summary-cards"></div>
+              <div class="reports-subhead">
+                <h3>Saved payroll months</h3>
+                <p>Open a month to view payslips or export its payroll register.</p>
+              </div>
+              <div class="employee-list-wrap reports-table-wrap">
                 <table>
                   <thead>
                     <tr class="detail-row">
-                      <th>Generated Payroll</th>
-                      <th>Checked At</th>
-                      <th>Generated At</th>
-                      <th>Employees</th>
+                      <th>Payroll month</th>
+                      <th>Checked</th>
+                      <th>Generated</th>
+                      <th>Payslips</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -2834,29 +2884,53 @@
               </div>
             </article>
 
-            <article class="settings-card" data-report-panel="payslips">
-              <h3 id="generatedPayrollDetailTitle">Generated Payslips For</h3>
-              <p>Open any generated payroll month below, then print or save PDF employee-wise, or print only the selected payslips together.</p>
+            <article class="reports-card reports-payslips-card" data-report-panel="payslips">
+              <div class="reports-card-head">
+                <div>
+                  <h3 id="generatedPayrollDetailTitle">Generated payslips</h3>
+                  <p>Preview, download, or print employee payslips from a saved payroll month.</p>
+                </div>
+                <label class="reports-month-field">
+                  <span>Saved payroll month</span>
+                  <select id="reportsMonthPicker" aria-label="Saved payroll month" disabled>
+                    <option value="">No saved months</option>
+                  </select>
+                </label>
+              </div>
+              <div class="reports-payslip-overview" aria-label="Selected payroll month totals">
+                <div class="reports-overview-stat"><span>Payslips</span><strong id="reportsPayslipTotalCount">0</strong></div>
+                <div class="reports-overview-stat net"><span>Total salary in hand</span><strong id="reportsPayslipNetTotal">₹0.00</strong></div>
+                <div class="reports-overview-stat advance"><span>Advance still pending</span><strong id="reportsPayslipAdvanceTotal">₹0.00</strong></div>
+              </div>
+              <div class="reports-directory-toolbar">
+                <label class="reports-search">
+                  <span class="sr-only">Search payslips</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+                  <input id="reportsPayslipSearchInput" type="search" placeholder="Search name, ID, or designation…" autocomplete="off" />
+                </label>
+                <span id="reportsPayslipCount" class="reports-payslip-count" aria-live="polite">0 payslips</span>
+              </div>
               <div class="reports-selection-bar">
                 <label class="reports-check-all">
-                  <input id="generatedPayslipsCheckAll" type="checkbox" />
-                  <span>Check All</span>
+                  <input id="generatedPayslipsCheckAll" type="checkbox" aria-describedby="reportsSelectionHint" />
+                  <span>Select all payslips</span>
                 </label>
+                <span id="reportsSelectionHint" class="reports-selection-hint">Applies to the entire saved month.</span>
                 <div class="reports-selection-actions">
                   <span id="generatedPayslipsSelectionCount" class="reports-selection-count">0 selected</span>
-                  <span class="reports-selected-net" role="status" aria-live="polite">Selected Net Salary: <strong id="generatedPayslipsNetTotal">₹0.00</strong></span>
-                  <button id="printSelectedPayslipsBtn" type="button" class="ghost">Print Selected</button>
+                  <span class="reports-selected-net" role="status" aria-live="polite">Selected salary: <strong id="generatedPayslipsNetTotal">₹0.00</strong></span>
+                  <button id="printSelectedPayslipsBtn" type="button" disabled>Print selected</button>
                 </div>
               </div>
-              <div class="employee-list-wrap">
-                <table>
+              <div class="employee-list-wrap reports-table-wrap">
+                <table class="reports-payslips-table">
                   <thead>
                     <tr class="detail-row">
-                      <th>Select</th>
-                      <th>Employee ID</th>
-                      <th>Employee Name</th>
+                      <th><span class="sr-only">Select</span></th>
+                      <th>Employee</th>
                       <th>Designation</th>
-                      <th>Net Salary</th>
+                      <th>Salary in hand</th>
+                      <th>Advance pending</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -2865,41 +2939,67 @@
               </div>
             </article>
 
-            <article class="settings-card" data-report-panel="leave">
-              <h3>Leave / Resume Work</h3>
-              <p>Track who went on leave, when they resumed work, and any termination date on record.</p>
-              <div class="employee-list-wrap">
-                <table>
+            <article class="reports-card reports-leave-card" data-report-panel="leave">
+              <div class="reports-card-head">
+                <div>
+                  <h3>Leave &amp; return</h3>
+                  <p>Company-wide leave and return history across all saved payroll months.</p>
+                </div>
+              </div>
+              <div class="reports-leave-overview" aria-label="Employees with recorded leave or employment history">
+                <div class="reports-leave-stat"><span>Employees with history</span><strong id="leaveReportEmployeeCount">0</strong><small>Across all work periods</small></div>
+                <div class="reports-leave-stat leave"><span>Currently on leave</span><strong id="leaveReportOnLeaveCount">0</strong><small>Away from work</small></div>
+                <div class="reports-leave-stat working"><span>Returned to work</span><strong id="leaveReportReturnedCount">0</strong><small>Currently working after leave</small></div>
+                <div class="reports-leave-stat terminated"><span>Employment ended</span><strong id="leaveReportEndedCount">0</strong><small>Terminated profiles</small></div>
+              </div>
+              <div class="reports-leave-tools">
+                <label class="reports-search">
+                  <span class="sr-only">Search leave and return records</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+                  <input id="leaveReportSearchInput" type="search" placeholder="Search name, ID, or designation…" autocomplete="off" />
+                </label>
+                <label class="reports-leave-filter">
+                  <span class="sr-only">Filter by current employee status</span>
+                  <select id="leaveReportStatusFilter" aria-label="Current employee status">
+                    <option value="all">All statuses</option>
+                    <option value="working">Working</option>
+                    <option value="leave">On leave</option>
+                    <option value="terminated">Employment ended</option>
+                  </select>
+                </label>
+                <span id="leaveReportCount" class="reports-payslip-count" aria-live="polite">0 employees · 0 work periods</span>
+              </div>
+              <p class="reports-leave-scroll-hint">Swipe across to view dates, pay, and advance details.</p>
+              <div class="employee-list-wrap reports-table-wrap">
+                <table class="reports-leave-table">
                   <thead>
                     <tr class="detail-row">
-                      <th>Employee ID</th>
-                      <th>Employee Name</th>
-                      <th>Status</th>
-                      <th>Leave From</th>
-                      <th>Resumed On</th>
-                      <th>Terminated On</th>
-                      <th>Worked Tenure</th>
-                      <th>Paid / Bonus</th>
-                      <th>Advance</th>
+                      <th>Employee</th>
+                      <th>Current status</th>
+                      <th>Leave &amp; return</th>
+                      <th>Worked period</th>
+                      <th>Pay summary</th>
+                      <th>Period-end advance</th>
                     </tr>
                   </thead>
                   <tbody id="leaveResumeReportBody"></tbody>
                 </table>
               </div>
+              <p id="reportsMessage" class="reports-leave-count"></p>
             </article>
 
-            <article class="settings-card" data-report-panel="errors">
-              <div class="error-log-head">
+            <article class="reports-card" data-report-panel="errors">
+              <div class="reports-card-head error-log-head">
                 <div>
-                  <h3>Error Log</h3>
-                  <p>Automatic app error history with timestamps so issues do not disappear after the popup closes.</p>
+                  <h3>Error log</h3>
+                  <p>Saved app errors with timestamps and details for troubleshooting.</p>
                 </div>
                 <div class="error-log-actions">
                   <span id="errorLogCount" class="error-log-count">0 entries</span>
-                  <button id="clearErrorLogsBtn" class="mini ghost" type="button">Clear Logs</button>
+                  <button id="clearErrorLogsBtn" class="mini ghost" type="button">Clear logs</button>
                 </div>
               </div>
-              <div class="employee-list-wrap">
+              <div class="employee-list-wrap reports-table-wrap">
                 <table>
                   <thead>
                     <tr class="detail-row">
@@ -2914,7 +3014,6 @@
               </div>
             </article>
 
-            <p id="reportsMessage" class="status-msg"></p>
           </section>
 
           <section id="verificationSection" class="employee-mgmt verification-section hidden">
@@ -3141,83 +3240,115 @@
           </section>
 
           <section id="payrollSection" class="table-wrap hidden">
-            <div class="table-head">
-              <h2>Employee Payroll Register</h2>
-              <p class="payroll-legend">
-                <span><i class="dot salary"></i>Salary</span>
-                <span><i class="dot increment"></i>Increment</span>
-                <span><i class="dot gross"></i>Gross</span>
-                <span><i class="dot deduction"></i>Deductions</span>
-              </p>
-            </div>
-            <div class="payroll-control-panel">
-              <div class="payroll-search-row">
-                <label>
-                  Search Employee
-                  <input id="payrollSearchInput" type="search" placeholder="Search ID, name, or designation" />
-                </label>
-                <label>
-                  Filter
-                  <select id="payrollFilterSelect">
-                    <option value="all">All payroll employees</option>
-                    <option value="warnings">Needs attention</option>
-                    <option value="advance">Advance pending</option>
-                    <option value="changed">Changed this session</option>
-                    <option value="zero">Zero net salary</option>
-                  </select>
-                </label>
+            <div class="payroll-page-head">
+              <div>
+                <p class="payroll-eyebrow">MONTHLY PAYROLL</p>
+                <h2>Payroll</h2>
+                <p class="payroll-page-description">Review your team's pay, make adjustments, and generate payslips.</p>
               </div>
-
-              <div class="payroll-bulk-panel">
-                <label>
-                  Increment
-                  <input id="bulkIncrementInput" type="number" min="0" step="0.01" placeholder="0.00" />
-                </label>
-                <label>
-                  Extra Advance
-                  <input id="bulkAdvanceInput" type="number" min="0" step="0.01" placeholder="0.00" />
-                </label>
-                <label>
-                  Deduction
-                  <input id="bulkDeductionInput" type="number" min="0" step="0.01" placeholder="0.00" />
-                </label>
-                <label>
-                  Manual Absent
-                  <input id="bulkAbsentInput" type="number" min="0" step="1" placeholder="0" />
-                </label>
-                <div class="payroll-bulk-actions">
-                  <button id="applyBulkIncrementBtn" type="button" class="ghost">Apply Increment</button>
-                  <button id="applyBulkAdvanceBtn" type="button" class="ghost">Apply Advance</button>
-                  <button id="applyBulkDeductionBtn" type="button" class="ghost">Apply Deduction</button>
-                  <button id="applyBulkAbsentBtn" type="button" class="ghost">Set Absent</button>
-                </div>
-              </div>
+              <p id="saveStatus" class="status-msg payroll-save-status" role="status"></p>
             </div>
-            <div id="payrollTotalsBar" class="payroll-totals-bar"></div>
+            <div id="payrollTotalsBar" class="payroll-totals-bar" aria-label="Payroll overview"></div>
             <div id="payrollReviewPanel" class="payroll-review-panel"></div>
-            <div id="payrollBody" class="payroll-cards"></div>
+
+            <div class="payroll-workspace-panel">
+              <div class="payroll-control-panel">
+                <div class="payroll-directory-toolbar">
+                  <div class="payroll-directory-title">
+                    <h3>Employee payroll</h3>
+                    <span id="payrollVisibleCount" class="payroll-count" aria-live="polite"></span>
+                  </div>
+                  <div class="payroll-search-row">
+                    <label class="payroll-search-field" for="payrollSearchInput">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.75" cy="10.75" r="6.75" /><path d="m16 16 4 4" /></svg>
+                      <span class="employee-sr-only">Search payroll by employee ID, name, or designation</span>
+                      <input id="payrollSearchInput" type="search" placeholder="Search name, ID, or role…" autocomplete="off" />
+                    </label>
+                    <label for="payrollFilterSelect">
+                      <span class="employee-sr-only">Filter payroll employees</span>
+                      <select id="payrollFilterSelect">
+                        <option value="all">All payroll employees</option>
+                        <option value="warnings">Needs attention</option>
+                        <option value="advance">Advance pending</option>
+                        <option value="changed">Changed this session</option>
+                        <option value="zero">Zero net salary</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <details id="payrollBulkControls" class="payroll-bulk-controls">
+                  <summary><span>Bulk adjustments</span><span id="payrollBulkScope" class="payroll-bulk-scope"></span></summary>
+                  <p class="payroll-bulk-note">Apply an adjustment to every employee matching the current search and filter.</p>
+                  <div class="payroll-bulk-panel">
+                    <div class="payroll-bulk-field">
+                      <label for="bulkIncrementInput">Salary increment (₹)</label>
+                      <div><input id="bulkIncrementInput" type="number" min="0" step="0.01" placeholder="0.00" /><button id="applyBulkIncrementBtn" type="button" class="ghost">Set increment</button></div>
+                    </div>
+                    <div class="payroll-bulk-field">
+                      <label for="bulkAdvanceInput">Extra advance (₹)</label>
+                      <div><input id="bulkAdvanceInput" type="number" min="0" step="0.01" placeholder="0.00" /><button id="applyBulkAdvanceBtn" type="button" class="ghost">Add advance</button></div>
+                    </div>
+                    <div class="payroll-bulk-field">
+                      <label for="bulkDeductionInput">Advance deduction (₹)</label>
+                      <div><input id="bulkDeductionInput" type="number" min="0" step="0.01" placeholder="0.00" /><button id="applyBulkDeductionBtn" type="button" class="ghost">Set deduction</button></div>
+                    </div>
+                    <div class="payroll-bulk-field">
+                      <label for="bulkAbsentInput">Manual absent days</label>
+                      <div><input id="bulkAbsentInput" type="number" min="0" step="1" placeholder="0" /><button id="applyBulkAbsentBtn" type="button" class="ghost">Set absence</button></div>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <div id="payrollBody" class="payroll-cards"></div>
+            </div>
           </section>
 
-          <p id="saveStatus" class="status-msg"></p>
-          <p id="appMessage" class="status-msg"></p>
+          <p id="appMessage" class="status-msg" role="status"></p>
         </div>
       </section>
     </main>
 
-    <dialog id="payslipDialog">
+    <dialog id="deleteConfirmationDialog" aria-labelledby="deleteConfirmationTitle" aria-describedby="deleteConfirmationDescription">
+      <form id="deleteConfirmationForm" novalidate>
+        <div class="delete-confirmation-head">
+          <span class="delete-confirmation-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></span>
+          <button id="deleteConfirmationCloseBtn" type="button" aria-label="Close deletion confirmation">×</button>
+        </div>
+        <h2 id="deleteConfirmationTitle">Delete employee?</h2>
+        <p id="deleteConfirmationDescription">This action cannot be undone.</p>
+        <div class="delete-confirmation-employee"><strong id="deleteConfirmationEmployeeName"></strong><span id="deleteConfirmationEmployeeId"></span></div>
+        <label for="deleteConfirmationInput">Type <strong>confirm</strong> to delete this record</label>
+        <input id="deleteConfirmationInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="deleteConfirmationHint" />
+        <p id="deleteConfirmationHint">Enter the word exactly as shown above.</p>
+        <div class="delete-confirmation-actions">
+          <button id="deleteConfirmationCancelBtn" type="button">Cancel</button>
+          <button id="deleteConfirmationSubmitBtn" type="submit" disabled>Delete record</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="payslipDialog" aria-labelledby="payslipDialogTitle" aria-describedby="payslipDialogDescription">
       <div class="dialog-content">
         <div class="dialog-head">
-          <h2>Payslip Preview</h2>
-          <button id="closePayslipBtn" class="ghost">Close</button>
+          <div>
+            <h2 id="payslipDialogTitle">Payslip preview</h2>
+            <p id="payslipDialogDescription" class="slip-dialog-description">Employee payroll statement</p>
+          </div>
+          <button id="closePayslipBtn" class="ghost" type="button">Close</button>
         </div>
         <div id="payslipPreview" class="payslip-preview"></div>
         <div class="dialog-actions">
-          <button id="printPayslipBtn">Print / Save PDF</button>
-          <button id="downloadPayslipBtn" class="ghost">Save PDF</button>
-          <button id="shareWebBtn" class="ghost">Share</button>
-          <button id="shareWhatsappBtn" class="ghost">WhatsApp</button>
-          <button id="shareMessengerBtn" class="ghost">Messenger</button>
-          <button id="copyPayslipBtn" class="ghost">Copy Text</button>
+          <button id="printPayslipBtn" type="button">Print</button>
+          <button id="downloadPayslipBtn" class="ghost" type="button">Save PDF</button>
+          <details class="slip-share-menu">
+            <summary>Share</summary>
+            <div class="slip-share-options">
+              <button id="shareWebBtn" class="ghost" type="button">Share with another app</button>
+              <button id="shareWhatsappBtn" class="ghost" type="button">WhatsApp</button>
+              <button id="shareMessengerBtn" class="ghost" type="button">Messenger</button>
+              <button id="copyPayslipBtn" class="ghost" type="button">Copy text</button>
+            </div>
+          </details>
         </div>
       </div>
     </dialog>
@@ -3245,6 +3376,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="salary-progression.js?v=20260715a"></script>
-    <script src="app.js?v=20261010k"></script>
+    <script src="app.js?v=20261017l"></script>
   </body>
 </html>

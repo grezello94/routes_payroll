@@ -45,7 +45,7 @@ for (const path of ['/server.js', '/data/payroll.db', '/data/monthly-backups/tes
   middleware[0]({ path }, { status: (code) => { status = code; return { end() {} }; } }, () => assert.fail(`Private file allowed: ${path}`));
   assert.equal(status, 404);
 }
-for (const path of ['/', '/app.js', '/styles.css', '/icons/icon-192.svg']) {
+for (const path of ['/', '/app.js', '/styles.css', '/employee-workspace.css', '/payroll-workspace.css', '/dashboard-workspace.css', '/reports-workspace.css', '/workspace-states.css', '/icons/icon-192.svg']) {
   let passed = false;
   middleware[0]({ path }, {}, () => { passed = true; });
   assert.equal(passed, true);

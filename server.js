@@ -80,7 +80,7 @@ let startupInitPromise = null;
 app.use(express.json({ limit: "10mb" }));
 // Serve only public application assets; database files and backups stay private.
 const PUBLIC_ASSETS = new Set([
-  "/", "/index.html", "/styles.css", "/app.js", "/salary-progression.js",
+  "/", "/index.html", "/styles.css", "/employee-workspace.css", "/payroll-workspace.css", "/dashboard-workspace.css", "/reports-workspace.css", "/workspace-states.css", "/app.js", "/salary-progression.js",
   "/sw.js", "/manifest.webmanifest", "/reset-password.html", "/reset-password.js",
   "/verify-email.html", "/verify-email.js",
   "/icons/icon-192.svg", "/icons/icon-512.svg",

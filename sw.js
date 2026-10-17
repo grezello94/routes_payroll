@@ -1,11 +1,16 @@
-const CACHE_NAME = "routes-payroll-v35";
+const CACHE_NAME = "routes-payroll-v47";
 const ASSETS = [
   "./",
   "./index.html",
   "./reset-password.html",
-  "./styles.css?v=20261010k",
+  "./styles.css?v=20261017a",
+  "./employee-workspace.css?v=20261017c",
+  "./payroll-workspace.css?v=20261017l",
+  "./dashboard-workspace.css?v=20261017d",
+  "./reports-workspace.css?v=20261017j",
+  "./workspace-states.css?v=20261017f",
   "./salary-progression.js?v=20260715a",
-  "./app.js?v=20261010k",
+  "./app.js?v=20261017l",
   "./reset-password.js?v=20260407e",
   "./manifest.webmanifest",
   "./icons/icon-192.svg",
